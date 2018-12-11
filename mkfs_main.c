@@ -126,6 +126,8 @@ void mkfs_update_erofs_header(u64 root_addr)
 	}
 
 	sb->meta_blkaddr = cpu_to_le32(ADDR_TO_BLKNO(size));
+	sb->blocks       = cpu_to_le32(erofs_get_total_blocks());
+	sb->root_nid     = cpu_to_le16(mkfs_addr_to_nid(root_addr));
 
 	sb_buf = calloc(size, 1);
 	if (!sb_buf) {
@@ -151,11 +153,38 @@ int main(int argc, char **argv)
 	mkfs_init_configure();
 	mkfs_parse_options_cfg(argc, argv);
 
+	proot_node = mkfs_prepare_root_inode(erofs_cfg.c_src_path);
+	if (!proot_node)
+		goto exit;
+	err = erofs_create_files_list(proot_node);
+	if (err)
+		goto exit;
+
+	err = erofs_cache_init(ADDR_TO_BLKNO(BLK_ALIGN(EROFS_SUPER_END)));
+	if (err)
+		goto exit;
+
+	err = mkfs_relocate_sub_inodes(proot_node);
+	if (err)
+		goto exit;
+
+	err = mkfs_do_write_inodes_data(proot_node);
+	if (err)
+		goto exit;
+
+	err = erofs_flush_all_blocks();
+	if (err)
+		goto exit;
+
 	mkfs_update_erofs_header(proot_node->i_base_addr);
 
-	dev_close();
-	mkfs_free_config();
 	erofs_info("done");
 
+exit:
+	dev_close();
+	mkfs_free_config();
+
+	if (err)
+		erofs_err("\tError: Could not format the device!!!\n");
 	return err;
 }
