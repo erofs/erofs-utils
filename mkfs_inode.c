@@ -243,6 +243,7 @@ struct erofs_node_info *mkfs_prepare_root_inode(char *root)
 int mkfs_relocate_sub_inodes(struct erofs_node_info *inode)
 {
 	int ret;
+	int compressible;
 	u32 blkaddr;
 	u32 nblocks;
 	u32 unaligned;
@@ -250,6 +251,14 @@ int mkfs_relocate_sub_inodes(struct erofs_node_info *inode)
 
 	switch (d->i_type) {
 	case EROFS_FT_REG_FILE:
+		compressible = erofs_check_compressible(d);
+		if (compressible < 0) {
+			assert(0);
+		} else if (compressible > 0) {
+			erofs_init_compress_inode(d);
+			mkfs_rank_inode(d);
+			break;
+		}
 	case EROFS_FT_DIR:
 	case EROFS_FT_SYMLINK:
 		unaligned = d->i_size % EROFS_BLKSIZE;
@@ -539,6 +548,13 @@ static int mkfs_write_inode_regfile(struct erofs_node_info *inode)
 		break;
 
 	case EROFS_INODE_LAYOUT_COMPRESSION:
+		ret = erofs_compress_file(inode);
+		if (ret) {
+			erofs_err("Compress file failed ret=%d", ret);
+			return ret;
+		}
+		break;
+
 	case EROFS_INODE_LAYOUT_INLINE:
 		if (inode->i_size == 0)
 			break;

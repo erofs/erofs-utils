@@ -103,6 +103,9 @@ static void mkfs_parse_options_cfg(int argc, char *argv[])
 		usage(argv[0]);
 	}
 
+	assert(erofs_cfg.c_alg_name);
+	erofs_compress_alg_init(erofs_cfg.c_alg_name);
+
 	mkfs_dump_config();
 
 	if (dev_open(erofs_cfg.c_img_path) < 0) {
