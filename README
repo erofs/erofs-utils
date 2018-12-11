@@ -1,0 +1,55 @@
+mkfs.erofs
+
+mkfs.erofs is a user-space tool to create erofs filesystem images.
+
+It can create 2 main types of erofs images, compressed and uncompressed:
+ - For compressed images, it is able to integrate several compression
+   algorithms, lz4 is supported according to the current erofs kernel
+   implementation.
+ - For uncompressed images, it can decide whether the last page of
+   a file should be inlined or not properly [1].
+
+Note that mkfs.erofs can only be linked statically with lz4 library
+due to the dependency of experimental lz4hc apis which were added in
+lz4 1.8.0. Anyway, it's a good start to begin with building the latest
+lz4 library statically first. :)
+
+Dependencies
+ lz4-1.8.0 or above
+
+How to build with lz4 static library
+	./configure --with-lz4=<lz4 install path>
+eg. if lz4 lib has been installed into fold of /usr/local/lib
+	./configure --with-lz4=/usr/local/lib && make
+Maybe you should run this first:
+	libtoolize && aclocal && autoconf && autoheader && automake --add-missing
+
+Usage:
+$ ./mkfs.erofs
+mkfs.erofs v1.0   Nov 17 2018 19:47:21
+
+Usage:
+    [-z <compr_algri>] [-d <dbglvl>]
+    [target path] [source directory]
+
+ -d -- set debugging level <dbglvl>
+ -z -- enable <compr_algri> compression (only lz4hc is supported)
+
+ target path, source directory are both needed.
+
+To:
+  linux-erofs mailing list   <linux-erofs@lists.ozlabs.org>
+  Li Guifu                   <bluce.liguifu@huawei.com>
+  Miao Xie                   <miaoxie@huawei.com>
+  Fang Wei                   <fangwei1@huawei.com>
+
+Thanks-to:
+  Sun Qiuyang                <sunqiuyang@huawei.com>
+  Guo Xuenan                 <guoxuenan@huawei.com>
+  Du Wei                     <weidu.du@huawei.com>
+  Wang Zhigang               <brooke.wangzhigang@hisilicon.com>
+
+[1] According to the erofs on-disk format, the last page of files could
+    be inlined aggressively with its metadata in order to reduce the I/O
+    overhead and save the storage space.
+
