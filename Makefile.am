@@ -26,7 +26,6 @@ noinst_HEADERS = erofs_config.h  \
 
 mkfs_erofs_CFLAGS = -Wall -Werror -DEROFS_MKFS_VERSION=\"v1.0\"
 mkfs_erofs_LDFLAGS  = --static
-mkfs_erofs_LDADD   = $(LIBLZ4_STATIC)
 ACLOCAL_AMFLAGS = -I m4
 
 if SUPPORT_LARG_FILE_AT_BIT32
