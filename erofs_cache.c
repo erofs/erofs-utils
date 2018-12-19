@@ -174,8 +174,7 @@ int erofs_flush_all_blocks(void)
 			pbuf += count;
 		}
 
-		ret = dev_write(erofs_blk_buf,
-				blknr_to_addr(blk->bb_blkaddr), EROFS_BLKSIZE);
+		ret = blk_write(erofs_blk_buf, blk->bb_blkaddr);
 		if (ret)
 			break;
 	}

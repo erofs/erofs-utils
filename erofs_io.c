@@ -119,13 +119,6 @@ int dev_write(void *buf, u64 offset, size_t len)
 	return 0;
 }
 
-int dev_write_block(void *buf, u32 blkaddr)
-{
-	erofs_info("Write data to block %u", blkaddr);
-
-	return dev_write(buf, blknr_to_addr(blkaddr), EROFS_BLKSIZE);
-}
-
 int dev_fsync(void)
 {
 	int ret;
