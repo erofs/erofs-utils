@@ -22,7 +22,7 @@ How to build with lz4 static library
 eg. if lz4 lib has been installed into fold of /usr/local/lib
 	./configure --with-lz4=/usr/local/lib && make
 Maybe you should run this first:
-	libtoolize && aclocal && autoconf && autoheader && automake --add-missing
+	./autogen.sh
 
 Usage:
 $ ./mkfs.erofs
