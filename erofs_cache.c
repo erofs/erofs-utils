@@ -45,10 +45,10 @@ u32 erofs_alloc_blocks(u32 nblocks)
 	devlen = dev_length();
 	if (erofs_current_block > (u64)UINT32_MAX ||
 	    erofs_current_block + nblocks > ((u64)UINT32_MAX) + 1 ||
-	    (erofs_current_block + nblocks) << EROFS_BLOCKSIZE_BITS > devlen) {
+	    blknr_to_addr(erofs_current_block + nblocks) > devlen) {
 		erofs_err("There is no enough free space(curr: %llu, need: %u, device blocks: %llu).",
 			  (unsigned long long)erofs_current_block, nblocks,
-			  (unsigned long long)devlen >> EROFS_BLOCKSIZE_BITS);
+			  (unsigned long long)erofs_blknr(devlen));
 		return 0;
 	}
 
@@ -143,7 +143,6 @@ int erofs_flush_all_blocks(void)
 	char *pbuf;
 	int count;
 	int ret;
-	u32 addr;
 
 	erofs_blk_buf = malloc(EROFS_BLKSIZE);
 	if (!erofs_blk_buf)
@@ -175,10 +174,8 @@ int erofs_flush_all_blocks(void)
 			pbuf += count;
 		}
 
-		addr = blk->bb_blkaddr;
-
-		ret = dev_write(
-			erofs_blk_buf, BLKNO_TO_ADDR(addr), EROFS_BLKSIZE);
+		ret = dev_write(erofs_blk_buf,
+				blknr_to_addr(blk->bb_blkaddr), EROFS_BLKSIZE);
 		if (ret)
 			break;
 	}

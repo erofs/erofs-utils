@@ -29,7 +29,7 @@
 
 static struct erofs_super_block erosb = {
 	.magic     = cpu_to_le32(EROFS_SUPER_MAGIC_V1),
-	.blkszbits = EROFS_BLOCK_SIZE_SHIFT_BITS,
+	.blkszbits = LOG_BLOCK_SIZE,
 	.root_nid  = cpu_to_le16(ROOT_INODE_NUM),
 	.inos   = 0,
 	.blocks = 0,
@@ -128,7 +128,7 @@ void mkfs_update_erofs_header(u64 root_addr)
 		sb->build_time_nsec = cpu_to_le32(t.tv_usec);
 	}
 
-	sb->meta_blkaddr = cpu_to_le32(ADDR_TO_BLKNO(size));
+	sb->meta_blkaddr = cpu_to_le32(erofs_blknr(size));
 	sb->blocks       = cpu_to_le32(erofs_get_total_blocks());
 	sb->root_nid     = cpu_to_le16(mkfs_addr_to_nid(root_addr));
 
@@ -163,7 +163,7 @@ int main(int argc, char **argv)
 	if (err)
 		goto exit;
 
-	err = erofs_cache_init(ADDR_TO_BLKNO(BLK_ALIGN(EROFS_SUPER_END)));
+	err = erofs_cache_init(erofs_blknr(BLK_ALIGN(EROFS_SUPER_END)));
 	if (err)
 		goto exit;
 

@@ -437,7 +437,7 @@ static int erofs_compress_noinline_file_data(struct erofs_compr_info *cinfo,
 		else
 			cross = end - start;
 
-		clusterofs = pos % PAGE_SIZE;
+		clusterofs = pos % EROFS_BLKSIZE;
 		delta = 0;
 
 		/*
@@ -508,7 +508,7 @@ int erofs_write_compress_data(struct erofs_compr_ctx *cctx)
 	if (!blkaddr)
 		return -ENOSPC;
 
-	ret = dev_write(cctx->cc_dstbuf, BLKNO_TO_ADDR(blkaddr),
+	ret = dev_write(cctx->cc_dstbuf, blknr_to_addr(blkaddr),
 			cctx->cc_dstlen);
 
 	if (ret)

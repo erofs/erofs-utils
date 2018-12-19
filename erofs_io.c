@@ -155,8 +155,7 @@ int dev_write_block(void *buf, u32 blkaddr)
 {
 	erofs_info("Write data to block %u", blkaddr);
 
-	return dev_write(buf, ((off64_t)blkaddr) << EROFS_BLOCKSIZE_BITS,
-			 EROFS_BLKSIZE);
+	return dev_write(buf, blknr_to_addr(blkaddr), EROFS_BLKSIZE);
 }
 
 int dev_fsync(void)

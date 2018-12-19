@@ -38,9 +38,9 @@ u32 erofs_calc_inode_base_size(struct erofs_node_info *inode)
 	u32 size;
 
 	if (inode->i_iver == EROFS_INODE_LAYOUT_V1)
-		size = EROFS_INODE_V1_SIZE;
+		size = sizeof(struct erofs_inode_v1);
 	else
-		size = EROFS_INODE_V2_SIZE;
+		size = sizeof(struct erofs_inode_v2);
 
 	return size;
 }
@@ -184,7 +184,7 @@ void mkfs_rank_inode(struct erofs_node_info *inode)
 	node->m_slot = blk->bb_free_slot;
 	node->m_len  = round_up(request_size, EROFS_SLOTSIZE);
 	list_add_tail(&node->m_node, &blk->bb_metadata_list);
-	inode->i_base_addr = BLKNO_TO_ADDR(blk->bb_blkaddr) +
+	inode->i_base_addr = blknr_to_addr(blk->bb_blkaddr) +
 			     blk->bb_free_slot * EROFS_SLOTSIZE;
 	blk->bb_free_slot += node->m_len / EROFS_SLOTSIZE;
 	next = list_next_entry(blk, bb_global_node);
@@ -392,7 +392,7 @@ static int mkfs_write_inode_dir(struct erofs_node_info *inode)
 
 				write_dirents(pbuf, sum, start, pos);
 				ret = dev_write(pbuf,
-						BLKNO_TO_ADDR(addr),
+						blknr_to_addr(addr),
 						EROFS_BLKSIZE);
 				if (ret < 0) {
 					erofs_err(
@@ -443,7 +443,7 @@ static int mkfs_write_inode_dir(struct erofs_node_info *inode)
 
 				write_dirents(pbuf, sum, start, pos);
 				dev_write(pbuf,
-					  BLKNO_TO_ADDR(addr),
+					  blknr_to_addr(addr),
 					  EROFS_BLKSIZE);
 				if (ret < 0) {
 					erofs_err(
@@ -468,8 +468,8 @@ static int mkfs_write_inode_dir(struct erofs_node_info *inode)
 			const u32 addr = inode->i_blkaddr + blk_cnt;
 
 			write_dirents(pbuf, sum, start, pos);
-			ret = dev_write(
-				pbuf, BLKNO_TO_ADDR(addr), EROFS_BLKSIZE);
+			ret = dev_write(pbuf, blknr_to_addr(addr),
+					EROFS_BLKSIZE);
 			if (ret < 0) {
 				erofs_err("dev_write inode[%s] error[%s]",
 					  inode->i_fullpath,
@@ -534,8 +534,8 @@ static int mkfs_write_inode_regfile(struct erofs_node_info *inode)
 
 			addr = inode->i_blkaddr + i;
 
-			ret = dev_write(
-				pbuf, BLKNO_TO_ADDR(addr), EROFS_BLKSIZE);
+			ret = dev_write(pbuf, blknr_to_addr(addr),
+					EROFS_BLKSIZE);
 			if (ret < 0) {
 				erofs_err("dev_write inode[%s] ret[%d]",
 					  filepath,
@@ -585,7 +585,7 @@ static int mkfs_write_inode_regfile(struct erofs_node_info *inode)
 				addr = inode->i_blkaddr + i;
 
 				ret = dev_write(pbuf,
-						BLKNO_TO_ADDR(addr),
+						blknr_to_addr(addr),
 						EROFS_BLKSIZE);
 				if (ret < 0) {
 					erofs_err("dev_write inode[%s] ret[%d]",
@@ -655,8 +655,8 @@ static int mkfs_write_inode_symfile(struct erofs_node_info *inode)
 			return -errno;
 		}
 
-		ret = dev_write(
-			pbuf, BLKNO_TO_ADDR(inode->i_blkaddr), EROFS_BLKSIZE);
+		ret = dev_write(pbuf, blknr_to_addr(inode->i_blkaddr),
+				EROFS_BLKSIZE);
 		if (ret < 0) {
 			erofs_err("dev_write inode[%s] error[%s]",
 				  inode->i_fullpath,
@@ -775,7 +775,7 @@ static int erofs_do_write_inode_buffer(struct erofs_node_info *inode, char *buf)
 		}
 
 		v1->i_checksum = 0;
-		return EROFS_INODE_V1_SIZE;
+		return sizeof(*v1);
 	}
 
 	v2 = (struct erofs_inode_v2 *)buf;
@@ -811,7 +811,7 @@ static int erofs_do_write_inode_buffer(struct erofs_node_info *inode, char *buf)
 	}
 
 	v2->i_checksum = 0;
-	return EROFS_INODE_V2_SIZE;
+	return sizeof(*v2);
 }
 
 int erofs_write_inode_buffer(struct erofs_node_info *inode, char *buf)
