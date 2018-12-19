@@ -107,11 +107,6 @@ static void mkfs_parse_options_cfg(int argc, char *argv[])
 	erofs_compress_alg_init(erofs_cfg.c_alg_name);
 
 	mkfs_dump_config();
-
-	if (dev_open(erofs_cfg.c_img_path) < 0) {
-		erofs_err("dev_open is failed!!!");
-		usage(argv[0]);
-	}
 }
 
 void mkfs_update_erofs_header(u64 root_addr)
@@ -155,6 +150,12 @@ int main(int argc, char **argv)
 
 	mkfs_init_configure();
 	mkfs_parse_options_cfg(argc, argv);
+
+	err = dev_open(erofs_cfg.c_img_path);
+	if (err) {
+		usage(argv[0]);
+		return -1;
+	}
 
 	proot_node = mkfs_prepare_root_inode(erofs_cfg.c_src_path);
 	if (!proot_node)
