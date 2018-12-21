@@ -390,6 +390,7 @@ static int mkfs_write_inode_dir(struct erofs_node_info *inode)
 			    EROFS_BLKSIZE) {
 				const u32 blkaddr = inode->i_blkaddr + blk_cnt;
 
+				memset(pbuf, 0, EROFS_BLKSIZE);
 				write_dirents(pbuf, sum, start, pos);
 				ret = blk_write(pbuf, blkaddr);
 				if (ret < 0) {
@@ -411,8 +412,10 @@ static int mkfs_write_inode_dir(struct erofs_node_info *inode)
 
 		/* write last page names */
 		if (start != pos) {
-			s32 len = write_dirents(pbuf, sum, start, pos);
+			s32 len;
 
+			memset(pbuf, 0, EROFS_BLKSIZE);
+			len = write_dirents(pbuf, sum, start, pos);
 			inode->i_inline_data    = pbuf;
 			inode->i_inline_datalen = len;
 		}
@@ -438,6 +441,7 @@ static int mkfs_write_inode_dir(struct erofs_node_info *inode)
 			    EROFS_BLKSIZE) {
 				const u32 blkaddr = inode->i_blkaddr + blk_cnt;
 
+				memset(pbuf, 0, EROFS_BLKSIZE);
 				write_dirents(pbuf, sum, start, pos);
 				blk_write(pbuf, blkaddr);
 				if (ret < 0) {
@@ -461,6 +465,7 @@ static int mkfs_write_inode_dir(struct erofs_node_info *inode)
 		if (start != pos) {
 			const u32 blkaddr = inode->i_blkaddr + blk_cnt;
 
+			memset(pbuf, 0, EROFS_BLKSIZE);
 			write_dirents(pbuf, sum, start, pos);
 			ret = blk_write(pbuf, blkaddr);
 			if (ret < 0) {
