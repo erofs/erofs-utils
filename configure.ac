@@ -6,7 +6,7 @@ AC_INIT([mkfs.erofs], [0.0.1], [bluce.liguifu@huawei.com])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR(config)
 AM_INIT_AUTOMAKE([foreign -Wall -Werror])
-AC_CONFIG_SRCDIR([mkfs_main.c])
+AC_CONFIG_SRCDIR([mkfs/mkfs_main.c])
 AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.
@@ -98,5 +98,6 @@ if test "x${have_lz4}" = "x0" ; then
   AC_MSG_ERROR([Cannot build without lz4])
 fi
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile
+		 mkfs/Makefile])
 AC_OUTPUT
