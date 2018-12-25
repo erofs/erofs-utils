@@ -9,7 +9,7 @@
 #ifndef CONFIG_EROFS_MKFS_INODE_H
 #define CONFIG_EROFS_MKFS_INODE_H
 
-#include "list_head.h"
+#include <erofs/list.h>
 #include "erofs_cache.h"
 #include "mkfs_file.h"
 

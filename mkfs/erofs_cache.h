@@ -9,7 +9,7 @@
 #ifndef __EROFS_CACHE_H__
 #define __EROFS_CACHE_H__
 #include "mkfs_erofs.h"
-#include "list_head.h"
+#include <erofs/list.h>
 
 enum erofs_meta_type {
 	EROFS_META_INODE,

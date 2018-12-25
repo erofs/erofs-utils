@@ -28,7 +28,7 @@
 #define O_BINARY 0
 #endif
 #include "erofs_types.h"
-#include "list_head.h"
+#include <erofs/list.h>
 #include "erofs_cache.h"
 #include "erofs_compressor.h"
 

@@ -14,7 +14,7 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <unistd.h>
-#include "list_head.h"
+#include <erofs/list.h>
 #include "mkfs_erofs.h"
 
 #define FILE_TYPE_NONE (0)

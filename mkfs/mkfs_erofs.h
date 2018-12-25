@@ -11,7 +11,7 @@
 #define __EROFS_MKFS_H
 
 #include <linux/limits.h>
-#include "list_head.h"
+#include <erofs/list.h>
 #include "erofs_types.h"
 
 typedef unsigned int __u32;
