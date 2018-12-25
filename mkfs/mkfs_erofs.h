@@ -12,7 +12,6 @@
 
 #include <linux/limits.h>
 #include <erofs/list.h>
-#include "erofs_types.h"
 
 typedef unsigned int __u32;
 

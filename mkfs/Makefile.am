@@ -19,7 +19,6 @@ noinst_HEADERS = erofs_config.h  \
 		 mkfs_erofs.h \
 		 erofs_compressor.h \
 		 erofs_io.h \
-		 erofs_types.h \
 		 mkfs_file.h
 
 mkfs_erofs_CFLAGS = -Wall -Werror -DEROFS_MKFS_VERSION=\"v1.0\" -I$(top_srcdir)/include

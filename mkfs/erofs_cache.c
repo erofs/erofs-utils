@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <errno.h>
 
-#include "erofs_types.h"
+#include <erofs/defs.h>
 #include "erofs_cache.h"
 #include "erofs_error.h"
 #include "erofs_debug.h"

@@ -76,7 +76,18 @@ AC_ARG_WITH(lz4,
   ])
 
 # Checks for header files.
-AC_CHECK_HEADERS([fcntl.h inttypes.h limits.h stddef.h stdint.h stdlib.h string.h sys/time.h unistd.h])
+AC_CHECK_HEADERS(m4_flatten([
+	fcntl.h
+	inttypes.h
+	linux/types.h
+	limits.h
+	stddef.h
+	stdint.h
+	stdlib.h
+	string.h
+	sys/time.h
+	unistd.h
+]))
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
