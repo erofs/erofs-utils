@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "config.h"
 #include "erofs_config.h"
 #include "erofs_debug.h"
 
@@ -19,7 +20,7 @@ void mkfs_init_configure(void)
 	memset(&erofs_cfg, 0, sizeof(erofs_cfg));
 	erofs_cfg.c_alg_name = "none";
 	erofs_cfg.c_dbg_lvl  = 0;
-	erofs_cfg.c_version  = EROFS_MKFS_VERSION "   " __DATE__ " " __TIME__;
+	erofs_cfg.c_version  = PACKAGE_VERSION "   " __DATE__ " " __TIME__;
 }
 
 void mkfs_dump_config(void)

@@ -6,8 +6,8 @@
  *             http://www.huawei.com/
  * Created by Li Guifu <bluce.liguifu@huawei.com>
  */
-#ifndef __EROFS_CONFIG_H
-#define __EROFS_CONFIG_H
+#ifndef __EROFS_MKFS_CONFIG_H
+#define __EROFS_MKFS_CONFIG_H
 
 /* workaround of a lz4 native compression issue, which can crash the program */
 /* #define EROFS_CONFIG_COMPR_MAX_SZ        (1024 * 1024) */
