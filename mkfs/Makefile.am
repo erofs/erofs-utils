@@ -22,7 +22,6 @@ noinst_HEADERS = erofs_config.h  \
 		 mkfs_file.h
 
 mkfs_erofs_CFLAGS = -Wall -Werror -I$(top_srcdir)/include
-ACLOCAL_AMFLAGS = -I m4
 
 if SUPPORT_LARG_FILE_AT_BIT32
     mkfs_erofs_CFLAGS += -D_FILE_OFFSET_BITS=64
