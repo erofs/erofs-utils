@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([mkfs.erofs], [0.1], [bluce.liguifu@huawei.com])
+AC_INIT([erofs-utils], [0.1], [bluce.liguifu@huawei.com])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR(config)
 AM_INIT_AUTOMAKE([foreign -Wall -Werror])
