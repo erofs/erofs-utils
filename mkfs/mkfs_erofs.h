@@ -37,7 +37,7 @@ typedef unsigned int __u32;
 #define MAX_NID_INDEX_PER_BLK   (EROFS_BLKSIZE / EROFS_SLOTSIZE)
 
 typedef u64 erofs_off_t;
-
+typedef u64 erofs_nid_t;
 /* data type for filesystem-wide blocks number */
 typedef u32 erofs_blk_t;
 
