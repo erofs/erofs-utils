@@ -62,16 +62,16 @@ struct erofs_compr_info {
 	int ci_lvl;
 };
 
-struct erofs_node_info;
+struct erofs_vnode;
 
-struct erofs_node_info *alloc_erofs_node(void);
-struct erofs_node_info *erofs_init_inode(char *full_path_name);
-int list_add_sort(struct list_head *head, struct erofs_node_info *entry);
+struct erofs_vnode *alloc_erofs_node(void);
+struct erofs_vnode *erofs_init_inode(char *full_path_name);
+int list_add_sort(struct list_head *head, struct erofs_vnode *entry);
 void dump_inode(struct erofs_inode_v1 *inode);
-int erofs_create_files_list(struct erofs_node_info *entry);
-u32 erofs_calc_inline_data_size(struct erofs_node_info *inode);
-int erofs_check_compressible(struct erofs_node_info *inode);
-int erofs_compress_file(struct erofs_node_info *inode);
+int erofs_create_files_list(struct erofs_vnode *entry);
+u32 erofs_calc_inline_data_size(struct erofs_vnode *inode);
+int erofs_check_compressible(struct erofs_vnode *inode);
+int erofs_compress_file(struct erofs_vnode *inode);
 void erofs_dump_compr_radio(void);
 int erofs_init_compress_context(struct erofs_compr_ctx *ctx);
 void erofs_deinit_compress_context(struct erofs_compr_ctx *ctx);

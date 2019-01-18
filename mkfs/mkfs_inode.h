@@ -28,7 +28,7 @@ struct erofs_index_info {
 	struct z_erofs_vle_decompressed_index i_idxs[0];
 };
 
-struct erofs_node_info {
+struct erofs_vnode {
 	struct erofs_meta_node i_meta_node;
 
 	/* Original member */
@@ -72,12 +72,12 @@ struct erofs_node_info {
 	struct erofs_index_info *i_compr_cur_index_info;
 };
 
-struct erofs_node_info *mkfs_prepare_root_inode(char *root);
-int mkfs_relocate_sub_inodes(struct erofs_node_info *droot);
-int mkfs_do_write_inodes_data(struct erofs_node_info *droot);
+struct erofs_vnode *mkfs_prepare_root_inode(char *root);
+int mkfs_relocate_sub_inodes(struct erofs_vnode *droot);
+int mkfs_do_write_inodes_data(struct erofs_vnode *droot);
 u64 mkfs_addr_to_nid(u64 addr);
-int erofs_write_inode_buffer(struct erofs_node_info *inode, char *buf);
+int erofs_write_inode_buffer(struct erofs_vnode *inode, char *buf);
 int erofs_write_index_buffer(struct erofs_index_info *index, char *buf);
-u8 erofs_check_disk_inode_version(struct erofs_node_info *inode);
+u8 erofs_check_disk_inode_version(struct erofs_vnode *inode);
 
 #endif

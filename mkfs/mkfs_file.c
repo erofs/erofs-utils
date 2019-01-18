@@ -90,11 +90,11 @@ static inline u32 new_encode_dev(dev_t dev)
 	return (minor & 0xff) | (major << 8) | ((minor & ~0xff) << 12);
 }
 
-struct erofs_node_info *erofs_init_inode(char *full_path_name)
+struct erofs_vnode *erofs_init_inode(char *full_path_name)
 {
 	int ret;
 	struct stat64 st;
-	struct erofs_node_info *inode = NULL;
+	struct erofs_vnode *inode = NULL;
 	char *file_name		      = NULL;
 
 	file_name = strrchr(full_path_name, '/');
@@ -154,7 +154,7 @@ Err_alloc:
 	return NULL;
 }
 
-int erofs_create_files_list(struct erofs_node_info *inode)
+int erofs_create_files_list(struct erofs_vnode *inode)
 {
 	int ret    = 0;
 	u64 d_size = 0;
@@ -163,7 +163,7 @@ int erofs_create_files_list(struct erofs_node_info *inode)
 	struct stat64 s;
 	struct dirent *dp;
 	struct list_head *pos;
-	struct erofs_node_info *dl;
+	struct erofs_vnode *dl;
 
 	if (!strncmp(inode->i_name, "lost+found", strlen("lost+found")))
 		return 0;
@@ -221,8 +221,8 @@ int erofs_create_files_list(struct erofs_node_info *inode)
 	}
 
 	list_for_each(pos, &inode->i_subdir_head) {
-		struct erofs_node_info *d =
-			container_of(pos, struct erofs_node_info, i_list);
+		struct erofs_vnode *d =
+			container_of(pos, struct erofs_vnode, i_list);
 		if (((d_size & (EROFS_BLKSIZE - 1)) + EROFS_DIRENT_SIZE +
 		     strlen(d->i_name)) > EROFS_BLKSIZE) {
 			d_size = round_up(d_size, EROFS_BLKSIZE);
@@ -232,8 +232,8 @@ int erofs_create_files_list(struct erofs_node_info *inode)
 	inode->i_size = d_size;
 
 	list_for_each(pos, &inode->i_subdir_head) {
-		struct erofs_node_info *d =
-			container_of(pos, struct erofs_node_info, i_list);
+		struct erofs_vnode *d =
+			container_of(pos, struct erofs_vnode, i_list);
 		if (d->i_type == EROFS_FT_DIR) {
 			ret = erofs_create_files_list(d);
 			if (ret < 0)
@@ -247,7 +247,7 @@ error:
 	return ret;
 }
 
-int list_add_sort(struct list_head *head, struct erofs_node_info *inode)
+int list_add_sort(struct list_head *head, struct erofs_vnode *inode)
 {
 	struct list_head *pos;
 
@@ -257,8 +257,8 @@ int list_add_sort(struct list_head *head, struct erofs_node_info *inode)
 	}
 
 	list_for_each(pos, head) {
-		struct erofs_node_info *d =
-			container_of(pos, struct erofs_node_info, i_list);
+		struct erofs_vnode *d =
+			container_of(pos, struct erofs_vnode, i_list);
 
 		if (strcmp(d->i_name, inode->i_name) <= 0)
 			continue;
@@ -271,9 +271,9 @@ int list_add_sort(struct list_head *head, struct erofs_node_info *inode)
 	return 0;
 }
 
-struct erofs_node_info *alloc_erofs_node(void)
+struct erofs_vnode *alloc_erofs_node(void)
 {
-	struct erofs_node_info *f = calloc(sizeof(struct erofs_node_info), 1);
+	struct erofs_vnode *f = calloc(sizeof(struct erofs_vnode), 1);
 
 	if (!f) {
 		erofs_err("calloc failed!!!");
@@ -519,7 +519,7 @@ int erofs_write_compress_data(struct erofs_compr_ctx *cctx)
 	return 0;
 }
 
-int erofs_update_indexes(struct erofs_node_info *inode,
+int erofs_update_indexes(struct erofs_vnode *inode,
 			 struct erofs_compr_ctx *cctx)
 {
 	u64 index = cctx->cc_pos / EROFS_BLKSIZE;
@@ -580,7 +580,7 @@ search_next_index_info:
 	return 0;
 }
 
-int erofs_compress_file(struct erofs_node_info *inode)
+int erofs_compress_file(struct erofs_vnode *inode)
 {
 	int fd = -1;
 	size_t read_count;
@@ -764,7 +764,7 @@ close_file:
 	return ret;
 }
 
-int erofs_try_compress_file_once(struct erofs_node_info *inode,
+int erofs_try_compress_file_once(struct erofs_vnode *inode,
 				 struct erofs_compr_info *cinfo,
 				 struct erofs_compr_ctx *cctx)
 {
@@ -838,7 +838,7 @@ close_file:
 	return ret;
 }
 
-static int erofs_get_node_compress_info(struct erofs_node_info *inode,
+static int erofs_get_node_compress_info(struct erofs_vnode *inode,
 					struct erofs_compr_info *cinfo)
 {
 	/* Get specified compress algorithm which is set in the config file */
@@ -903,7 +903,7 @@ void erofs_reset_compress_context(struct erofs_compr_ctx *ctx)
 	       ctx->cc_buflen / EROFS_BLKSIZE * sizeof(struct erofs_compr_idx));
 }
 
-int erofs_check_compressible(struct erofs_node_info *inode)
+int erofs_check_compressible(struct erofs_vnode *inode)
 {
 	struct erofs_compr_info cinfo;
 	struct erofs_compr_ctx ctx;

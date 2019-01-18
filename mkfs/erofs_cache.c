@@ -137,7 +137,7 @@ int erofs_flush_all_blocks(void)
 {
 	struct block_buffer *blk;
 	struct erofs_meta_node *node;
-	struct erofs_node_info *inode;
+	struct erofs_vnode *inode;
 	struct erofs_index_info *index;
 	char *erofs_blk_buf;
 	char *pbuf;
@@ -155,7 +155,7 @@ int erofs_flush_all_blocks(void)
 		list_for_each_entry(node, &blk->bb_metadata_list, m_node) {
 			switch (node->m_type) {
 			case EROFS_META_INODE:
-				inode = (struct erofs_node_info *)node;
+				inode = (struct erofs_vnode *)node;
 
 				count = erofs_write_inode_buffer(inode, pbuf);
 				break;

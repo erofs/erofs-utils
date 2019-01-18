@@ -33,7 +33,7 @@
 
 extern struct erofs_super_block *sb;
 
-u32 erofs_calc_inode_base_size(struct erofs_node_info *inode)
+u32 erofs_calc_inode_base_size(struct erofs_vnode *inode)
 {
 	u32 size;
 
@@ -45,7 +45,7 @@ u32 erofs_calc_inode_base_size(struct erofs_node_info *inode)
 	return size;
 }
 
-u32 erofs_calc_inline_data_size(struct erofs_node_info *inode)
+u32 erofs_calc_inline_data_size(struct erofs_vnode *inode)
 {
 	u32 size = erofs_calc_inode_base_size(inode);
 
@@ -55,12 +55,12 @@ u32 erofs_calc_inline_data_size(struct erofs_node_info *inode)
 		return (EROFS_BLKSIZE - size);
 }
 
-static inline u64 erofs_calc_compr_index_count(struct erofs_node_info *inode)
+static inline u64 erofs_calc_compr_index_count(struct erofs_vnode *inode)
 {
 	return round_up(inode->i_size, EROFS_BLKSIZE) / EROFS_BLKSIZE;
 }
 
-static int erofs_calc_inline_compr_index_count(struct erofs_node_info *inode)
+static int erofs_calc_inline_compr_index_count(struct erofs_vnode *inode)
 {
 	int size;
 
@@ -77,7 +77,7 @@ static int erofs_calc_inline_compr_index_count(struct erofs_node_info *inode)
 	return size / EROFS_DECOMPR_IDX_SZ;
 }
 
-u8 erofs_check_disk_inode_version(struct erofs_node_info *inode)
+u8 erofs_check_disk_inode_version(struct erofs_vnode *inode)
 {
 #if 1
 	(void)inode;
@@ -95,7 +95,7 @@ u8 erofs_check_disk_inode_version(struct erofs_node_info *inode)
 #endif
 }
 
-static void erofs_init_compress_inode(struct erofs_node_info *inode)
+static void erofs_init_compress_inode(struct erofs_vnode *inode)
 {
 	int inlined_nidxs;
 
@@ -122,7 +122,7 @@ static void erofs_init_compress_inode(struct erofs_node_info *inode)
 	inode->i_inline_align_size = EROFS_INLINE_INDEX_ALIGN_SIZE;
 }
 
-void mkfs_rank_inode(struct erofs_node_info *inode)
+void mkfs_rank_inode(struct erofs_vnode *inode)
 {
 	block_buffer_t *blk;
 	block_buffer_t *next;
@@ -233,21 +233,21 @@ void mkfs_rank_inode(struct erofs_node_info *inode)
 	}
 }
 
-struct erofs_node_info *mkfs_prepare_root_inode(char *root)
+struct erofs_vnode *mkfs_prepare_root_inode(char *root)
 {
 	if (!root)
 		return NULL;
 	return erofs_init_inode(root);
 }
 
-int mkfs_relocate_sub_inodes(struct erofs_node_info *inode)
+int mkfs_relocate_sub_inodes(struct erofs_vnode *inode)
 {
 	int ret;
 	int compressible;
 	u32 blkaddr;
 	u32 nblocks;
 	u32 unaligned;
-	struct erofs_node_info *d = inode;
+	struct erofs_vnode *d = inode;
 
 	switch (d->i_type) {
 	case EROFS_FT_REG_FILE:
@@ -327,8 +327,8 @@ static u32 write_dirents(char *buf, u32 sum, struct list_head *start,
 	base_nameoff = sum * EROFS_DIRENT_SIZE;
 	start_tmp    = start;
 	while (start_tmp != end) {
-		struct erofs_node_info *d =
-			container_of(start_tmp, struct erofs_node_info, i_list);
+		struct erofs_vnode *d =
+			container_of(start_tmp, struct erofs_vnode, i_list);
 		u32 name_len = strlen(d->i_name);
 
 		d->i_nameoff = base_nameoff;
@@ -339,8 +339,8 @@ static u32 write_dirents(char *buf, u32 sum, struct list_head *start,
 
 	start_tmp = start;
 	while (start_tmp != end) {
-		struct erofs_node_info *d =
-			container_of(start_tmp, struct erofs_node_info, i_list);
+		struct erofs_vnode *d =
+			container_of(start_tmp, struct erofs_vnode, i_list);
 		memset(&dirent, 0, EROFS_DIRENT_SIZE);
 
 		dirent.nid = cpu_to_le64(mkfs_addr_to_nid(d->i_base_addr));
@@ -354,7 +354,7 @@ static u32 write_dirents(char *buf, u32 sum, struct list_head *start,
 
 	return base_nameoff;
 }
-static int mkfs_write_inode_dir(struct erofs_node_info *inode)
+static int mkfs_write_inode_dir(struct erofs_vnode *inode)
 {
 	struct list_head *pos;
 	struct list_head *start;
@@ -380,10 +380,10 @@ static int mkfs_write_inode_dir(struct erofs_node_info *inode)
 		}
 
 		list_for_each(pos, &inode->i_subdir_head) {
-			struct erofs_node_info *d;
+			struct erofs_vnode *d;
 			u32 len;
 
-			d   = container_of(pos, struct erofs_node_info, i_list);
+			d   = container_of(pos, struct erofs_vnode, i_list);
 			len = strlen(d->i_name);
 
 			if (dentrys_size + EROFS_DIRENT_SIZE + len >
@@ -432,10 +432,10 @@ static int mkfs_write_inode_dir(struct erofs_node_info *inode)
 		}
 
 		list_for_each(pos, &inode->i_subdir_head) {
-			struct erofs_node_info *d;
+			struct erofs_vnode *d;
 			u32 len;
 
-			d   = container_of(pos, struct erofs_node_info, i_list);
+			d   = container_of(pos, struct erofs_vnode, i_list);
 			len = strlen(d->i_name);
 			if (dentrys_size + EROFS_DIRENT_SIZE + len >
 			    EROFS_BLKSIZE) {
@@ -487,7 +487,7 @@ static int mkfs_write_inode_dir(struct erofs_node_info *inode)
 	return 0;
 }
 
-static int mkfs_write_inode_regfile(struct erofs_node_info *inode)
+static int mkfs_write_inode_regfile(struct erofs_vnode *inode)
 {
 	char *pbuf     = NULL;
 	int ret	= 0;
@@ -620,7 +620,7 @@ static int mkfs_write_inode_regfile(struct erofs_node_info *inode)
 	return 0;
 }
 
-static int mkfs_write_inode_symfile(struct erofs_node_info *inode)
+static int mkfs_write_inode_symfile(struct erofs_vnode *inode)
 {
 	char *pbuf = NULL;
 	int ret    = 0;
@@ -683,7 +683,7 @@ static int mkfs_write_inode_symfile(struct erofs_node_info *inode)
 	return 0;
 }
 
-int mkfs_do_write_inodes_data(struct erofs_node_info *inode)
+int mkfs_do_write_inodes_data(struct erofs_vnode *inode)
 {
 	int ret;
 	struct list_head *pos;
@@ -714,9 +714,9 @@ int mkfs_do_write_inodes_data(struct erofs_node_info *inode)
 
 	if (!list_empty(&inode->i_subdir_head)) {
 		list_for_each(pos, &inode->i_subdir_head) {
-			struct erofs_node_info *d;
+			struct erofs_vnode *d;
 
-			d   = container_of(pos, struct erofs_node_info, i_list);
+			d   = container_of(pos, struct erofs_vnode, i_list);
 			ret = mkfs_do_write_inodes_data(d);
 			if (ret)
 				return ret;
@@ -726,7 +726,7 @@ int mkfs_do_write_inodes_data(struct erofs_node_info *inode)
 	return 0;
 }
 
-static int erofs_do_write_inode_buffer(struct erofs_node_info *inode, char *buf)
+static int erofs_do_write_inode_buffer(struct erofs_vnode *inode, char *buf)
 {
 	struct erofs_inode_v1 *v1;
 	struct erofs_inode_v2 *v2;
@@ -801,7 +801,7 @@ static int erofs_do_write_inode_buffer(struct erofs_node_info *inode, char *buf)
 	return sizeof(*v2);
 }
 
-int erofs_write_inode_buffer(struct erofs_node_info *inode, char *buf)
+int erofs_write_inode_buffer(struct erofs_vnode *inode, char *buf)
 {
 	char *pbuf = buf;
 	int count  = 0;

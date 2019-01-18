@@ -146,7 +146,7 @@ void mkfs_update_erofs_header(u64 root_addr)
 int main(int argc, char **argv)
 {
 	int err = 0;
-	struct erofs_node_info *proot_node = NULL;
+	struct erofs_vnode *proot_node = NULL;
 
 	mkfs_init_configure();
 	mkfs_parse_options_cfg(argc, argv);
