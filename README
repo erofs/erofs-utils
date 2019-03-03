@@ -21,8 +21,14 @@ How to build with lz4 static library
 	./configure --with-lz4=<lz4 install path>
 eg. if lz4 lib has been installed into fold of /usr/local/lib
 	./configure --with-lz4=/usr/local/lib && make
-Maybe you should run this first:
-	./autogen.sh
+On Fedora, static lz4 can be installed using:
+	yum install lz4-static.x86_64
+To build you should run this first:
+	$ ./autogen.sh
+	$ ./configure
+	$ make
+
+mkfs.erofs binary will be generated under mkfs folder.
 
 Usage:
 $ ./mkfs.erofs
@@ -35,7 +41,61 @@ Usage:
  -d -- set debugging level <dbglvl>
  -z -- enable <compr_algri> compression (only lz4hc is supported)
 
- target path, source directory are both needed.
+ Target path, source directory are both needed.
+
+Specimen Usage:
+1) Create a temporary Disk
+$ dd if=/dev/zero of=erofs_disk bs=512 count=23000
+
+2) Create and populate source directory
+$ mkdir -p srcd
+
+Our sample source directory contents
+$ ls -ali srcd/
+total 44
+425555 drwxr-xr-x 2 root root  4096 Feb 23 06:55 .
+425533 drwxr-xr-x 9 root root  4096 Feb 26 06:54 ..
+422789 -rw-r--r-- 1 root root     0 Feb 22 14:52 ChangeLog
++422793 -rw-r--r-- 1 root root  3195 Feb 23 06:55 configure.ac
++422794 -rw-r--r-- 1 root root 25763 Feb 23 06:55 Makefile
++422796 -rw-r--r-- 1 root root  1879 Feb 23 06:55 README
+
+3) Run mkfs.erofs
+ ./mkfs/mkfs.erofs ./erofs_disk ./srcd/
+        c_version:           [0.1   Feb 22 2019 14:13:38]
+        c_img_path:          [./erofs_disk]
+        c_src_path:          [/root/arshad/erofs-utils/srcd]
+        c_dbg_lvl:           [       0]
+        c_dry_run:           [       0]
+        c_alg_name:          [    none]
+        c_compr_maxsz:       [  921600]
+        c_compr_lvl:         [       0]
+        c_compr_boundary:    [     128]
+        c_compr_ratio_limit: [     100]
+
+4) Load erofs.ko module
+$ insmod drivers/staging/erofs/erofs.ko
+
+5) Mount erofs_disk image
+$ mount -t erofs erofs_disk /mnt/vg1 -o loop
+
+6) Check FS type mount reports
+$ mount | grep erofs
+/root/arshad/erofs-utils/erofs_disk on /mnt/vg1 type erofs ro,relatime,user_xattr,acl)
+
+7) Check the contents of the mounted FS
+$ ls -ali /mnt/vg1/
+total 31
+  4 -rw-r--r-- 1 root root     0 Feb 23 06:55 ChangeLog
+896 -rw-r--r-- 1 root root  3195 Feb 23 06:55 configure.ac
+  5 -rw-r--r-- 1 root root 25763 Feb 23 06:55 Makefile
+ 44 -rw-r--r-- 1 root root  1879 Feb 23 06:55 README
+
+8) Umount /mnt/vg1
+$ umount /mnt/vg1
+
+9) Unload erofs module
+$ rmmod erofs
 
 To:
   linux-erofs mailing list   <linux-erofs@lists.ozlabs.org>
