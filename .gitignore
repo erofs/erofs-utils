@@ -1,0 +1,25 @@
+.*
+*~
+*.diff
+*.o
+*.la
+*.a
+*.patch
+*.rej
+
+#
+# Generated files
+#
+aclocal.m4
+autom4te.cache
+config.*
+Makefile
+Makefile.in
+config/
+m4/
+configure
+configure.scan
+libtool
+stamp-h
+stamp-h1
+
