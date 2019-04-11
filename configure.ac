@@ -103,5 +103,6 @@ AC_CHECK_DECL(lseek64,[AC_DEFINE(HAVE_LSEEK64_PROTOTYPE, 1,
 AC_CHECK_FUNCS([gettimeofday memset realpath strdup strerror strrchr strtoull])
 
 AC_CONFIG_FILES([Makefile
-		 lib/Makefile])
+		 lib/Makefile
+		 mkfs/Makefile])
 AC_OUTPUT
