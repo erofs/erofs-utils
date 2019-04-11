@@ -1,0 +1,100 @@
+erofs-utils
+===========
+
+erofs-utils includes user-space tools for erofs filesystem images.
+Currently only mkfs.erofs is available.
+
+mkfs.erofs
+----------
+
+It can create 2 primary kinds of erofs images: (un)compressed.
+
+ - For compressed images, it's able to use several compression
+   algorithms, but lz4(hc) are only supported due to the current
+   linux kernel implementation.
+
+ - For uncompressed images, it can decide whether the last page of
+   a file should be inlined or not properly [1].
+
+Dependencies
+~~~~~~~~~~~~
+
+ lz4-1.8.0+ for lz4 enabled [2], lz4-1.9.0+ recommended
+
+How to build for lz4-1.9.0 or above
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To build you can run the following commands in order:
+
+::
+
+	$ ./autogen.sh
+	$ ./configure
+	$ make
+
+mkfs.erofs binary will be generated under mkfs folder.
+
+How to build for lz4-1.8.0~1.8.3
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For these old lz4 versions, lz4hc algorithm cannot be supported without
+lz4 static libary due to LZ4_compress_HC_destSize unstable api usage,
+which means only lz4 algrithm is available if lz4 static library isn't found.
+
+On Fedora, static lz4 can be installed using:
+
+	yum install lz4-static.x86_64
+
+However, it's not recommended to use those versions since there was a bug
+in these compressors, see [2] as well.
+
+How to generate erofs images
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Currently lz4 and lz4hc are available for compression, e.g.
+ $ mkfs.erofs -zlz4hc foo.erofs.img foo/
+
+Or leave all files uncompressed as a option:
+ $ mkfs.erofs foo.erofs.img foo/
+
+Obsoleted erofs.mkfs
+~~~~~~~~~~~~~~~~~~~~
+
+There is an original erofs.mkfs version developped by Li Guifu,
+which was replaced by the new erofs-utils implementation.
+
+git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b obsoleted_mkfs
+
+It may still be useful since new erofs-utils has not been widely used in
+commercial products. However, if that happens, please report bug to us
+as well.
+
+Contribution
+------------
+
+erofs-utils is a GPLv2+ project as a part of erofs file system,
+feel free to send patches or feedback to us.
+
+To:
+  linux-erofs mailing list   <linux-erofs@lists.ozlabs.org>
+  Li Guifu                   <bluce.liguifu@huawei.com>
+  Miao Xie                   <miaoxie@huawei.com>
+  Fang Wei                   <fangwei1@huawei.com>
+
+Cc:
+  Gao Xiang                  <gaoxiang25@huawei.com>
+  Chao Yu                    <yuchao0@huawei.com>
+
+Comments
+--------
+
+[1] According to the erofs on-disk format, the last page of files could
+    be inlined aggressively with its metadata in order to reduce the I/O
+    overhead and save the storage space.
+
+[2] There was a bug until lz4-1.8.3, which can crash erofs-utils randomly.
+    Fortunately bugfix by our colleague Qiuyang Sun was merged in lz4-1.9.0.
+
+    For more details, please refer to
+    https://github.com/lz4/lz4/commit/660d21272e4c8a0f49db5fc1e6853f08713dff82
+

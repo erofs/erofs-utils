@@ -1,0 +1,9 @@
+EROFS USERSPACE UTILITIES
+M: Li Guifu <bluce.liguifu@huawei.com>
+M: Miao Xie <miaoxie@huawei.com>
+M: Fang Wei <fangwei1@huawei.com>
+R: Gao Xiang <gaoxiang25@huawei.com>
+R: Chao Yu <yuchao0@huawei.com>
+S: Maintained
+L: linux-erofs@lists.ozlabs.org
+
