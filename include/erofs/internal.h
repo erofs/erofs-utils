@@ -108,6 +108,14 @@ struct erofs_dentry {
 	};
 };
 
+static inline bool is_dot_dotdot(const char *name)
+{
+	if (name[0] != '.')
+		return false;
+
+	return name[1] == '\0' || (name[1] == '.' && name[2] == '\0');
+}
+
 #include <stdio.h>
 #include <string.h>
 
