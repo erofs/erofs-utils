@@ -50,7 +50,22 @@ AC_DEFUN([EROFS_UTILS_PARSE_DIRECTORY],
  fi
 ])
 
+AC_ARG_ENABLE(lz4,
+   [AS_HELP_STRING([--disable-lz4], [disable LZ4 compression support @<:@default=enabled@:>@])],
+   [enable_lz4="$enableval"], [enable_lz4="yes"])
+
 # Checks for libraries.
+# Use customized LZ4 library path when specified.
+AC_ARG_WITH(lz4-incdir,
+   [AS_HELP_STRING([--with-lz4-incdir=DIR], [LZ4 include directory])], [
+   EROFS_UTILS_PARSE_DIRECTORY(["$withval"],[withval])])
+
+AC_ARG_WITH(lz4-libdir,
+   [AS_HELP_STRING([--with-lz4-libdir=DIR], [LZ4 lib directory])], [
+   EROFS_UTILS_PARSE_DIRECTORY(["$withval"],[withval])])
+
+AC_ARG_VAR([LZ4_CFLAGS], [C compiler flags for lz4])
+AC_ARG_VAR([LZ4_LIBS], [linker flags for lz4])
 
 # Checks for header files.
 AC_CHECK_HEADERS(m4_flatten([
@@ -102,7 +117,57 @@ AC_CHECK_DECL(lseek64,[AC_DEFINE(HAVE_LSEEK64_PROTOTYPE, 1,
 # Checks for library functions.
 AC_CHECK_FUNCS([gettimeofday memset realpath strdup strerror strrchr strtoull])
 
+# Configure lz4
+test -z $LZ4_LIBS && LZ4_LIBS='-llz4'
+
+if test "x$enable_lz4" = "xyes"; then
+  test -z "${with_lz4_incdir}" || LZ4_CFLAGS="-I$with_lz4_incdir $LZ4_CFLAGS"
+  test -z "${with_lz4_libdir}" || LZ4_LIBS="-L$with_lz4_libdir $LZ4_LIBS"
+
+  saved_CPPFLAGS=${CPPFLAGS}
+  CPPFLAGS="${LZ4_CFLAGS} ${CFLAGS}"
+
+  AC_CHECK_HEADERS([lz4.h],[have_lz4h="yes"], [])
+
+  if test "x${have_lz4h}" = "xyes" ; then
+    saved_LDFLAGS=${LDFLAGS}
+    LDFLAGS="-L$with_lz4_libdir ${LDFLAGS}"
+    AC_CHECK_LIB(lz4, LZ4_compress_destSize, [
+      have_lz4="yes"
+      have_lz4hc="yes"
+      AC_CHECK_LIB(lz4, LZ4_compress_HC_destSize, [], [
+        AC_CHECK_DECL(LZ4_compress_HC_destSize, [lz4_force_static="yes"],
+          [have_lz4hc="no"], [[
+#define LZ4_HC_STATIC_LINKING_ONLY (1)
+#include <lz4hc.h>
+        ]])
+      ])
+    ], [AC_MSG_ERROR([Cannot find proper lz4 version (>= 1.8.0)])])
+    LDFLAGS=${saved_LDFLAGS}
+
+    if test "x${have_lz4}" = "xyes"; then
+      AC_DEFINE([LZ4_ENABLED], [1], [Define to 1 if lz4 is enabled.])
+
+      if test "x${have_lz4hc}" = "xyes"; then
+        AC_DEFINE([LZ4HC_ENABLED], [1], [Define to 1 if lz4hc is enabled.])
+      fi
+
+      if test "x${lz4_force_static}" = "xyes"; then
+        LDFLAGS="-all-static ${LDFLAGS}"
+      else
+	test -z "${with_lz4_libdir}" || LZ4_LIBS="-R ${with_lz4_libdir} $LZ4_LIBS"
+      fi
+      LIBS="$LZ4_LIBS $LIBS"
+    fi
+  fi
+  CFLAGS=${saved_CPPFLAGS}
+fi
+
+AM_CONDITIONAL([ENABLE_LZ4], [test "x${have_lz4}" = "xyes"])
+AM_CONDITIONAL([ENABLE_LZ4HC], [test "x${have_lz4hc}" = "xyes"])
+
 AC_CONFIG_FILES([Makefile
 		 lib/Makefile
 		 mkfs/Makefile])
 AC_OUTPUT
+

@@ -40,6 +40,12 @@ int erofs_compressor_init(struct erofs_compress *c,
 			  char *alg_name)
 {
 	static struct erofs_compressor *compressors[] = {
+#if LZ4_ENABLED
+#if LZ4HC_ENABLED
+		&erofs_compressor_lz4hc,
+#endif
+		&erofs_compressor_lz4,
+#endif
 	};
 
 	int ret, i;

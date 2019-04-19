@@ -35,7 +35,13 @@ struct erofs_compress {
 	unsigned int destsize_alignsize;
 	unsigned int destsize_redzone_begin;
 	unsigned int destsize_redzone_end;
+
+	void *private_data;
 };
+
+/* list of compression algorithms */
+extern struct erofs_compressor erofs_compressor_lz4;
+extern struct erofs_compressor erofs_compressor_lz4hc;
 
 int erofs_compress_destsize(struct erofs_compress *c, int compression_level,
 			    void *src, unsigned int *srcsize,
