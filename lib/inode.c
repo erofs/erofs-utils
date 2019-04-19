@@ -17,6 +17,7 @@
 #include "erofs/inode.h"
 #include "erofs/cache.h"
 #include "erofs/io.h"
+#include "erofs/compress.h"
 
 struct erofs_sb_info sbi;
 
@@ -301,8 +302,11 @@ int erofs_write_file(struct erofs_inode *inode)
 	unsigned int nblocks, i;
 	int ret, fd;
 
-	if (erofs_file_is_compressible(inode)) {
-		/* to be implemented */
+	if (cfg.c_compr_alg_master && erofs_file_is_compressible(inode)) {
+		ret = erofs_write_compressed_file(inode);
+
+		if (!ret || ret != -ENOSPC)
+			return ret;
 	}
 
 	/* fallback to all data uncompressed */
@@ -355,7 +359,7 @@ fail:
 static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 {
 	struct erofs_inode *const inode = bh->fsprivate;
-	const erofs_off_t off = erofs_btell(bh, false);
+	erofs_off_t off = erofs_btell(bh, false);
 
 	/* let's support v1 currently */
 	struct erofs_inode_v1 v1 = {0};
@@ -392,6 +396,15 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 	ret = dev_write(&v1, off, sizeof(struct erofs_inode_v1));
 	if (ret)
 		return false;
+	off += inode->inode_isize;
+
+	if (inode->extent_isize) {
+		/* write compression metadata */
+		off = Z_EROFS_VLE_EXTENT_ALIGN(off);
+		ret = dev_write(inode->compressmeta, off, inode->extent_isize);
+		if (ret)
+			return false;
+	}
 
 	inode->bh = NULL;
 	erofs_iput(inode);

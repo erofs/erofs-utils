@@ -93,6 +93,7 @@ struct erofs_inode {
 	struct erofs_buffer_head *bh_inline, *bh_data;
 
 	void *idata;
+	void *compressmeta;
 };
 
 #define IS_ROOT(x)	((x) == (x)->i_parent)

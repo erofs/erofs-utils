@@ -18,6 +18,7 @@ void erofs_init_configure(void)
 	cfg.c_dbg_lvl  = 0;
 	cfg.c_version  = PACKAGE_VERSION;
 	cfg.c_dry_run  = false;
+	cfg.c_compr_level_master = -1;
 }
 
 void erofs_show_config(void)
