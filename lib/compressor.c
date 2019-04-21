@@ -27,13 +27,13 @@ int erofs_compress_destsize(struct erofs_compress *c,
 
 	ret = c->alg->compress_destsize(c, compression_level,
 					src, srcsize, dst, dstsize);
-	if (ret)
+	if (ret < 0)
 		return ret;
 
 	/* check if there is enough gains to compress */
 	if (*srcsize <= dstsize * c->compress_threshold / 100)
 		return -EAGAIN;
-	return 0;
+	return ret;
 }
 
 int erofs_compressor_init(struct erofs_compress *c,

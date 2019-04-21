@@ -21,7 +21,7 @@ static int lz4_compress_destsize(struct erofs_compress *c,
 	if (!rc)
 		return -EFAULT;
 	*srcsize = srcSize;
-	return 0;
+	return rc;
 }
 
 static int compressor_lz4_exit(struct erofs_compress *c)
