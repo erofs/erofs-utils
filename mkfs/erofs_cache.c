@@ -142,7 +142,7 @@ int erofs_flush_all_blocks(void)
 	char *erofs_blk_buf;
 	char *pbuf;
 	int count;
-	int ret;
+	int ret = 0;
 
 	erofs_blk_buf = malloc(EROFS_BLKSIZE);
 	if (!erofs_blk_buf)
