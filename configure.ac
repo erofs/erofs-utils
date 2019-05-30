@@ -98,7 +98,6 @@ AC_CHECK_MEMBERS([struct stat.st_rdev])
 AC_TYPE_UINT64_T
 
 # Checks for library functions.
-AC_FUNC_MALLOC
 AC_CHECK_FUNCS([ftruncate getcwd gettimeofday memset realpath strdup strerror strrchr strtoull])
 
 # Configure lz4.
