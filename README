@@ -19,8 +19,8 @@ Dependencies
 
 How to build with lz4 static library
 	./configure --with-lz4=<lz4 install path>
-eg. if lz4 lib has been installed into fold of /usr/local/lib
-	./configure --with-lz4=/usr/local/lib && make
+eg. if lz4 has been installed into fold of /usr/local
+	./configure --with-lz4=/usr/local && make
 On Fedora, static lz4 can be installed using:
 	yum install lz4-static.x86_64
 To build you should run this first:
