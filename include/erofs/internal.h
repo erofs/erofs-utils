@@ -96,6 +96,11 @@ struct erofs_inode {
 	void *compressmeta;
 };
 
+static inline bool is_inode_layout_compression(struct erofs_inode *inode)
+{
+	return erofs_inode_is_data_compressed(inode->data_mapping_mode);
+}
+
 #define IS_ROOT(x)	((x) == (x)->i_parent)
 
 struct erofs_dentry {

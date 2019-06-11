@@ -179,7 +179,7 @@ int erofs_prepare_dir_file(struct erofs_inode *dir)
 	dir->i_size = d_size;
 
 	/* no compression for all dirs */
-	dir->data_mapping_mode = EROFS_INODE_LAYOUT_INLINE;
+	dir->data_mapping_mode = EROFS_INODE_FLAT_INLINE;
 
 	/* allocate dir main data */
 	ret = __allocate_inode_bh_data(dir, erofs_blknr(d_size));
@@ -274,7 +274,7 @@ int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 	const unsigned int nblocks = erofs_blknr(inode->i_size);
 	int ret;
 
-	inode->data_mapping_mode = EROFS_INODE_LAYOUT_INLINE;
+	inode->data_mapping_mode = EROFS_INODE_FLAT_INLINE;
 
 	ret = __allocate_inode_bh_data(inode, nblocks);
 	if (ret)
@@ -310,7 +310,7 @@ int erofs_write_file(struct erofs_inode *inode)
 	}
 
 	/* fallback to all data uncompressed */
-	inode->data_mapping_mode = EROFS_INODE_LAYOUT_INLINE;
+	inode->data_mapping_mode = EROFS_INODE_FLAT_INLINE;
 	nblocks = inode->i_size / EROFS_BLKSIZ;
 
 	ret = __allocate_inode_bh_data(inode, nblocks);
@@ -384,7 +384,7 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		break;
 
 	default:
-		if (inode->data_mapping_mode == EROFS_INODE_LAYOUT_COMPRESSION)
+		if (is_inode_layout_compression(inode))
 			v1.i_u.compressed_blocks =
 				cpu_to_le32(inode->u.i_blocks);
 		else
@@ -454,21 +454,21 @@ int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 	inodesize = inode->inode_isize + inode->xattr_isize +
 		    inode->extent_isize;
 
-	if (inode->data_mapping_mode == EROFS_INODE_LAYOUT_COMPRESSION)
+	if (is_inode_layout_compression(inode))
 		goto noinline;
 
 	/*
 	 * if the file size is block-aligned for uncompressed files,
-	 * should use EROFS_INODE_LAYOUT_PLAIN data mapping mode.
+	 * should use EROFS_INODE_FLAT_PLAIN data mapping mode.
 	 */
 	if (!inode->idata_size)
-		inode->data_mapping_mode = EROFS_INODE_LAYOUT_PLAIN;
+		inode->data_mapping_mode = EROFS_INODE_FLAT_PLAIN;
 
 	bh = erofs_balloc(INODE, inodesize, 0, inode->idata_size);
 	if (bh == ERR_PTR(-ENOSPC)) {
 		int ret;
 
-		inode->data_mapping_mode = EROFS_INODE_LAYOUT_PLAIN;
+		inode->data_mapping_mode = EROFS_INODE_FLAT_PLAIN;
 noinline:
 		/* expend an extra block for tail-end data */
 		ret = erofs_prepare_tail_block(inode);
@@ -481,7 +481,7 @@ noinline:
 	} else if (IS_ERR(bh)) {
 		return PTR_ERR(bh);
 	} else if (inode->idata_size) {
-		inode->data_mapping_mode = EROFS_INODE_LAYOUT_INLINE;
+		inode->data_mapping_mode = EROFS_INODE_FLAT_INLINE;
 
 		/* allocate inline buffer */
 		ibh = erofs_battach(bh, META, inode->idata_size);

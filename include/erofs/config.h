@@ -15,6 +15,7 @@ struct erofs_configure {
 	const char *c_version;
 	int c_dbg_lvl;
 	bool c_dry_run;
+	bool c_legacy_compress;
 
 	/* related arguments for mkfs.erofs */
 	char *c_img_path;
