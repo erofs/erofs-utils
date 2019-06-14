@@ -51,6 +51,8 @@ struct erofs_buffer_head;
 struct erofs_sb_info {
 	erofs_blk_t meta_blkaddr;
 	erofs_blk_t xattr_blkaddr;
+
+	u32 requirements;
 };
 
 /* global sbi */

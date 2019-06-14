@@ -113,6 +113,36 @@ static void vle_write_indexes(struct z_erofs_vle_compress_ctx *ctx,
 	ctx->clusterofs = clusterofs + count;
 }
 
+static int write_uncompressed_block(struct z_erofs_vle_compress_ctx *ctx,
+				    unsigned int *len,
+				    char *dst)
+{
+	int ret;
+	unsigned int count;
+
+	if (!(sbi.requirements & EROFS_REQUIREMENT_LZ4_0PADDING)) {
+		/* fix up clusterofs to 0 if possable */
+		if (ctx->head >= ctx->clusterofs) {
+			ctx->head -= ctx->clusterofs;
+			*len += ctx->clusterofs;
+			ctx->clusterofs = 0;
+		}
+	}
+
+	/* write uncompressed data */
+	count = min(EROFS_BLKSIZ, *len);
+
+	memcpy(dst, ctx->queue + ctx->head, count);
+	memset(dst + count, 0, EROFS_BLKSIZ - count);
+
+	erofs_dbg("Writing %u uncompressed data to block %u",
+		  count, ctx->blkaddr);
+	ret = blk_write(dst, ctx->blkaddr, 1);
+	if (ret)
+		return ret;
+	return count;
+}
+
 static int vle_compress_one(struct erofs_inode *inode,
 			    struct z_erofs_vle_compress_ctx *ctx,
 			    bool final)
@@ -121,7 +151,8 @@ static int vle_compress_one(struct erofs_inode *inode,
 	unsigned int len = ctx->tail - ctx->head;
 	unsigned int count;
 	int ret;
-	char dst[EROFS_BLKSIZ];
+	static char dstbuf[EROFS_BLKSIZ * 2];
+	char *const dst = dstbuf + EROFS_BLKSIZ;
 
 	while (len) {
 		bool raw;
@@ -143,32 +174,22 @@ static int vle_compress_one(struct erofs_inode *inode,
 					  erofs_strerror(ret));
 			}
 nocompression:
-			/* fix up clusterofs to 0 if possable */
-			if (ctx->head >= ctx->clusterofs) {
-				ctx->head -= ctx->clusterofs;
-				len += ctx->clusterofs;
-				ctx->clusterofs = 0;
-			}
-
-			/* write uncompressed data */
-			count = min(EROFS_BLKSIZ, len);
-
-			memcpy(dst, ctx->queue + ctx->head, count);
-			memset(dst + count, 0, EROFS_BLKSIZ - count);
-
-			erofs_dbg("Writing %u uncompressed data to block %u",
-				  count, ctx->blkaddr);
-
-			ret = blk_write(dst, ctx->blkaddr, 1);
-			if (ret)
+			ret = write_uncompressed_block(ctx, &len, dst);
+			if (ret < 0)
 				return ret;
+			count = ret;
 			raw = true;
 		} else {
 			/* write compressed data */
 			erofs_dbg("Writing %u compressed data to block %u",
 				  count, ctx->blkaddr);
 
-			ret = blk_write(dst, ctx->blkaddr, 1);
+			if (sbi.requirements & EROFS_REQUIREMENT_LZ4_0PADDING)
+				ret = blk_write(dst - (EROFS_BLKSIZ - ret),
+						ctx->blkaddr, 1);
+			else
+				ret = blk_write(dst, ctx->blkaddr, 1);
+
 			if (ret)
 				return ret;
 			raw = false;
