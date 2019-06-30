@@ -72,6 +72,7 @@ AC_CHECK_HEADERS(m4_flatten([
 	dirent.h
 	fcntl.h
 	inttypes.h
+	linux/falloc.h
 	linux/types.h
 	limits.h
 	stddef.h
@@ -115,7 +116,7 @@ AC_CHECK_DECL(lseek64,[AC_DEFINE(HAVE_LSEEK64_PROTOTYPE, 1,
    #include <unistd.h>])
 
 # Checks for library functions.
-AC_CHECK_FUNCS([gettimeofday memset realpath strdup strerror strrchr strtoull])
+AC_CHECK_FUNCS([fallocate gettimeofday memset realpath strdup strerror strrchr strtoull])
 
 # Configure lz4
 test -z $LZ4_LIBS && LZ4_LIBS='-llz4'

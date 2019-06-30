@@ -19,6 +19,7 @@
 int dev_open(const char *devname);
 void dev_close(void);
 int dev_write(const void *buf, u64 offset, size_t len);
+int dev_fillzero(u64 offset, size_t len);
 int dev_fsync(void);
 u64 dev_length(void);
 

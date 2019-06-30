@@ -274,7 +274,6 @@ erofs_blk_t erofs_mapbh(struct erofs_buffer_block *bb, bool end)
 
 bool erofs_bflush(struct erofs_buffer_block *bb)
 {
-	static const char zero[EROFS_BLKSIZ] = {0};
 	struct erofs_buffer_block *p, *n;
 	erofs_blk_t blkaddr;
 
@@ -304,8 +303,8 @@ bool erofs_bflush(struct erofs_buffer_block *bb)
 
 		padding = EROFS_BLKSIZ - p->buffers.off % EROFS_BLKSIZ;
 		if (padding != EROFS_BLKSIZ)
-			dev_write(zero, blknr_to_addr(blkaddr) - padding,
-				  padding);
+			dev_fillzero(blknr_to_addr(blkaddr) - padding,
+				     padding);
 
 		DBG_BUGON(!list_empty(&p->buffers.list));
 

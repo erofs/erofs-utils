@@ -7,8 +7,12 @@
  * Created by Li Guifu <bluce.liguifu@huawei.com>
  */
 #define _LARGEFILE64_SOURCE
+#define _GNU_SOURCE
 #include <sys/stat.h>
 #include "erofs/io.h"
+#ifdef HAVE_LINUX_FALLOC_H
+#include <linux/falloc.h>
+#endif
 
 #define pr_fmt(fmt) "EROFS IO: " FUNC_LINE_FMT fmt "\n"
 #include "erofs/print.h"
@@ -108,6 +112,29 @@ int dev_write(const void *buf, u64 offset, size_t len)
 		return -ERANGE;
 	}
 	return 0;
+}
+
+int dev_fillzero(u64 offset, size_t len)
+{
+	static const char zero[EROFS_BLKSIZ] = {0};
+	int ret;
+
+	if (cfg.c_dry_run)
+		return 0;
+
+#if defined(HAVE_FALLOCATE) && defined(FALLOC_FL_PUNCH_HOLE)
+	if (fallocate(erofs_devfd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
+		      offset, len) >= 0)
+		return 0;
+#endif
+	while (len > EROFS_BLKSIZ) {
+		ret = dev_write(zero, offset, EROFS_BLKSIZ);
+		if (ret)
+			return ret;
+		len -= EROFS_BLKSIZ;
+		offset += EROFS_BLKSIZ;
+	}
+	return dev_write(zero, offset, len);
 }
 
 int dev_fsync(void)
