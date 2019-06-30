@@ -304,7 +304,7 @@ bool erofs_bflush(struct erofs_buffer_block *bb)
 		padding = EROFS_BLKSIZ - p->buffers.off % EROFS_BLKSIZ;
 		if (padding != EROFS_BLKSIZ)
 			dev_fillzero(blknr_to_addr(blkaddr) - padding,
-				     padding);
+				     padding, true);
 
 		DBG_BUGON(!list_empty(&p->buffers.list));
 

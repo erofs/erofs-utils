@@ -114,7 +114,7 @@ int dev_write(const void *buf, u64 offset, size_t len)
 	return 0;
 }
 
-int dev_fillzero(u64 offset, size_t len)
+int dev_fillzero(u64 offset, size_t len, bool padding)
 {
 	static const char zero[EROFS_BLKSIZ] = {0};
 	int ret;
@@ -123,8 +123,8 @@ int dev_fillzero(u64 offset, size_t len)
 		return 0;
 
 #if defined(HAVE_FALLOCATE) && defined(FALLOC_FL_PUNCH_HOLE)
-	if (fallocate(erofs_devfd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
-		      offset, len) >= 0)
+	if (!padding && fallocate(erofs_devfd, FALLOC_FL_PUNCH_HOLE |
+				  FALLOC_FL_KEEP_SIZE, offset, len) >= 0)
 		return 0;
 #endif
 	while (len > EROFS_BLKSIZ) {

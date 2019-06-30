@@ -537,14 +537,20 @@ int erofs_write_tail_end(struct erofs_inode *inode)
 		ibh->op = &erofs_write_inline_bhops;
 	} else {
 		int ret;
+		erofs_off_t pos;
 
 		erofs_mapbh(bh->block, true);
-		ret = dev_write(inode->idata,
-				erofs_btell(bh, true) - EROFS_BLKSIZ,
-				inode->idata_size);
+		pos = erofs_btell(bh, true) - EROFS_BLKSIZ;
+		ret = dev_write(inode->idata, pos, inode->idata_size);
 		if (ret)
 			return ret;
-
+		if (inode->idata_size < EROFS_BLKSIZ) {
+			ret = dev_fillzero(pos + inode->idata_size,
+					   EROFS_BLKSIZ - inode->idata_size,
+					   false);
+			if (ret)
+				return ret;
+		}
 		inode->idata_size = 0;
 		free(inode->idata);
 		inode->idata = NULL;
