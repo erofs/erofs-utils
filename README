@@ -57,6 +57,17 @@ Currently lz4 and lz4hc are available for compression, e.g.
 Or leave all files uncompressed as a option:
  $ mkfs.erofs foo.erofs.img foo/
 
+How to generate legacy erofs images
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Decompression inplace and compacted indexes have been introduced in
+linux-5.3, which are not backward-compatible with older kernels.
+
+In order to generate _legacy_ erofs images for old kernels,
+add "-E legacy-compress" to the command line, e.g.
+
+ $ mkfs.erofs -E legacy-compress -zlz4hc foo.erofs.img foo/
+
 Obsoleted erofs.mkfs
 ~~~~~~~~~~~~~~~~~~~~
 

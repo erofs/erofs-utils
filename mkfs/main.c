@@ -27,6 +27,7 @@ static void usage(void)
 	fprintf(stderr, "Generate erofs image from DIRECTORY to FILE, and [options] are:\n");
 	fprintf(stderr, " -zX[,Y]   X=compressor (Y=compression level, optional)\n");
 	fprintf(stderr, " -d#       set output message level to # (maximum 9)\n");
+	fprintf(stderr, " -EX[,...] X=extended options\n");
 }
 
 u64 parse_num_from_str(const char *str)
@@ -39,11 +40,55 @@ u64 parse_num_from_str(const char *str)
 	return num;
 }
 
+static int parse_extended_opts(const char *opts)
+{
+#define MATCH_EXTENTED_OPT(opt, token, keylen) \
+	(keylen == sizeof(opt) && !memcmp(token, opt, sizeof(opt)))
+
+	const char *token, *next, *tokenend, *value __maybe_unused;
+	unsigned int keylen, vallen;
+
+	value = NULL;
+	for (token = opts; *token != '\0'; token = next) {
+		const char *p = strchr(token, ',');
+
+		next = NULL;
+		if (p)
+			next = p + 1;
+		else {
+			p = token + strlen(token);
+			next = p;
+		}
+
+		tokenend = memchr(token, '=', p - token);
+		if (tokenend) {
+			keylen = tokenend - token;
+			vallen = p - tokenend - 1;
+			if (!vallen)
+				return -EINVAL;
+
+			value = tokenend + 1;
+		} else {
+			keylen = p - token;
+			vallen = 0;
+		}
+
+		if (MATCH_EXTENTED_OPT("legacy-compress", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			/* disable compacted indexes and 0padding */
+			cfg.c_legacy_compress = true;
+			sbi.requirements &= ~EROFS_REQUIREMENT_LZ4_0PADDING;
+		}
+	}
+	return 0;
+}
+
 static int mkfs_parse_options_cfg(int argc, char *argv[])
 {
 	int opt, i;
 
-	while ((opt = getopt(argc, argv, "d:z:")) != -1) {
+	while ((opt = getopt(argc, argv, "d:z:E:")) != -1) {
 		switch (opt) {
 		case 'z':
 			if (!optarg) {
@@ -64,6 +109,12 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 
 		case 'd':
 			cfg.c_dbg_lvl = parse_num_from_str(optarg);
+			break;
+
+		case 'E':
+			opt = parse_extended_opts(optarg);
+			if (opt)
+				return opt;
 			break;
 
 		default: /* '?' */

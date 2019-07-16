@@ -155,5 +155,9 @@ typedef int64_t         s64;
 #define DBG_BUGON(condition)	BUG_ON(condition)
 #endif
 
+#ifndef __maybe_unused
+#define __maybe_unused      __attribute__((__unused__))
+#endif
+
 #endif
 
