@@ -212,6 +212,12 @@ int main(int argc, char **argv)
 	erofs_show_config();
 
 	sb_bh = erofs_buffer_init();
+	if (IS_ERR(sb_bh)) {
+		err = PTR_ERR(sb_bh);
+		erofs_err("Failed to initialize buffers: %s",
+			  erofs_strerror(err));
+		goto exit;
+	}
 	err = erofs_bh_balloon(sb_bh, EROFS_SUPER_END);
 	if (err < 0) {
 		erofs_err("Failed to balloon erofs_super_block: %s",
@@ -254,5 +260,5 @@ exit:
 			  erofs_strerror(err));
 		return 1;
 	}
-	return err;
+	return 0;
 }
