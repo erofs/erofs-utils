@@ -9,7 +9,11 @@
 #define _LARGEFILE64_SOURCE
 #define _GNU_SOURCE
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include "erofs/io.h"
+#ifdef HAVE_LINUX_FS_H
+#include <linux/fs.h>
+#endif
 #ifdef HAVE_LINUX_FALLOC_H
 #include <linux/falloc.h>
 #endif
@@ -20,6 +24,26 @@
 static const char *erofs_devname;
 static int erofs_devfd = -1;
 static u64 erofs_devsz;
+
+int dev_get_blkdev_size(int fd, u64 *bytes)
+{
+	errno = ENOTSUP;
+#ifdef BLKGETSIZE64
+	if (ioctl(fd, BLKGETSIZE64, bytes) >= 0)
+		return 0;
+#endif
+
+#ifdef BLKGETSIZE
+	{
+		unsigned long size;
+		if (ioctl(fd, BLKGETSIZE, &size) >= 0) {
+			*bytes = ((u64)size << 9);
+			return 0;
+		}
+	}
+#endif
+	return -errno;
+}
 
 void dev_close(void)
 {
@@ -49,7 +73,12 @@ int dev_open(const char *dev)
 
 	switch (st.st_mode & S_IFMT) {
 	case S_IFBLK:
-		erofs_devsz = st.st_size;
+		ret = dev_get_blkdev_size(fd, &erofs_devsz);
+		if (ret) {
+			erofs_err("failed to get block device size(%s).", dev);
+			close(fd);
+			return ret;
+		}
 		break;
 	case S_IFREG:
 		ret = ftruncate(fd, 0);
