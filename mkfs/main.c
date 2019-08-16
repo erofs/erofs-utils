@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <libgen.h>
+#include <sys/stat.h>
 #include "erofs/config.h"
 #include "erofs/print.h"
 #include "erofs/cache.h"
@@ -187,6 +188,7 @@ int main(int argc, char **argv)
 	struct erofs_buffer_head *sb_bh;
 	struct erofs_inode *root_inode;
 	erofs_nid_t root_nid;
+	struct stat64 st;
 
 	erofs_init_configure();
 	fprintf(stderr, "%s %s\n", basename(argv[0]), cfg.c_version);
@@ -195,6 +197,16 @@ int main(int argc, char **argv)
 	if (err) {
 		if (err == -EINVAL)
 			usage();
+		return 1;
+	}
+
+	err = lstat64(cfg.c_src_path, &st);
+	if (err)
+		return 1;
+	if ((st.st_mode & S_IFMT) != S_IFDIR) {
+		erofs_err("root of the filesystem is not a directory - %s",
+			  cfg.c_src_path);
+		usage();
 		return 1;
 	}
 
