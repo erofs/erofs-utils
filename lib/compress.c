@@ -16,6 +16,7 @@
 #include "erofs/cache.h"
 #include "erofs/compress.h"
 #include "compressor.h"
+#include "erofs/fuzzer.h"
 
 static struct erofs_compress compresshandle;
 static int compressionlevel;
@@ -478,6 +479,8 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 							  legacymetasize, 12);
 		DBG_BUGON(ret);
 	}
+
+	erofs_fuzz(inode->compressmeta, inode->extent_isize);
 	return 0;
 
 err_bdrop:

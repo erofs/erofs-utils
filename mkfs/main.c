@@ -19,6 +19,7 @@
 #include "erofs/inode.h"
 #include "erofs/io.h"
 #include "erofs/compress.h"
+#include "erofs/fuzzer.h"
 
 #define EROFS_SUPER_END (EROFS_SUPER_OFFSET + sizeof(struct erofs_super_block))
 
@@ -79,7 +80,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 {
 	int opt, i;
 
-	while ((opt = getopt(argc, argv, "d:z:E:")) != -1) {
+	while ((opt = getopt(argc, argv, "d:z:E:F:")) != -1) {
 		switch (opt) {
 		case 'z':
 			if (!optarg) {
@@ -113,6 +114,9 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				return opt;
 			break;
 
+		case 'F':
+			cfg.c_fuzz_trapcount = atoi(optarg);
+			break;
 		default: /* '?' */
 			return -EINVAL;
 		}
@@ -175,6 +179,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 			  erofs_strerror(-errno));
 		return -ENOMEM;
 	}
+	erofs_fuzz(&sb, sizeof(struct erofs_super_block));
 	memcpy(buf + EROFS_SUPER_OFFSET, &sb, sizeof(sb));
 
 	bh->fsprivate = buf;

@@ -14,6 +14,7 @@
 struct erofs_configure {
 	const char *c_version;
 	int c_dbg_lvl;
+	unsigned int c_fuzz_trapcount;
 	bool c_dry_run;
 	bool c_legacy_compress;
 

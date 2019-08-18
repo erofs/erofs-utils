@@ -18,6 +18,7 @@
 #include "erofs/cache.h"
 #include "erofs/io.h"
 #include "erofs/compress.h"
+#include "erofs/fuzzer.h"
 
 struct erofs_sb_info sbi;
 
@@ -213,6 +214,8 @@ static void fill_dirblock(char *buf, unsigned int size, unsigned int q,
 		head = list_next_entry(head, d_child);
 	}
 	memset(buf + q, 0, size - q);
+
+	erofs_fuzz(buf, size);
 }
 
 static int write_dirblock(unsigned int q, struct erofs_dentry *head,
@@ -392,6 +395,8 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 				cpu_to_le32(inode->u.i_blkaddr);
 		break;
 	}
+
+	erofs_fuzz(&v1, sizeof(struct erofs_inode_v1));
 
 	ret = dev_write(&v1, off, sizeof(struct erofs_inode_v1));
 	if (ret)
