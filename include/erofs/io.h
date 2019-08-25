@@ -21,6 +21,7 @@ void dev_close(void);
 int dev_write(const void *buf, u64 offset, size_t len);
 int dev_fillzero(u64 offset, size_t len, bool padding);
 int dev_fsync(void);
+int dev_resize(erofs_blk_t nblocks);
 u64 dev_length(void);
 
 static inline int blk_write(const void *buf, erofs_blk_t blkaddr,

@@ -79,6 +79,7 @@ int dev_open(const char *dev)
 			close(fd);
 			return ret;
 		}
+		erofs_devsz = round_down(erofs_devsz, EROFS_BLKSIZ);
 		break;
 	case S_IFREG:
 		ret = ftruncate(fd, 0);
@@ -98,7 +99,6 @@ int dev_open(const char *dev)
 
 	erofs_devname = dev;
 	erofs_devfd = fd;
-	erofs_devsz = round_down(erofs_devsz, EROFS_BLKSIZ);
 
 	erofs_info("successfully to open %s", dev);
 	return 0;
@@ -177,3 +177,33 @@ int dev_fsync(void)
 	}
 	return 0;
 }
+
+int dev_resize(unsigned int blocks)
+{
+	int ret;
+	struct stat st;
+	u64 length;
+
+	if (cfg.c_dry_run || erofs_devsz != INT64_MAX)
+		return 0;
+
+	ret = fstat(erofs_devfd, &st);
+	if (ret) {
+		erofs_err("failed to fstat.");
+		return -errno;
+	}
+
+	length = (u64)blocks * EROFS_BLKSIZ;
+	if (st.st_size == length)
+		return 0;
+	if (st.st_size > length)
+		return ftruncate(erofs_devfd, length);
+
+	length = length - st.st_size;
+#if defined(HAVE_FALLOCATE)
+	if (fallocate(erofs_devfd, 0, st.st_size, length) >= 0)
+		return 0;
+#endif
+	return dev_fillzero(st.st_size, length, true);
+}
+

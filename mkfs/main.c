@@ -145,7 +145,8 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 }
 
 int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
-				  erofs_nid_t root_nid)
+				  erofs_nid_t root_nid,
+				  erofs_blk_t *blocks)
 {
 	struct erofs_super_block sb = {
 		.magic     = cpu_to_le32(EROFS_SUPER_MAGIC_V1),
@@ -166,7 +167,8 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 		sb.build_time_nsec = cpu_to_le32(t.tv_usec);
 	}
 
-	sb.blocks       = cpu_to_le32(erofs_mapbh(NULL, true));
+	*blocks         = erofs_mapbh(NULL, true);
+	sb.blocks       = cpu_to_le32(*blocks);
 	sb.root_nid     = cpu_to_le16(root_nid);
 
 	buf = calloc(sb_blksize, 1);
@@ -189,6 +191,7 @@ int main(int argc, char **argv)
 	struct erofs_inode *root_inode;
 	erofs_nid_t root_nid;
 	struct stat64 st;
+	erofs_blk_t nblocks;
 
 	erofs_init_configure();
 	fprintf(stderr, "%s %s\n", basename(argv[0]), cfg.c_version);
@@ -250,13 +253,15 @@ int main(int argc, char **argv)
 	root_nid = erofs_lookupnid(root_inode);
 	erofs_iput(root_inode);
 
-	err = erofs_mkfs_update_super_block(sb_bh, root_nid);
+	err = erofs_mkfs_update_super_block(sb_bh, root_nid, &nblocks);
 	if (err)
 		goto exit;
 
 	/* flush all remaining buffers */
 	if (!erofs_bflush(NULL))
 		err = -EIO;
+	else
+		err = dev_resize(nblocks);
 exit:
 	z_erofs_compress_exit();
 	dev_close();
