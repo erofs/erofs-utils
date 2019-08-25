@@ -404,6 +404,7 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		ret = dev_write(inode->compressmeta, off, inode->extent_isize);
 		if (ret)
 			return false;
+		free(inode->compressmeta);
 	}
 
 	inode->bh = NULL;
