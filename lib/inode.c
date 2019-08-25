@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <dirent.h>
 #include "erofs/print.h"
 #include "erofs/inode.h"
@@ -128,7 +129,6 @@ static int __allocate_inode_bh_data(struct erofs_inode *inode,
 	int ret;
 
 	if (!nblocks) {
-		inode->bh_data = NULL;
 		/* it has only tail-end inlined data */
 		inode->u.i_blkaddr = NULL_ADDR;
 		return 0;
@@ -301,6 +301,11 @@ int erofs_write_file(struct erofs_inode *inode)
 {
 	unsigned int nblocks, i;
 	int ret, fd;
+
+	if (!inode->i_size) {
+		inode->data_mapping_mode = EROFS_INODE_FLAT_PLAIN;
+		return 0;
+	}
 
 	if (cfg.c_compr_alg_master && erofs_file_is_compressible(inode)) {
 		ret = erofs_write_compressed_file(inode);
@@ -573,6 +578,14 @@ out:
 	return 0;
 }
 
+static u32 erofs_new_encode_dev(dev_t dev)
+{
+	const unsigned int major = major(dev);
+	const unsigned int minor = minor(dev);
+
+	return (minor & 0xff) | (major << 8) | ((minor & ~0xff) << 12);
+}
+
 int erofs_fill_inode(struct erofs_inode *inode,
 		     struct stat64 *st,
 		     const char *path)
@@ -582,10 +595,22 @@ int erofs_fill_inode(struct erofs_inode *inode,
 	inode->i_gid = st->st_gid;
 	inode->i_nlink = 1;	/* fix up later if needed */
 
-	if (!S_ISDIR(inode->i_mode))
-		inode->i_size = st->st_size;
-	else
+	switch (inode->i_mode & S_IFMT) {
+	case S_IFCHR:
+	case S_IFBLK:
+	case S_IFIFO:
+	case S_IFSOCK:
+		inode->u.i_rdev = erofs_new_encode_dev(st->st_rdev);
+	case S_IFDIR:
 		inode->i_size = 0;
+		break;
+	case S_IFREG:
+	case S_IFLNK:
+		inode->i_size = st->st_size;
+		break;
+	default:
+		return -EINVAL;
+	}
 
 	strncpy(inode->i_srcpath, path, sizeof(inode->i_srcpath) - 1);
 	inode->i_srcpath[sizeof(inode->i_srcpath) - 1] = '\0';
@@ -613,6 +638,7 @@ struct erofs_inode *erofs_new_inode(void)
 	inode->i_count = 1;
 
 	init_list_head(&inode->i_subdirs);
+	inode->idata_size = 0;
 	inode->xattr_isize = 0;
 	inode->extent_isize = 0;
 
