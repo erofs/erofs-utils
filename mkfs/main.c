@@ -34,7 +34,7 @@ static void usage(void)
 static int parse_extended_opts(const char *opts)
 {
 #define MATCH_EXTENTED_OPT(opt, token, keylen) \
-	(keylen == sizeof(opt) && !memcmp(token, opt, sizeof(opt)))
+	(keylen == sizeof(opt) - 1 && !memcmp(token, opt, sizeof(opt) - 1))
 
 	const char *token, *next, *tokenend, *value __maybe_unused;
 	unsigned int keylen, vallen;
