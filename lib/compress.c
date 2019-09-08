@@ -457,8 +457,9 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 	ret = erofs_bh_balloon(bh, blknr_to_addr(compressed_blocks));
 	DBG_BUGON(ret);
 
-	erofs_info("compressed %s (%lu bytes) into %u blocks",
-		   inode->i_srcpath, inode->i_size, compressed_blocks);
+	erofs_info("compressed %s (%llu bytes) into %u blocks",
+		   inode->i_srcpath, (unsigned long long)inode->i_size,
+		   compressed_blocks);
 
 	/*
 	 * TODO: need to move erofs_bdrop to erofs_write_tail_end

@@ -789,8 +789,9 @@ fail:
 
 		d->type = erofs_type_by_mode[d->inode->i_mode >> S_SHIFT];
 		erofs_d_invalidate(d);
-		erofs_info("add file %s/%s (nid %lu, type %d)",
-			   dir->i_srcpath, d->name, d->nid, d->type);
+		erofs_info("add file %s/%s (nid %llu, type %d)",
+			   dir->i_srcpath, d->name, (unsigned long long)d->nid,
+			   d->type);
 	}
 	erofs_write_dir_file(dir);
 	erofs_write_tail_end(dir);
