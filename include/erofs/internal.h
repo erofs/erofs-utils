@@ -52,7 +52,7 @@ struct erofs_sb_info {
 	erofs_blk_t meta_blkaddr;
 	erofs_blk_t xattr_blkaddr;
 
-	u32 requirements;
+	u32 feature_incompat;
 };
 
 /* global sbi */
@@ -82,7 +82,7 @@ struct erofs_inode {
 
 	char i_srcpath[PATH_MAX + 1];
 
-	unsigned char data_mapping_mode;
+	unsigned char datalayout;
 	unsigned char inode_isize;
 	/* inline tail-end packing size */
 	unsigned short idata_size;
@@ -100,7 +100,7 @@ struct erofs_inode {
 
 static inline bool is_inode_layout_compression(struct erofs_inode *inode)
 {
-	return erofs_inode_is_data_compressed(inode->data_mapping_mode);
+	return erofs_inode_is_data_compressed(inode->datalayout);
 }
 
 #define IS_ROOT(x)	((x) == (x)->i_parent)

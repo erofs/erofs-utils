@@ -53,7 +53,7 @@ static inline const int get_alignsize(int type, int *type_ret)
 
 	if (type == INODE) {
 		*type_ret = META;
-		return sizeof(struct erofs_inode_v1);
+		return sizeof(struct erofs_inode_compact);
 	} else if (type == XATTR) {
 		*type_ret = META;
 		return sizeof(struct erofs_xattr_entry);

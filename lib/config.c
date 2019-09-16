@@ -21,7 +21,7 @@ void erofs_init_configure(void)
 	cfg.c_dry_run  = false;
 	cfg.c_legacy_compress = false;
 	cfg.c_compr_level_master = -1;
-	sbi.requirements = EROFS_REQUIREMENT_LZ4_0PADDING;
+	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
 }
 
 void erofs_show_config(void)

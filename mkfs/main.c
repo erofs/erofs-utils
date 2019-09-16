@@ -69,7 +69,8 @@ static int parse_extended_opts(const char *opts)
 				return -EINVAL;
 			/* disable compacted indexes and 0padding */
 			cfg.c_legacy_compress = true;
-			sbi.requirements &= ~EROFS_REQUIREMENT_LZ4_0PADDING;
+			sbi.feature_incompat &=
+				~EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
 		}
 	}
 	return 0;
@@ -155,7 +156,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 		.blocks = 0,
 		.meta_blkaddr  = sbi.meta_blkaddr,
 		.xattr_blkaddr = 0,
-		.requirements = cpu_to_le32(sbi.requirements),
+		.feature_incompat = cpu_to_le32(sbi.feature_incompat),
 	};
 	const unsigned int sb_blksize =
 		round_up(EROFS_SUPER_END, EROFS_BLKSIZ);

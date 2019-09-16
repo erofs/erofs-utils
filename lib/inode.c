@@ -179,7 +179,7 @@ int erofs_prepare_dir_file(struct erofs_inode *dir)
 	dir->i_size = d_size;
 
 	/* no compression for all dirs */
-	dir->data_mapping_mode = EROFS_INODE_FLAT_INLINE;
+	dir->datalayout = EROFS_INODE_FLAT_INLINE;
 
 	/* allocate dir main data */
 	ret = __allocate_inode_bh_data(dir, erofs_blknr(d_size));
@@ -274,7 +274,7 @@ int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 	const unsigned int nblocks = erofs_blknr(inode->i_size);
 	int ret;
 
-	inode->data_mapping_mode = EROFS_INODE_FLAT_INLINE;
+	inode->datalayout = EROFS_INODE_FLAT_INLINE;
 
 	ret = __allocate_inode_bh_data(inode, nblocks);
 	if (ret)
@@ -303,7 +303,7 @@ int erofs_write_file(struct erofs_inode *inode)
 	int ret, fd;
 
 	if (!inode->i_size) {
-		inode->data_mapping_mode = EROFS_INODE_FLAT_PLAIN;
+		inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 		return 0;
 	}
 
@@ -315,7 +315,7 @@ int erofs_write_file(struct erofs_inode *inode)
 	}
 
 	/* fallback to all data uncompressed */
-	inode->data_mapping_mode = EROFS_INODE_FLAT_INLINE;
+	inode->datalayout = EROFS_INODE_FLAT_INLINE;
 	nblocks = inode->i_size / EROFS_BLKSIZ;
 
 	ret = __allocate_inode_bh_data(inode, nblocks);
@@ -366,39 +366,39 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 	struct erofs_inode *const inode = bh->fsprivate;
 	erofs_off_t off = erofs_btell(bh, false);
 
-	/* let's support v1 currently */
-	struct erofs_inode_v1 v1 = {0};
+	/* let's support compact inode currently */
+	struct erofs_inode_compact dic = {0};
 	int ret;
 
-	v1.i_advise = cpu_to_le16(0 | (inode->data_mapping_mode << 1));
-	v1.i_mode = cpu_to_le16(inode->i_mode);
-	v1.i_nlink = cpu_to_le16(inode->i_nlink);
-	v1.i_size = cpu_to_le32((u32)inode->i_size);
+	dic.i_format = cpu_to_le16(0 | (inode->datalayout << 1));
+	dic.i_mode = cpu_to_le16(inode->i_mode);
+	dic.i_nlink = cpu_to_le16(inode->i_nlink);
+	dic.i_size = cpu_to_le32((u32)inode->i_size);
 
-	v1.i_ino = cpu_to_le32(inode->i_ino[0]);
+	dic.i_ino = cpu_to_le32(inode->i_ino[0]);
 
-	v1.i_uid = cpu_to_le16((u16)inode->i_uid);
-	v1.i_gid = cpu_to_le16((u16)inode->i_gid);
+	dic.i_uid = cpu_to_le16((u16)inode->i_uid);
+	dic.i_gid = cpu_to_le16((u16)inode->i_gid);
 
 	switch ((inode->i_mode) >> S_SHIFT) {
 	case S_IFCHR:
 	case S_IFBLK:
 	case S_IFIFO:
 	case S_IFSOCK:
-		v1.i_u.rdev = cpu_to_le32(inode->u.i_rdev);
+		dic.i_u.rdev = cpu_to_le32(inode->u.i_rdev);
 		break;
 
 	default:
 		if (is_inode_layout_compression(inode))
-			v1.i_u.compressed_blocks =
+			dic.i_u.compressed_blocks =
 				cpu_to_le32(inode->u.i_blocks);
 		else
-			v1.i_u.raw_blkaddr =
+			dic.i_u.raw_blkaddr =
 				cpu_to_le32(inode->u.i_blkaddr);
 		break;
 	}
 
-	ret = dev_write(&v1, off, sizeof(struct erofs_inode_v1));
+	ret = dev_write(&dic, off, sizeof(struct erofs_inode_compact));
 	if (ret)
 		return false;
 	off += inode->inode_isize;
@@ -468,13 +468,13 @@ int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 	 * should use EROFS_INODE_FLAT_PLAIN data mapping mode.
 	 */
 	if (!inode->idata_size)
-		inode->data_mapping_mode = EROFS_INODE_FLAT_PLAIN;
+		inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 
 	bh = erofs_balloc(INODE, inodesize, 0, inode->idata_size);
 	if (bh == ERR_PTR(-ENOSPC)) {
 		int ret;
 
-		inode->data_mapping_mode = EROFS_INODE_FLAT_PLAIN;
+		inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 noinline:
 		/* expend an extra block for tail-end data */
 		ret = erofs_prepare_tail_block(inode);
@@ -487,7 +487,7 @@ noinline:
 	} else if (IS_ERR(bh)) {
 		return PTR_ERR(bh);
 	} else if (inode->idata_size) {
-		inode->data_mapping_mode = EROFS_INODE_FLAT_INLINE;
+		inode->datalayout = EROFS_INODE_FLAT_INLINE;
 
 		/* allocate inline buffer */
 		ibh = erofs_battach(bh, META, inode->idata_size);
@@ -616,7 +616,7 @@ int erofs_fill_inode(struct erofs_inode *inode,
 	inode->i_srcpath[sizeof(inode->i_srcpath) - 1] = '\0';
 
 	inode->i_ino[1] = st->st_ino;
-	inode->inode_isize = sizeof(struct erofs_inode_v1);
+	inode->inode_isize = sizeof(struct erofs_inode_compact);
 
 	list_add(&inode->i_hash,
 		 &inode_hashtable[st->st_ino % NR_INODE_HASHTABLE]);

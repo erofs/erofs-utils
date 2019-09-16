@@ -120,7 +120,7 @@ static int write_uncompressed_block(struct z_erofs_vle_compress_ctx *ctx,
 	int ret;
 	unsigned int count;
 
-	if (!(sbi.requirements & EROFS_REQUIREMENT_LZ4_0PADDING)) {
+	if (!(sbi.feature_incompat & EROFS_FEATURE_INCOMPAT_LZ4_0PADDING)) {
 		/* fix up clusterofs to 0 if possable */
 		if (ctx->head >= ctx->clusterofs) {
 			ctx->head -= ctx->clusterofs;
@@ -184,7 +184,8 @@ nocompression:
 			erofs_dbg("Writing %u compressed data to block %u",
 				  count, ctx->blkaddr);
 
-			if (sbi.requirements & EROFS_REQUIREMENT_LZ4_0PADDING)
+			if (sbi.feature_incompat &
+			    EROFS_FEATURE_INCOMPAT_LZ4_0PADDING)
 				ret = blk_write(dst - (EROFS_BLKSIZ - ret),
 						ctx->blkaddr, 1);
 			else
@@ -382,7 +383,7 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 					      4, logical_clusterbits, true);
 	}
 	inode->extent_isize = out - (u8 *)inode->compressmeta;
-	inode->data_mapping_mode = EROFS_INODE_FLAT_COMPRESSION;
+	inode->datalayout = EROFS_INODE_FLAT_COMPRESSION;
 	return 0;
 }
 
@@ -473,7 +474,7 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 	legacymetasize = ctx.metacur - compressmeta;
 	if (cfg.c_legacy_compress) {
 		inode->extent_isize = legacymetasize;
-		inode->data_mapping_mode = EROFS_INODE_FLAT_COMPRESSION_LEGACY;
+		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION_LEGACY;
 	} else {
 		ret = z_erofs_convert_to_compacted_format(inode, blkaddr - 1,
 							  legacymetasize, 12);
