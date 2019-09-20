@@ -53,6 +53,8 @@ struct erofs_sb_info {
 	erofs_blk_t xattr_blkaddr;
 
 	u32 feature_incompat;
+	u64 build_time;
+	u32 build_time_nsec;
 };
 
 /* global sbi */

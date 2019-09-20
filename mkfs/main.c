@@ -72,6 +72,18 @@ static int parse_extended_opts(const char *opts)
 			sbi.feature_incompat &=
 				~EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
 		}
+
+		if (MATCH_EXTENTED_OPT("force-inode-compact", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			cfg.c_force_inodeversion = FORCE_INODE_COMPACT;
+		}
+
+		if (MATCH_EXTENTED_OPT("force-inode-extended", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			cfg.c_force_inodeversion = FORCE_INODE_EXTENDED;
+		}
 	}
 	return 0;
 }
@@ -153,6 +165,8 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 		.magic     = cpu_to_le32(EROFS_SUPER_MAGIC_V1),
 		.blkszbits = LOG_BLOCK_SIZE,
 		.inos   = 0,
+		.build_time = cpu_to_le64(sbi.build_time),
+		.build_time_nsec = cpu_to_le32(sbi.build_time_nsec),
 		.blocks = 0,
 		.meta_blkaddr  = sbi.meta_blkaddr,
 		.xattr_blkaddr = 0,
@@ -161,12 +175,6 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	const unsigned int sb_blksize =
 		round_up(EROFS_SUPER_END, EROFS_BLKSIZ);
 	char *buf;
-	struct timeval t;
-
-	if (!gettimeofday(&t, NULL)) {
-		sb.build_time      = cpu_to_le64(t.tv_sec);
-		sb.build_time_nsec = cpu_to_le32(t.tv_usec);
-	}
 
 	*blocks         = erofs_mapbh(NULL, true);
 	sb.blocks       = cpu_to_le32(*blocks);
@@ -193,6 +201,7 @@ int main(int argc, char **argv)
 	erofs_nid_t root_nid;
 	struct stat64 st;
 	erofs_blk_t nblocks;
+	struct timeval t;
 
 	erofs_init_configure();
 	fprintf(stderr, "%s %s\n", basename(argv[0]), cfg.c_version);
@@ -212,6 +221,11 @@ int main(int argc, char **argv)
 			  cfg.c_src_path);
 		usage();
 		return 1;
+	}
+
+	if (!gettimeofday(&t, NULL)) {
+		sbi.build_time      = t.tv_sec;
+		sbi.build_time_nsec = t.tv_usec;
 	}
 
 	err = dev_open(cfg.c_img_path);

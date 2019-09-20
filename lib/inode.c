@@ -8,6 +8,7 @@
  * with heavy changes by Gao Xiang <gaoxiang25@huawei.com>
  */
 #define _GNU_SOURCE
+#include <limits.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -365,40 +366,81 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 {
 	struct erofs_inode *const inode = bh->fsprivate;
 	erofs_off_t off = erofs_btell(bh, false);
-
-	/* let's support compact inode currently */
-	struct erofs_inode_compact dic = {0};
+	union {
+		struct erofs_inode_compact dic;
+		struct erofs_inode_extended die;
+	} u = { {0}, };
 	int ret;
 
-	dic.i_format = cpu_to_le16(0 | (inode->datalayout << 1));
-	dic.i_mode = cpu_to_le16(inode->i_mode);
-	dic.i_nlink = cpu_to_le16(inode->i_nlink);
-	dic.i_size = cpu_to_le32((u32)inode->i_size);
+	switch (inode->inode_isize) {
+	case sizeof(struct erofs_inode_compact):
+		u.dic.i_format = cpu_to_le16(0 | (inode->datalayout << 1));
+		u.dic.i_mode = cpu_to_le16(inode->i_mode);
+		u.dic.i_nlink = cpu_to_le16(inode->i_nlink);
+		u.dic.i_size = cpu_to_le32((u32)inode->i_size);
 
-	dic.i_ino = cpu_to_le32(inode->i_ino[0]);
+		u.dic.i_ino = cpu_to_le32(inode->i_ino[0]);
 
-	dic.i_uid = cpu_to_le16((u16)inode->i_uid);
-	dic.i_gid = cpu_to_le16((u16)inode->i_gid);
+		u.dic.i_uid = cpu_to_le16((u16)inode->i_uid);
+		u.dic.i_gid = cpu_to_le16((u16)inode->i_gid);
 
-	switch ((inode->i_mode) >> S_SHIFT) {
-	case S_IFCHR:
-	case S_IFBLK:
-	case S_IFIFO:
-	case S_IFSOCK:
-		dic.i_u.rdev = cpu_to_le32(inode->u.i_rdev);
+		switch ((inode->i_mode) >> S_SHIFT) {
+		case S_IFCHR:
+		case S_IFBLK:
+		case S_IFIFO:
+		case S_IFSOCK:
+			u.dic.i_u.rdev = cpu_to_le32(inode->u.i_rdev);
+			break;
+
+		default:
+			if (is_inode_layout_compression(inode))
+				u.dic.i_u.compressed_blocks =
+					cpu_to_le32(inode->u.i_blocks);
+			else
+				u.dic.i_u.raw_blkaddr =
+					cpu_to_le32(inode->u.i_blkaddr);
+			break;
+		}
 		break;
+	case sizeof(struct erofs_inode_extended):
+		u.die.i_format = cpu_to_le16(1 | (inode->datalayout << 1));
+		u.die.i_mode = cpu_to_le16(inode->i_mode);
+		u.die.i_nlink = cpu_to_le32(inode->i_nlink);
+		u.die.i_size = cpu_to_le64(inode->i_size);
 
+		u.die.i_ino = cpu_to_le32(inode->i_ino[0]);
+
+		u.die.i_uid = cpu_to_le16(inode->i_uid);
+		u.die.i_gid = cpu_to_le16(inode->i_gid);
+
+		u.die.i_ctime = cpu_to_le64(inode->i_ctime);
+		u.die.i_ctime_nsec = cpu_to_le32(inode->i_ctime_nsec);
+
+		switch ((inode->i_mode) >> S_SHIFT) {
+		case S_IFCHR:
+		case S_IFBLK:
+		case S_IFIFO:
+		case S_IFSOCK:
+			u.die.i_u.rdev = cpu_to_le32(inode->u.i_rdev);
+			break;
+
+		default:
+			if (is_inode_layout_compression(inode))
+				u.die.i_u.compressed_blocks =
+					cpu_to_le32(inode->u.i_blocks);
+			else
+				u.die.i_u.raw_blkaddr =
+					cpu_to_le32(inode->u.i_blkaddr);
+			break;
+		}
+		break;
 	default:
-		if (is_inode_layout_compression(inode))
-			dic.i_u.compressed_blocks =
-				cpu_to_le32(inode->u.i_blocks);
-		else
-			dic.i_u.raw_blkaddr =
-				cpu_to_le32(inode->u.i_blkaddr);
-		break;
+		erofs_err("unsupported on-disk inode version of nid %llu",
+			  (unsigned long long)inode->nid);
+		BUG_ON(1);
 	}
 
-	ret = dev_write(&dic, off, sizeof(struct erofs_inode_compact));
+	ret = dev_write(&u, off, inode->inode_isize);
 	if (ret)
 		return false;
 	off += inode->inode_isize;
@@ -578,6 +620,21 @@ out:
 	return 0;
 }
 
+static bool erofs_should_use_inode_extended(struct erofs_inode *inode)
+{
+	if (cfg.c_force_inodeversion == FORCE_INODE_EXTENDED)
+		return true;
+	if (inode->i_size > UINT_MAX)
+		return true;
+	if (inode->i_uid > USHRT_MAX)
+		return true;
+	if (inode->i_gid > USHRT_MAX)
+		return true;
+	if (inode->i_nlink > USHRT_MAX)
+		return true;
+	return false;
+}
+
 static u32 erofs_new_encode_dev(dev_t dev)
 {
 	const unsigned int major = major(dev);
@@ -593,6 +650,8 @@ int erofs_fill_inode(struct erofs_inode *inode,
 	inode->i_mode = st->st_mode;
 	inode->i_uid = st->st_uid;
 	inode->i_gid = st->st_gid;
+	inode->i_ctime = sbi.build_time;
+	inode->i_ctime_nsec = sbi.build_time_nsec;
 	inode->i_nlink = 1;	/* fix up later if needed */
 
 	switch (inode->i_mode & S_IFMT) {
@@ -616,7 +675,17 @@ int erofs_fill_inode(struct erofs_inode *inode,
 	inode->i_srcpath[sizeof(inode->i_srcpath) - 1] = '\0';
 
 	inode->i_ino[1] = st->st_ino;
-	inode->inode_isize = sizeof(struct erofs_inode_compact);
+
+	if (erofs_should_use_inode_extended(inode)) {
+		if (cfg.c_force_inodeversion == FORCE_INODE_COMPACT) {
+			erofs_err("file %s cannot be in compact form",
+				  inode->i_srcpath);
+			return -EINVAL;
+		}
+		inode->inode_isize = sizeof(struct erofs_inode_extended);
+	} else {
+		inode->inode_isize = sizeof(struct erofs_inode_compact);
+	}
 
 	list_add(&inode->i_hash,
 		 &inode_hashtable[st->st_ino % NR_INODE_HASHTABLE]);

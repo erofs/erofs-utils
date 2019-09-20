@@ -423,8 +423,8 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 	remaining = inode->i_size;
 
 	while (remaining) {
-		const uint readcount = min_t(uint, remaining,
-					     sizeof(ctx.queue) - ctx.tail);
+		const u64 readcount = min_t(u64, remaining,
+					    sizeof(ctx.queue) - ctx.tail);
 
 		ret = read(fd, ctx.queue + ctx.tail, readcount);
 		if (ret != readcount) {
