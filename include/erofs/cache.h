@@ -31,7 +31,7 @@ struct erofs_buffer_head {
 	struct list_head list;
 	struct erofs_buffer_block *block;
 
-	unsigned int off;
+	erofs_off_t off;
 	struct erofs_bhops *op;
 
 	void *fsprivate;
@@ -87,13 +87,13 @@ static inline bool erofs_bh_flush_generic_end(struct erofs_buffer_head *bh)
 }
 
 struct erofs_buffer_head *erofs_buffer_init(void);
-int erofs_bh_balloon(struct erofs_buffer_head *bh, unsigned int incr);
+int erofs_bh_balloon(struct erofs_buffer_head *bh, erofs_off_t incr);
 
-struct erofs_buffer_head *erofs_balloc(int type, unsigned int size,
+struct erofs_buffer_head *erofs_balloc(int type, erofs_off_t size,
 				       unsigned int required_ext,
 				       unsigned int inline_ext);
 struct erofs_buffer_head *erofs_battach(struct erofs_buffer_head *bh,
-					int type, int size);
+					int type, unsigned int size);
 
 erofs_blk_t erofs_mapbh(struct erofs_buffer_block *bb, bool end);
 bool erofs_bflush(struct erofs_buffer_block *bb);

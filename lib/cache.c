@@ -74,14 +74,15 @@ struct erofs_buffer_head *erofs_buffer_init(void)
 /* return occupied bytes in specific buffer block if succeed */
 static int __erofs_battach(struct erofs_buffer_block *bb,
 			   struct erofs_buffer_head *bh,
-			   unsigned int incr,
+			   erofs_off_t incr,
 			   unsigned int alignsize,
 			   unsigned int extrasize,
 			   bool dryrun)
 {
-	const unsigned int alignedoffset = roundup(bb->buffers.off, alignsize);
-	const int oob = alignedoffset + incr + extrasize -
-			roundup(bb->buffers.off + 1, EROFS_BLKSIZ);
+	const erofs_off_t alignedoffset = roundup(bb->buffers.off, alignsize);
+	const int oob = sgn(roundup(bb->buffers.off % EROFS_BLKSIZ,
+				    alignsize) + incr + extrasize -
+			    EROFS_BLKSIZ);
 	bool tailupdate = false;
 	erofs_blk_t blkaddr;
 
@@ -113,7 +114,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 	return (alignedoffset + incr) % EROFS_BLKSIZ;
 }
 
-int erofs_bh_balloon(struct erofs_buffer_head *bh, unsigned int incr)
+int erofs_bh_balloon(struct erofs_buffer_head *bh, erofs_off_t incr)
 {
 	struct erofs_buffer_block *const bb = bh->block;
 
@@ -124,7 +125,7 @@ int erofs_bh_balloon(struct erofs_buffer_head *bh, unsigned int incr)
 	return __erofs_battach(bb, NULL, incr, 1, 0, false);
 }
 
-struct erofs_buffer_head *erofs_balloc(int type, unsigned int size,
+struct erofs_buffer_head *erofs_balloc(int type, erofs_off_t size,
 				       unsigned int required_ext,
 				       unsigned int inline_ext)
 {
@@ -214,7 +215,7 @@ found:
 }
 
 struct erofs_buffer_head *erofs_battach(struct erofs_buffer_head *bh,
-					int type, int size)
+					int type, unsigned int size)
 {
 	struct erofs_buffer_block *const bb = bh->block;
 	struct erofs_buffer_head *nbh;
