@@ -20,6 +20,7 @@
 #include "erofs/cache.h"
 #include "erofs/io.h"
 #include "erofs/compress.h"
+#include "erofs/xattr.h"
 
 struct erofs_sb_info sbi;
 
@@ -365,6 +366,7 @@ fail:
 static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 {
 	struct erofs_inode *const inode = bh->fsprivate;
+	const u16 icount = EROFS_INODE_XATTR_ICOUNT(inode->xattr_isize);
 	erofs_off_t off = erofs_btell(bh, false);
 	union {
 		struct erofs_inode_compact dic;
@@ -375,6 +377,7 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 	switch (inode->inode_isize) {
 	case sizeof(struct erofs_inode_compact):
 		u.dic.i_format = cpu_to_le16(0 | (inode->datalayout << 1));
+		u.dic.i_xattr_icount = cpu_to_le16(icount);
 		u.dic.i_mode = cpu_to_le16(inode->i_mode);
 		u.dic.i_nlink = cpu_to_le16(inode->i_nlink);
 		u.dic.i_size = cpu_to_le32((u32)inode->i_size);
@@ -404,6 +407,7 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		break;
 	case sizeof(struct erofs_inode_extended):
 		u.die.i_format = cpu_to_le16(1 | (inode->datalayout << 1));
+		u.die.i_xattr_icount = cpu_to_le16(icount);
 		u.die.i_mode = cpu_to_le16(inode->i_mode);
 		u.die.i_nlink = cpu_to_le32(inode->i_nlink);
 		u.die.i_size = cpu_to_le64(inode->i_size);
@@ -444,6 +448,20 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 	if (ret)
 		return false;
 	off += inode->inode_isize;
+
+	if (inode->xattr_isize) {
+		char *xattrs = erofs_export_xattr_ibody(&inode->i_xattrs,
+							inode->xattr_isize);
+		if (IS_ERR(xattrs))
+			return false;
+
+		ret = dev_write(xattrs, off, inode->xattr_isize);
+		free(xattrs);
+		if (ret)
+			return false;
+
+		off += inode->xattr_isize;
+	}
 
 	if (inode->extent_isize) {
 		/* write compression metadata */
@@ -499,8 +517,10 @@ int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 
 	DBG_BUGON(inode->bh || inode->bh_inline);
 
-	inodesize = inode->inode_isize + inode->xattr_isize +
-		    inode->extent_isize;
+	inodesize = inode->inode_isize + inode->xattr_isize;
+	if (inode->extent_isize)
+		inodesize = Z_EROFS_VLE_EXTENT_ALIGN(inodesize) +
+			    inode->extent_isize;
 
 	if (is_inode_layout_compression(inode))
 		goto noinline;
@@ -707,6 +727,8 @@ struct erofs_inode *erofs_new_inode(void)
 	inode->i_count = 1;
 
 	init_list_head(&inode->i_subdirs);
+	init_list_head(&inode->i_xattrs);
+
 	inode->idata_size = 0;
 	inode->xattr_isize = 0;
 	inode->extent_isize = 0;
@@ -794,6 +816,11 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 	DIR *_dir;
 	struct dirent *dp;
 	struct erofs_dentry *d;
+
+	ret = erofs_prepare_xattr_ibody(dir->i_srcpath, &dir->i_xattrs);
+	if (ret < 0)
+		return ERR_PTR(ret);
+	dir->xattr_isize = ret;
 
 	if (!S_ISDIR(dir->i_mode)) {
 		if (S_ISLNK(dir->i_mode)) {

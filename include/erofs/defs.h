@@ -152,6 +152,12 @@ typedef int64_t         s64;
 #define BITS_PER_BYTE       8
 #define BITS_TO_LONGS(nr)   DIV_ROUND_UP(nr, BITS_PER_BYTE * sizeof(long))
 
+#ifdef __SIZEOF_LONG__
+#define BITS_PER_LONG (__CHAR_BIT__ * __SIZEOF_LONG__)
+#else
+#define BITS_PER_LONG __WORDSIZE
+#endif
+
 #define BUG_ON(cond)        assert(!(cond))
 
 #ifdef NDEBUG

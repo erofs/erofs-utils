@@ -75,6 +75,7 @@ AC_CHECK_HEADERS(m4_flatten([
 	linux/falloc.h
 	linux/fs.h
 	linux/types.h
+	linux/xattr.h
 	limits.h
 	stddef.h
 	stdint.h

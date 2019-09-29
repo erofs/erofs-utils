@@ -61,7 +61,7 @@ struct erofs_sb_info {
 extern struct erofs_sb_info sbi;
 
 struct erofs_inode {
-	struct list_head i_hash, i_subdirs;
+	struct list_head i_hash, i_subdirs, i_xattrs;
 
 	unsigned int i_count;
 	struct erofs_inode *i_parent;

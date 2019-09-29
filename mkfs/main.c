@@ -28,6 +28,7 @@ static void usage(void)
 	fprintf(stderr, "Generate erofs image from DIRECTORY to FILE, and [options] are:\n");
 	fprintf(stderr, " -zX[,Y]   X=compressor (Y=compression level, optional)\n");
 	fprintf(stderr, " -d#       set output message level to # (maximum 9)\n");
+	fprintf(stderr, " -x#       set xattr tolerance to # (< 0, disable xattrs; default 1)\n");
 	fprintf(stderr, " -EX[,...] X=extended options\n");
 	fprintf(stderr, " -T#       set a fixed UNIX timestamp # to all files\n");
 }
@@ -94,7 +95,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	char *endptr;
 	int opt, i;
 
-	while ((opt = getopt(argc, argv, "d:z:E:T:")) != -1) {
+	while ((opt = getopt(argc, argv, "d:x:z:E:T:")) != -1) {
 		switch (opt) {
 		case 'z':
 			if (!optarg) {
@@ -120,6 +121,15 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				return -EINVAL;
 			}
 			cfg.c_dbg_lvl = i;
+			break;
+
+		case 'x':
+			i = strtol(optarg, &endptr, 0);
+			if (*endptr != '\0') {
+				erofs_err("invalid xattr tolerance %s", optarg);
+				return -EINVAL;
+			}
+			cfg.c_inline_xattr_tolerance = i;
 			break;
 
 		case 'E':
