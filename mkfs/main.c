@@ -19,6 +19,7 @@
 #include "erofs/inode.h"
 #include "erofs/io.h"
 #include "erofs/compress.h"
+#include "erofs/xattr.h"
 
 #define EROFS_SUPER_END (EROFS_SUPER_OFFSET + sizeof(struct erofs_super_block))
 
@@ -28,7 +29,7 @@ static void usage(void)
 	fprintf(stderr, "Generate erofs image from DIRECTORY to FILE, and [options] are:\n");
 	fprintf(stderr, " -zX[,Y]   X=compressor (Y=compression level, optional)\n");
 	fprintf(stderr, " -d#       set output message level to # (maximum 9)\n");
-	fprintf(stderr, " -x#       set xattr tolerance to # (< 0, disable xattrs; default 1)\n");
+	fprintf(stderr, " -x#       set xattr tolerance to # (< 0, disable xattrs; default 2)\n");
 	fprintf(stderr, " -EX[,...] X=extended options\n");
 	fprintf(stderr, " -T#       set a fixed UNIX timestamp # to all files\n");
 }
@@ -188,7 +189,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 		.build_time_nsec = cpu_to_le32(sbi.build_time_nsec),
 		.blocks = 0,
 		.meta_blkaddr  = sbi.meta_blkaddr,
-		.xattr_blkaddr = 0,
+		.xattr_blkaddr = sbi.xattr_blkaddr,
 		.feature_incompat = cpu_to_le32(sbi.feature_incompat),
 	};
 	const unsigned int sb_blksize =
@@ -283,6 +284,13 @@ int main(int argc, char **argv)
 	}
 
 	erofs_inode_manager_init();
+
+	err = erofs_build_shared_xattrs_from_path(cfg.c_src_path);
+	if (err) {
+		erofs_err("Failed to build shared xattrs: %s",
+			  erofs_strerror(err));
+		goto exit;
+	}
 
 	root_inode = erofs_mkfs_build_tree_from_path(NULL, cfg.c_src_path);
 	if (IS_ERR(root_inode)) {

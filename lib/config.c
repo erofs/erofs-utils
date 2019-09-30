@@ -21,7 +21,7 @@ void erofs_init_configure(void)
 	cfg.c_dry_run  = false;
 	cfg.c_compr_level_master = -1;
 	cfg.c_force_inodeversion = 0;
-	cfg.c_inline_xattr_tolerance = 1;
+	cfg.c_inline_xattr_tolerance = 2;
 	cfg.c_unix_timestamp = -1;
 }
 

@@ -6,20 +6,25 @@
  * heavily changed by Li Guifu <blucerlee@gmail.com>
  *                and Gao Xiang <hsiangkao@aol.com>
  */
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <sys/xattr.h>
 #ifdef HAVE_LINUX_XATTR_H
 #include <linux/xattr.h>
 #endif
+#include <sys/stat.h>
+#include <dirent.h>
 #include "erofs/print.h"
 #include "erofs/hashtable.h"
 #include "erofs/xattr.h"
+#include "erofs/cache.h"
 
 #define EA_HASHTABLE_BITS 16
 
 struct xattr_item {
 	const char *kvbuf;
 	unsigned int hash[2], len[2], count;
+	int shared_xattr_id;
 	u8 prefix;
 	struct hlist_node node;
 };
@@ -30,6 +35,9 @@ struct inode_xattr_node {
 };
 
 static DECLARE_HASHTABLE(ea_hashtable, EA_HASHTABLE_BITS);
+
+static LIST_HEAD(shared_xattrs_list);
+static unsigned int shared_xattrs_count, shared_xattrs_size;
 
 static struct xattr_prefix {
 	const char *prefix;
@@ -113,6 +121,7 @@ static struct xattr_item *get_xattritem(u8 prefix, char *kvbuf,
 	item->len[1] = len[1];
 	item->hash[0] = hash[0];
 	item->hash[1] = hash[1];
+	item->shared_xattr_id = -1;
 	item->prefix = prefix;
 	hash_add(ea_hashtable, &item->node, hkey);
 	return item;
@@ -160,7 +169,6 @@ static struct xattr_item *parse_one_xattr(const char *path, const char *key,
 	kvbuf = malloc(len[0] + len[1]);
 	if (!kvbuf)
 		return ERR_PTR(-ENOMEM);
-
 	memcpy(kvbuf, key + prefixlen, len[0]);
 	if (len[1]) {
 		/* copy value to buffer */
@@ -188,6 +196,23 @@ static int inode_xattr_add(struct list_head *hlist, struct xattr_item *item)
 	node->item = item;
 	list_add(&node->list, hlist);
 	return 0;
+}
+
+static int shared_xattr_add(struct xattr_item *item)
+{
+	struct inode_xattr_node *node = malloc(sizeof(*node));
+
+	if (!node)
+		return -ENOMEM;
+
+	init_list_head(&node->list);
+	node->item = item;
+	list_add(&node->list, &shared_xattrs_list);
+
+	shared_xattrs_size += sizeof(struct erofs_xattr_entry);
+	shared_xattrs_size = EROFS_XATTR_ALIGN(shared_xattrs_size +
+					       item->len[0] + item->len[1]);
+	return ++shared_xattrs_count;
 }
 
 static int read_xattrs_from_file(const char *path, struct list_head *ixattrs)
@@ -235,6 +260,11 @@ static int read_xattrs_from_file(const char *path, struct list_head *ixattrs)
 			ret = inode_xattr_add(ixattrs, item);
 			if (ret < 0)
 				goto err;
+		} else if (item->count == cfg.c_inline_xattr_tolerance + 1) {
+			ret = shared_xattr_add(item);
+			if (ret < 0)
+				goto err;
+			ret = 0;
 		}
 		kllen -= keylen + 1;
 		key += keylen + 1;
@@ -266,16 +296,175 @@ int erofs_prepare_xattr_ibody(const char *path, struct list_head *ixattrs)
 	list_for_each_entry(node, ixattrs, list) {
 		const struct xattr_item *item = node->item;
 
+		if (item->shared_xattr_id >= 0) {
+			ret += sizeof(__le32);
+			continue;
+		}
 		ret += sizeof(struct erofs_xattr_entry);
 		ret = EROFS_XATTR_ALIGN(ret + item->len[0] + item->len[1]);
 	}
 	return ret;
 }
 
+static int erofs_count_all_xattrs_from_path(const char *path)
+{
+	int ret;
+	DIR *_dir;
+	struct stat64 st;
+
+	_dir = opendir(path);
+	if (!_dir) {
+		erofs_err("%s, failed to opendir at %s: %s",
+			  __func__, path, erofs_strerror(errno));
+		return -errno;
+	}
+
+	ret = 0;
+	while (1) {
+		struct dirent *dp;
+		char buf[PATH_MAX];
+
+		/*
+		 * set errno to 0 before calling readdir() in order to
+		 * distinguish end of stream and from an error.
+		 */
+		errno = 0;
+		dp = readdir(_dir);
+		if (!dp)
+			break;
+
+		if (is_dot_dotdot(dp->d_name) ||
+		    !strncmp(dp->d_name, "lost+found", strlen("lost+found")))
+			continue;
+
+		ret = snprintf(buf, PATH_MAX, "%s/%s", path, dp->d_name);
+
+		if (ret < 0 || ret >= PATH_MAX) {
+			/* ignore the too long path */
+			ret = -ENOMEM;
+			goto fail;
+		}
+
+		ret = read_xattrs_from_file(buf, NULL);
+		if (ret)
+			goto fail;
+
+		ret = lstat64(buf, &st);
+		if (ret) {
+			ret = -errno;
+			goto fail;
+		}
+
+		if (!S_ISDIR(st.st_mode))
+			continue;
+
+		ret = erofs_count_all_xattrs_from_path(buf);
+		if (ret)
+			goto fail;
+	}
+
+	if (errno)
+		ret = -errno;
+
+fail:
+	closedir(_dir);
+	return ret;
+}
+
+static void erofs_cleanxattrs(bool sharedxattrs)
+{
+	unsigned int i;
+	struct xattr_item *item;
+
+	hash_for_each(ea_hashtable, i, item, node) {
+		if (sharedxattrs && item->shared_xattr_id >= 0)
+			continue;
+
+		hash_del(&item->node);
+		free(item);
+	}
+
+	if (sharedxattrs)
+		return;
+
+	shared_xattrs_size = shared_xattrs_count = 0;
+}
+
+int erofs_build_shared_xattrs_from_path(const char *path)
+{
+	int ret;
+	struct erofs_buffer_head *bh;
+	struct inode_xattr_node *node, *n;
+	char *buf;
+	unsigned int p;
+	erofs_off_t off;
+
+	/* check if xattr or shared xattr is disabled */
+	if (cfg.c_inline_xattr_tolerance < 0 ||
+	    cfg.c_inline_xattr_tolerance == INT_MAX)
+		return 0;
+
+	if (shared_xattrs_size || shared_xattrs_count) {
+		DBG_BUGON(1);
+		return -EINVAL;
+	}
+
+	ret = erofs_count_all_xattrs_from_path(path);
+	if (ret)
+		return ret;
+
+	if (!shared_xattrs_size)
+		goto out;
+
+	buf = malloc(shared_xattrs_size);
+	if (!buf)
+		return -ENOMEM;
+
+	bh = erofs_balloc(XATTR, shared_xattrs_size, 0, 0);
+	if (IS_ERR(bh)) {
+		free(buf);
+		return PTR_ERR(bh);
+	}
+	bh->op = &erofs_skip_write_bhops;
+
+	erofs_mapbh(bh->block, true);
+	off = erofs_btell(bh, false);
+
+	sbi.xattr_blkaddr = off / EROFS_BLKSIZ;
+	off %= EROFS_BLKSIZ;
+	p = 0;
+
+	list_for_each_entry_safe(node, n, &shared_xattrs_list, list) {
+		struct xattr_item *const item = node->item;
+		const struct erofs_xattr_entry entry = {
+			.e_name_index = item->prefix,
+			.e_name_len = item->len[0],
+			.e_value_size = cpu_to_le16(item->len[1])
+		};
+
+		list_del(&node->list);
+
+		item->shared_xattr_id = (off + p) /
+			sizeof(struct erofs_xattr_entry);
+
+		memcpy(buf + p, &entry, sizeof(entry));
+		p += sizeof(struct erofs_xattr_entry);
+		memcpy(buf + p, item->kvbuf, item->len[0] + item->len[1]);
+		p = EROFS_XATTR_ALIGN(p + item->len[0] + item->len[1]);
+		free(node);
+	}
+	bh->fsprivate = buf;
+	bh->op = &erofs_buf_write_bhops;
+out:
+	erofs_cleanxattrs(true);
+	return 0;
+}
+
 char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size)
 {
 	struct inode_xattr_node *node, *n;
 	struct erofs_xattr_ibody_header *header;
+	LIST_HEAD(ilst);
 	unsigned int p;
 	char *buf = calloc(1, size);
 
@@ -287,6 +476,24 @@ char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size)
 
 	p = sizeof(struct erofs_xattr_ibody_header);
 	list_for_each_entry_safe(node, n, ixattrs, list) {
+		struct xattr_item *const item = node->item;
+
+		list_del(&node->list);
+
+		/* move inline xattrs to the onstack list */
+		if (item->shared_xattr_id < 0) {
+			list_add(&node->list, &ilst);
+			continue;
+		}
+
+		*(__le32 *)(buf + p) = cpu_to_le32(item->shared_xattr_id);
+		p += sizeof(__le32);
+		++header->h_shared_count;
+		free(node);
+		put_xattritem(item);
+	}
+
+	list_for_each_entry_safe(node, n, &ilst, list) {
 		struct xattr_item *const item = node->item;
 		const struct erofs_xattr_entry entry = {
 			.e_name_index = item->prefix,

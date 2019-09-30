@@ -44,5 +44,6 @@
 
 int erofs_prepare_xattr_ibody(const char *path, struct list_head *ixattrs);
 char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size);
+int erofs_build_shared_xattrs_from_path(const char *path);
 
 #endif

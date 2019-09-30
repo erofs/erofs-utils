@@ -14,7 +14,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <inttypes.h>
-
+#include <limits.h>
 #include <stdbool.h>
 
 #ifdef HAVE_CONFIG_H

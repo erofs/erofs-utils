@@ -8,7 +8,6 @@
  * with heavy changes by Gao Xiang <gaoxiang25@huawei.com>
  */
 #define _GNU_SOURCE
-#include <limits.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
