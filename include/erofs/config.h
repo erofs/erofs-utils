@@ -28,6 +28,7 @@ struct erofs_configure {
 	char *c_compr_alg_master;
 	int c_compr_level_master;
 	int c_force_inodeversion;
+	u64 c_unix_timestamp;
 };
 
 extern struct erofs_configure cfg;

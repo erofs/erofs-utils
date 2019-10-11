@@ -29,6 +29,7 @@ static void usage(void)
 	fprintf(stderr, " -zX[,Y]   X=compressor (Y=compression level, optional)\n");
 	fprintf(stderr, " -d#       set output message level to # (maximum 9)\n");
 	fprintf(stderr, " -EX[,...] X=extended options\n");
+	fprintf(stderr, " -T#       set a fixed UNIX timestamp # to all files\n");
 }
 
 static int parse_extended_opts(const char *opts)
@@ -90,9 +91,10 @@ static int parse_extended_opts(const char *opts)
 
 static int mkfs_parse_options_cfg(int argc, char *argv[])
 {
+	char *endptr;
 	int opt, i;
 
-	while ((opt = getopt(argc, argv, "d:z:E:")) != -1) {
+	while ((opt = getopt(argc, argv, "d:z:E:T:")) != -1) {
 		switch (opt) {
 		case 'z':
 			if (!optarg) {
@@ -124,6 +126,13 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			opt = parse_extended_opts(optarg);
 			if (opt)
 				return opt;
+			break;
+		case 'T':
+			cfg.c_unix_timestamp = strtoull(optarg, &endptr, 0);
+			if (cfg.c_unix_timestamp == -1 || *endptr != '\0') {
+				erofs_err("invalid UNIX timestamp %s", optarg);
+				return -EINVAL;
+			}
 			break;
 
 		default: /* '?' */
@@ -223,7 +232,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (!gettimeofday(&t, NULL)) {
+	if (cfg.c_unix_timestamp != -1) {
+		sbi.build_time      = cfg.c_unix_timestamp;
+		sbi.build_time_nsec = 0;
+	} else if (!gettimeofday(&t, NULL)) {
 		sbi.build_time      = t.tv_sec;
 		sbi.build_time_nsec = t.tv_usec;
 	}
