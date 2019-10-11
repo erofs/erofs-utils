@@ -147,7 +147,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	if (!cfg.c_img_path)
 		return -ENOMEM;
 
-	if (optind > argc) {
+	if (optind >= argc) {
 		erofs_err("Source directory is missing");
 		return -EINVAL;
 	}
