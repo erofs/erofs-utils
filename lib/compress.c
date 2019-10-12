@@ -504,8 +504,20 @@ int z_erofs_compress_init(void)
 	/* initialize for primary compression algorithm */
 	int ret = erofs_compressor_init(&compresshandle,
 					cfg.c_compr_alg_master);
-	if (ret || !cfg.c_compr_alg_master)
+
+	if (ret)
 		return ret;
+
+	/*
+	 * if primary algorithm is not lz4* (e.g. compression off),
+	 * clear LZ4_0PADDING feature for old kernel compatibility.
+	 */
+	if (!cfg.c_compr_alg_master ||
+	    strncmp(cfg.c_compr_alg_master, "lz4", 3))
+		sbi.feature_incompat &= ~EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
+
+	if (!cfg.c_compr_alg_master)
+		return 0;
 
 	compressionlevel = cfg.c_compr_level_master < 0 ?
 		compresshandle.alg->default_level :

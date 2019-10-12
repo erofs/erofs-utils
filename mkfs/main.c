@@ -215,6 +215,9 @@ int main(int argc, char **argv)
 	erofs_init_configure();
 	fprintf(stderr, "%s %s\n", basename(argv[0]), cfg.c_version);
 
+	cfg.c_legacy_compress = false;
+	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
+
 	err = mkfs_parse_options_cfg(argc, argv);
 	if (err) {
 		if (err == -EINVAL)
