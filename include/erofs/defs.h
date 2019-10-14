@@ -136,9 +136,10 @@ typedef int64_t         s64;
 	type __max2 = (y);			\
 	__max1 > __max2 ? __max1: __max2; })
 
-#define sgn(x) ({		\
+#define cmpsgn(x, y) ({		\
 	typeof(x) _x = (x);	\
-(_x > 0) - (_x < 0); })
+	typeof(y) _y = (y);	\
+	(_x > _y) - (_x < _y); })
 
 #define ARRAY_SIZE(arr)	(sizeof(arr) / sizeof((arr)[0]))
 

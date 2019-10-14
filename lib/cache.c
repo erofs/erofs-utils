@@ -80,9 +80,9 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 			   bool dryrun)
 {
 	const erofs_off_t alignedoffset = roundup(bb->buffers.off, alignsize);
-	const int oob = sgn(roundup(bb->buffers.off % EROFS_BLKSIZ,
-				    alignsize) + incr + extrasize -
-			    EROFS_BLKSIZ);
+	const int oob = cmpsgn(roundup(bb->buffers.off % EROFS_BLKSIZ,
+				       alignsize) + incr + extrasize,
+			       EROFS_BLKSIZ);
 	bool tailupdate = false;
 	erofs_blk_t blkaddr;
 
