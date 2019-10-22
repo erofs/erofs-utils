@@ -71,6 +71,7 @@ AC_ARG_VAR([LZ4_LIBS], [linker flags for lz4])
 AC_CHECK_HEADERS(m4_flatten([
 	dirent.h
 	fcntl.h
+	getopt.h
 	inttypes.h
 	linux/falloc.h
 	linux/fs.h
