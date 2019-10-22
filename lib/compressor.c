@@ -12,6 +12,15 @@
 
 #define EROFS_CONFIG_COMPR_DEF_BOUNDARY		(128)
 
+static struct erofs_compressor *compressors[] = {
+#if LZ4_ENABLED
+#if LZ4HC_ENABLED
+		&erofs_compressor_lz4hc,
+#endif
+		&erofs_compressor_lz4,
+#endif
+};
+
 int erofs_compress_destsize(struct erofs_compress *c,
 			    int compression_level,
 			    void *src,
@@ -36,18 +45,13 @@ int erofs_compress_destsize(struct erofs_compress *c,
 	return ret;
 }
 
-int erofs_compressor_init(struct erofs_compress *c,
-			  char *alg_name)
+const char *z_erofs_list_available_compressors(unsigned int i)
 {
-	static struct erofs_compressor *compressors[] = {
-#if LZ4_ENABLED
-#if LZ4HC_ENABLED
-		&erofs_compressor_lz4hc,
-#endif
-		&erofs_compressor_lz4,
-#endif
-	};
+	return i >= ARRAY_SIZE(compressors) ? NULL : compressors[i]->name;
+}
 
+int erofs_compressor_init(struct erofs_compress *c, char *alg_name)
+{
 	int ret, i;
 
 	/* should be written in "minimum compression ratio * 100" */
@@ -65,7 +69,10 @@ int erofs_compressor_init(struct erofs_compress *c,
 
 	ret = -EINVAL;
 	for (i = 0; i < ARRAY_SIZE(compressors); ++i) {
-		ret = compressors[i]->init(c, alg_name);
+		if (alg_name && strcmp(alg_name, compressors[i]->name))
+			continue;
+
+		ret = compressors[i]->init(c);
 		if (!ret) {
 			DBG_BUGON(!c->alg);
 			return 0;

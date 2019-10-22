@@ -29,16 +29,14 @@ static int compressor_lz4_exit(struct erofs_compress *c)
 	return 0;
 }
 
-static int compressor_lz4_init(struct erofs_compress *c,
-				 char *alg_name)
+static int compressor_lz4_init(struct erofs_compress *c)
 {
-	if (alg_name && strcmp(alg_name, "lz4"))
-		return -EINVAL;
 	c->alg = &erofs_compressor_lz4;
 	return 0;
 }
 
 struct erofs_compressor erofs_compressor_lz4 = {
+	.name = "lz4",
 	.default_level = 0,
 	.best_level = 0,
 	.init = compressor_lz4_init,

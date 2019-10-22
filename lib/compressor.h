@@ -14,10 +14,12 @@
 struct erofs_compress;
 
 struct erofs_compressor {
+	const char *name;
+
 	int default_level;
 	int best_level;
 
-	int (*init)(struct erofs_compress *c, char *alg_name);
+	int (*init)(struct erofs_compress *c);
 	int (*exit)(struct erofs_compress *c);
 
 	int (*compress_destsize)(struct erofs_compress *c,
