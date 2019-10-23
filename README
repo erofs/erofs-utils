@@ -32,7 +32,9 @@ To build you can run the following commands in order:
 	$ ./configure
 	$ make
 
-mkfs.erofs binary will be generated under mkfs folder.
+mkfs.erofs binary will be generated under mkfs folder. There are still
+some issues which affect the stability of LZ4_compress_destSize()
+* they have impacts on lz4 only rather than lz4HC * [3].
 
 How to build for lz4-1.8.0~1.8.3
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -45,8 +47,8 @@ On Fedora, static lz4 can be installed using:
 
 	yum install lz4-static.x86_64
 
-However, it's not recommended to use those versions since there was a bug
-in these compressors, see [2] as well.
+However, it's not recommended to use those versions since there were bugs
+in these compressors, see [2] [3] as well.
 
 How to generate erofs images
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -67,6 +69,14 @@ In order to generate _legacy_ erofs images for old kernels,
 add "-E legacy-compress" to the command line, e.g.
 
  $ mkfs.erofs -E legacy-compress -zlz4hc foo.erofs.img foo/
+
+
+Known issues
+~~~~~~~~~~~~
+
+1. LZ4HC cannot compress long zeroed buffer properly with
+   LZ4_compress_HC_destSize()
+   https://github.com/lz4/lz4/issues/784
 
 Obsoleted erofs.mkfs
 ~~~~~~~~~~~~~~~~~~~~
@@ -108,4 +118,29 @@ Comments
 
     For more details, please refer to
     https://github.com/lz4/lz4/commit/660d21272e4c8a0f49db5fc1e6853f08713dff82
+
+[3] There are many crash fixes merged to lz4 1.9.2 for LZ4_compress_destSize(),
+    and I once ran into some crashs due to those issues.
+    * Again lz4HC is not effected for this section. *
+
+    [LZ4_compress_destSize] Allow 2 more bytes of match length
+    https://github.com/lz4/lz4/commit/690009e2c2f9e5dcb0d40e7c0c40610ce6006eda
+
+    [LZ4_compress_destSize] Fix rare data corruption bug
+    https://github.com/lz4/lz4/commit/6bc6f836a18d1f8fd05c8fc2b42f1d800bc25de1
+
+    [LZ4_compress_destSize] Fix overflow condition
+    https://github.com/lz4/lz4/commit/13a2d9e34ffc4170720ce417c73e396d0ac1471a
+
+    [LZ4_compress_destSize] Fix off-by-one error in fix
+    https://github.com/lz4/lz4/commit/7c32101c655d93b61fc212dcd512b87119dd7333
+
+    [LZ4_compress_destSize] Fix off-by-one error
+    https://github.com/lz4/lz4/commit/d7cad81093cd805110291f84d64d385557d0ffba
+
+    since upstream lz4 doesn't have stable branch for old versions, it's
+    preferred to use latest upstream lz4 library (although some regressions
+    could happen since new features are also introduced to latest upstream
+    version as well) or backport all stable bugfixes to old stable versions,
+    e.g. our unoffical lz4 fork: https://github.com/erofs/lz4
 
