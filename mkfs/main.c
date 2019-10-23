@@ -44,15 +44,15 @@ static void print_available_compressors(FILE *f, const char *delim)
 
 static void usage(void)
 {
-	fprintf(stderr, "usage: [options] FILE DIRECTORY\n\n");
-	fprintf(stderr, "Generate erofs image from DIRECTORY to FILE, and [options] are:\n");
-	fprintf(stderr, " -zX[,Y]   X=compressor (Y=compression level, optional)\n");
-	fprintf(stderr, " -d#       set output message level to # (maximum 9)\n");
-	fprintf(stderr, " -x#       set xattr tolerance to # (< 0, disable xattrs; default 2)\n");
-	fprintf(stderr, " -EX[,...] X=extended options\n");
-	fprintf(stderr, " -T#       set a fixed UNIX timestamp # to all files\n");
-	fprintf(stderr, " --help    display this help and exit\n");
-	fprintf(stderr, "\nAvailable compressors are: ");
+	fputs("usage: [options] FILE DIRECTORY\n\n"
+	      "Generate erofs image from DIRECTORY to FILE, and [options] are:\n"
+	      " -zX[,Y]   X=compressor (Y=compression level, optional)\n"
+	      " -d#       set output message level to # (maximum 9)\n"
+	      " -x#       set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
+	      " -EX[,...] X=extended options\n"
+	      " -T#       set a fixed UNIX timestamp # to all files\n"
+	      " --help    display this help and exit\n"
+	      "\nAvailable compressors are: ", stderr);
 	print_available_compressors(stderr, ", ");
 }
 
