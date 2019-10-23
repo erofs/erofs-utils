@@ -1,0 +1,12 @@
+erofs-utils (1.0-1) unstable; urgency=low
+
+ * first release with the following new features:
+   - (mkfs.erofs) uncompressed file support;
+   - (mkfs.erofs) uncompressed tail-end packing inline data support;
+   - (mkfs.erofs) lz4 / lz4HC compressed file support;
+   - (mkfs.erofs) special file support;
+   - (mkfs.erofs) inline / shared xattrs support;
+   - (mkfs.erofs) Posix ACL support;
+
+ -- Gao Xiang <xiang@kernel.org>  Thu, 24 Oct 2019 00:00:00 +0800
+
