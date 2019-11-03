@@ -1,0 +1,68 @@
+.\" Copyright (c) 2019 Gao Xiang <xiang@kernel.org>
+.\"
+.TH MKFS.EROFS 1
+.SH NAME
+mkfs.erofs \- tool to create an EROFS filesystem
+.SH SYNOPSIS
+\fBmkfs.erofs\fR [\fIOPTIONS\fR] \fIDESTINATION\fR \fISOURCE\fR
+.SH DESCRIPTION
+EROFS is a new enhanced lightweight linux read-only filesystem with modern
+designs (eg. no buffer head, reduced metadata, inline xattrs/data, etc.) for
+scenarios which need high-performance read-only requirements, e.g. Android OS
+for smartphones and LIVECDs.
+.PP
+It also provides fixed-sized output compression support, which improves storage
+density, keeps relatively higher compression ratios, which is more useful to
+achieve high performance for embedded devices with limited memory since it has
+unnoticable memory overhead and page cache thrashing.
+.PP
+mkfs.erofs is used to create such EROFS filesystem \fIDESTINATION\fR image file
+from \fISOURCE\fR directory.
+.SH OPTIONS
+.TP
+.BI "\-z " compression-algorithm " [" ",#" "]"
+Set an algorithm for file compression, which can be set with an optional
+compression level separated by a comma.
+.TP
+.BI "\-d " #
+Specify the level of debugging messages. The default is 0.
+.TP
+.BI "\-x " #
+Specify the upper limit of an xattr which is still inlined. The default is 2.
+Disable storing xattrs if < 0.
+.TP
+.BI "\-E " extended-option " [,...]"
+Set extended options for the filesystem. Extended options are comma separated,
+and may take an argument using the equals ('=') sign.
+The following extended options are supported:
+.RS 1.2i
+.TP
+.BI legacy-compress
+Disable "decompression in-place" and "compacted indexes" support, which is used
+when generating EROFS images for kernel version < 5.3.
+.TP
+.BI force-inode-compact
+Forcely generate compact inodes (32-byte inodes) to output.
+.TP
+.BI force-inode-extended
+Forcely generate extended inodes (64-byte inodes) to output.
+.RE
+.TP
+.BI "\-T " #
+Set all files to the given UNIX timestamp. Reproducible builds requires setting
+all to a specific one.
+.TP
+.B \-\-help
+Display this help and exit.
+.SH AUTHOR
+This version of \fBmkfs.erofs\fR is written by Li Guifu <blucerlee@gmail.com>,
+Miao Xie <miaoxie@huawei.com> and Gao Xiang <xiang@kernel.org> with
+continuously improvements from others.
+.PP
+This manual page was written by Gao Xiang <xiang@kernel.org>.
+.SH AVAILABILITY
+\fBmkfs.erofs\fR is part of erofs-utils package and is available from
+git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git.
+.SH SEE ALSO
+.BR mkfs (8).
+

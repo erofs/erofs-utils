@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0+
 # Makefile.am
 
-ACLOCAL_AMFLAGS = -I m4
+dist_man_MANS = mkfs.erofs.1
 
-SUBDIRS = man lib mkfs

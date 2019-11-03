@@ -173,6 +173,7 @@ AM_CONDITIONAL([ENABLE_LZ4], [test "x${have_lz4}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LZ4HC], [test "x${have_lz4hc}" = "xyes"])
 
 AC_CONFIG_FILES([Makefile
+		 man/Makefile
 		 lib/Makefile
 		 mkfs/Makefile])
 AC_OUTPUT
