@@ -109,6 +109,12 @@ static int parse_extended_opts(const char *opts)
 				return -EINVAL;
 			cfg.c_force_inodeversion = FORCE_INODE_EXTENDED;
 		}
+
+		if (MATCH_EXTENTED_OPT("nosbcrc", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			sbi.feature_compat &= ~EROFS_FEATURE_COMPAT_SB_CHKSUM;
+		}
 	}
 	return 0;
 }
@@ -218,6 +224,8 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 		.meta_blkaddr  = sbi.meta_blkaddr,
 		.xattr_blkaddr = sbi.xattr_blkaddr,
 		.feature_incompat = cpu_to_le32(sbi.feature_incompat),
+		.feature_compat = cpu_to_le32(sbi.feature_compat &
+					      ~EROFS_FEATURE_COMPAT_SB_CHKSUM),
 	};
 	const unsigned int sb_blksize =
 		round_up(EROFS_SUPER_END, EROFS_BLKSIZ);
@@ -240,6 +248,63 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	return 0;
 }
 
+#define CRC32C_POLY_LE	0x82F63B78
+static inline u32 crc32c(u32 crc, const u8 *in, size_t len)
+{
+	int i;
+
+	while (len--) {
+		crc ^= *in++;
+		for (i = 0; i < 8; i++)
+			crc = (crc >> 1) ^ ((crc & 1) ? CRC32C_POLY_LE : 0);
+	}
+	return crc;
+}
+
+static int erofs_mkfs_superblock_csum_set(void)
+{
+	int ret;
+	u8 buf[EROFS_BLKSIZ];
+	u32 crc;
+	struct erofs_super_block *sb;
+
+	ret = blk_read(buf, 0, 1);
+	if (ret) {
+		erofs_err("failed to read superblock to set checksum: %s",
+			  erofs_strerror(ret));
+		return ret;
+	}
+
+	/*
+	 * skip the first 1024 bytes, to allow for the installation
+	 * of x86 boot sectors and other oddities.
+	 */
+	sb = (struct erofs_super_block *)(buf + EROFS_SUPER_OFFSET);
+
+	if (le32_to_cpu(sb->magic) != EROFS_SUPER_MAGIC_V1) {
+		erofs_err("internal error: not an erofs valid image");
+		return -EFAULT;
+	}
+
+	/* turn on checksum feature */
+	sb->feature_compat = cpu_to_le32(le32_to_cpu(sb->feature_compat) |
+					 EROFS_FEATURE_COMPAT_SB_CHKSUM);
+	crc = crc32c(~0, (u8 *)sb, EROFS_BLKSIZ - EROFS_SUPER_OFFSET);
+
+	/* set up checksum field to erofs_super_block */
+	sb->checksum = cpu_to_le32(crc);
+
+	ret = blk_write(buf, 0, 1);
+	if (ret) {
+		erofs_err("failed to write checksummed superblock: %s",
+			  erofs_strerror(ret));
+		return ret;
+	}
+
+	erofs_info("superblock checksum 0x%08x written", crc);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	int err = 0;
@@ -255,6 +320,7 @@ int main(int argc, char **argv)
 
 	cfg.c_legacy_compress = false;
 	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
+	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM;
 
 	err = mkfs_parse_options_cfg(argc, argv);
 	if (err) {
@@ -337,6 +403,9 @@ int main(int argc, char **argv)
 		err = -EIO;
 	else
 		err = dev_resize(nblocks);
+
+	if (!err && (sbi.feature_compat & EROFS_FEATURE_COMPAT_SB_CHKSUM))
+		err = erofs_mkfs_superblock_csum_set();
 exit:
 	z_erofs_compress_exit();
 	dev_close();
