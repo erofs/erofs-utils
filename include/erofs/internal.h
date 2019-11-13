@@ -56,6 +56,7 @@ struct erofs_sb_info {
 	u32 feature_incompat;
 	u64 build_time;
 	u32 build_time_nsec;
+	u8 uuid[16];
 };
 
 /* global sbi */

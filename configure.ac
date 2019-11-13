@@ -20,6 +20,15 @@ AC_PROG_INSTALL
 
 LT_INIT
 
+# Test presence of pkg-config
+AC_MSG_CHECKING([pkg-config m4 macros])
+if test m4_ifdef([PKG_CHECK_MODULES], [yes], [no]) = "yes"; then
+  AC_MSG_RESULT([yes]);
+else
+  AC_MSG_RESULT([no]);
+  AC_MSG_ERROR([pkg-config is required. See pkg-config.freedesktop.org])
+fi
+
 dnl EROFS_UTILS_PARSE_DIRECTORY
 dnl Input:  $1 = a string to a relative or absolute directory
 dnl Output: $2 = the variable to set with the absolute directory
@@ -53,6 +62,10 @@ AC_DEFUN([EROFS_UTILS_PARSE_DIRECTORY],
 AC_ARG_ENABLE(lz4,
    [AS_HELP_STRING([--disable-lz4], [disable LZ4 compression support @<:@default=enabled@:>@])],
    [enable_lz4="$enableval"], [enable_lz4="yes"])
+
+AC_ARG_WITH(uuid,
+   [AS_HELP_STRING([--without-uuid],
+      [Ignore presence of libuuid and disable uuid support @<:@default=enabled@:>@])])
 
 # Checks for libraries.
 # Use customized LZ4 library path when specified.
@@ -123,6 +136,30 @@ AC_CHECK_DECL(lseek64,[AC_DEFINE(HAVE_LSEEK64_PROTOTYPE, 1,
 # Checks for library functions.
 AC_CHECK_FUNCS([fallocate gettimeofday memset realpath strdup strerror strrchr strtoull])
 
+# Configure libuuid
+AS_IF([test "x$with_uuid" != "xno"], [
+  PKG_CHECK_MODULES([libuuid], [uuid])
+  # Paranoia: don't trust the result reported by pkgconfig before trying out
+  saved_LIBS="$LIBS"
+  saved_CPPFLAGS=${CPPFLAGS}
+  CPPFLAGS="${libuuid_CFLAGS} ${CPPFLAGS}"
+  LIBS="${libuuid_LIBS} $LIBS"
+  AC_MSG_CHECKING([libuuid usability])
+  AC_TRY_LINK([
+#include <uuid.h>
+], [
+uuid_t tmp;
+
+uuid_generate(tmp);
+return 0;
+], [have_uuid="yes"
+    AC_MSG_RESULT([yes])], [
+    have_uuid="no"
+    AC_MSG_RESULT([no])
+    AC_MSG_ERROR([libuuid doesn't work properly])])
+  LIBS="${saved_LIBS}"
+  CPPFLAGS="${saved_CPPFLAGS}"], [have_uuid="no"])
+
 # Configure lz4
 test -z $LZ4_LIBS && LZ4_LIBS='-llz4'
 
@@ -167,6 +204,10 @@ if test "x$enable_lz4" = "xyes"; then
     fi
   fi
   CFLAGS=${saved_CPPFLAGS}
+fi
+
+if test "x$have_uuid" = "xyes"; then
+  AC_DEFINE([HAVE_LIBUUID], 1, [Define to 1 if libuuid is found])
 fi
 
 AM_CONDITIONAL([ENABLE_LZ4], [test "x${have_lz4}" = "xyes"])

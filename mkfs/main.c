@@ -22,6 +22,10 @@
 #include "erofs/compress.h"
 #include "erofs/xattr.h"
 
+#ifdef HAVE_LIBUUID
+#include <uuid/uuid.h>
+#endif
+
 #define EROFS_SUPER_END (EROFS_SUPER_OFFSET + sizeof(struct erofs_super_block))
 
 static struct option long_options[] = {
@@ -234,6 +238,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	*blocks         = erofs_mapbh(NULL, true);
 	sb.blocks       = cpu_to_le32(*blocks);
 	sb.root_nid     = cpu_to_le16(root_nid);
+	memcpy(sb.uuid, sbi.uuid, sizeof(sb.uuid));
 
 	buf = calloc(sb_blksize, 1);
 	if (!buf) {
@@ -303,6 +308,20 @@ static int erofs_mkfs_superblock_csum_set(void)
 
 	erofs_info("superblock checksum 0x%08x written", crc);
 	return 0;
+}
+
+static void erofs_mkfs_generate_uuid(void)
+{
+	char uuid_str[37] = "not available";
+
+#ifdef HAVE_LIBUUID
+	do {
+		uuid_generate(sbi.uuid);
+	} while (uuid_is_null(sbi.uuid));
+
+	uuid_unparse_lower(sbi.uuid, uuid_str);
+#endif
+	erofs_info("filesystem UUID: %s", uuid_str);
 }
 
 int main(int argc, char **argv)
@@ -376,6 +395,7 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
+	erofs_mkfs_generate_uuid();
 	erofs_inode_manager_init();
 
 	err = erofs_build_shared_xattrs_from_path(cfg.c_src_path);
