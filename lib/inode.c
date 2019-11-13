@@ -264,6 +264,8 @@ int erofs_write_dir_file(struct erofs_inode *dir)
 	if (used) {
 		/* fill tail-end dir block */
 		dir->idata = malloc(used);
+		if (!dir->idata)
+			return -ENOMEM;
 		DBG_BUGON(used != dir->idata_size);
 		fill_dirblock(dir->idata, dir->idata_size, q, head, d);
 	}
@@ -286,6 +288,8 @@ int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 	inode->idata_size = inode->i_size % EROFS_BLKSIZ;
 	if (inode->idata_size) {
 		inode->idata = malloc(inode->idata_size);
+		if (!inode->idata)
+			return -ENOMEM;
 		memcpy(inode->idata, buf + blknr_to_addr(nblocks),
 		       inode->idata_size);
 	}
@@ -347,9 +351,15 @@ int erofs_write_file(struct erofs_inode *inode)
 	inode->idata_size = inode->i_size % EROFS_BLKSIZ;
 	if (inode->idata_size) {
 		inode->idata = malloc(inode->idata_size);
+		if (!inode->idata) {
+			close(fd);
+			return -ENOMEM;
+		}
 
 		ret = read(fd, inode->idata, inode->idata_size);
 		if (ret < inode->idata_size) {
+			free(inode->idata);
+			inode->idata = NULL;
 			close(fd);
 			return -EIO;
 		}
@@ -825,12 +835,18 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 		if (S_ISLNK(dir->i_mode)) {
 			char *const symlink = malloc(dir->i_size);
 
+			if (!symlink)
+				return ERR_PTR(-ENOMEM);
 			ret = readlink(dir->i_srcpath, symlink, dir->i_size);
-			if (ret < 0)
+			if (ret < 0) {
+				free(symlink);
 				return ERR_PTR(-errno);
+			}
 
-			erofs_write_file_from_buffer(dir, symlink);
+			ret = erofs_write_file_from_buffer(dir, symlink);
 			free(symlink);
+			if (ret)
+				return ERR_PTR(ret);
 		} else {
 			erofs_write_file(dir);
 		}
