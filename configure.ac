@@ -168,7 +168,7 @@ if test "x$enable_lz4" = "xyes"; then
   test -z "${with_lz4_libdir}" || LZ4_LIBS="-L$with_lz4_libdir $LZ4_LIBS"
 
   saved_CPPFLAGS=${CPPFLAGS}
-  CPPFLAGS="${LZ4_CFLAGS} ${CFLAGS}"
+  CPPFLAGS="${LZ4_CFLAGS} ${CPPFLAGS}"
 
   AC_CHECK_HEADERS([lz4.h],[have_lz4h="yes"], [])
 
@@ -187,31 +187,32 @@ if test "x$enable_lz4" = "xyes"; then
       ])
     ], [AC_MSG_ERROR([Cannot find proper lz4 version (>= 1.8.0)])])
     LDFLAGS=${saved_LDFLAGS}
-
-    if test "x${have_lz4}" = "xyes"; then
-      AC_DEFINE([LZ4_ENABLED], [1], [Define to 1 if lz4 is enabled.])
-
-      if test "x${have_lz4hc}" = "xyes"; then
-        AC_DEFINE([LZ4HC_ENABLED], [1], [Define to 1 if lz4hc is enabled.])
-      fi
-
-      if test "x${lz4_force_static}" = "xyes"; then
-        LDFLAGS="-all-static ${LDFLAGS}"
-      else
-	test -z "${with_lz4_libdir}" || LZ4_LIBS="-R ${with_lz4_libdir} $LZ4_LIBS"
-      fi
-      LIBS="$LZ4_LIBS $LIBS"
-    fi
   fi
-  CFLAGS=${saved_CPPFLAGS}
+  CPPFLAGS=${saved_CPPFLAGS}
 fi
+
+# Set up needed symbols, conditionals and compiler/linker flags
+AM_CONDITIONAL([ENABLE_LZ4], [test "x${have_lz4}" = "xyes"])
+AM_CONDITIONAL([ENABLE_LZ4HC], [test "x${have_lz4hc}" = "xyes"])
 
 if test "x$have_uuid" = "xyes"; then
   AC_DEFINE([HAVE_LIBUUID], 1, [Define to 1 if libuuid is found])
 fi
 
-AM_CONDITIONAL([ENABLE_LZ4], [test "x${have_lz4}" = "xyes"])
-AM_CONDITIONAL([ENABLE_LZ4HC], [test "x${have_lz4hc}" = "xyes"])
+if test "x${have_lz4}" = "xyes"; then
+  AC_DEFINE([LZ4_ENABLED], [1], [Define to 1 if lz4 is enabled.])
+
+  if test "x${have_lz4hc}" = "xyes"; then
+    AC_DEFINE([LZ4HC_ENABLED], [1], [Define to 1 if lz4hc is enabled.])
+  fi
+
+  if test "x${lz4_force_static}" = "xyes"; then
+    LDFLAGS="-all-static ${LDFLAGS}"
+  else
+    test -z "${with_lz4_libdir}" || LZ4_LIBS="-R ${with_lz4_libdir} $LZ4_LIBS"
+  fi
+  LIBS="$LZ4_LIBS $LIBS"
+fi
 
 AC_CONFIG_FILES([Makefile
 		 man/Makefile
