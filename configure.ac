@@ -174,7 +174,7 @@ if test "x$enable_lz4" = "xyes"; then
 
   if test "x${have_lz4h}" = "xyes" ; then
     saved_LDFLAGS=${LDFLAGS}
-    LDFLAGS="-L$with_lz4_libdir ${LDFLAGS}"
+    test -z "${with_lz4_libdir}" || LDFLAGS="-L$with_lz4_libdir ${LDFLAGS}"
     AC_CHECK_LIB(lz4, LZ4_compress_destSize, [
       have_lz4="yes"
       have_lz4hc="yes"
