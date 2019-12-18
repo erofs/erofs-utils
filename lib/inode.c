@@ -302,9 +302,52 @@ static bool erofs_file_is_compressible(struct erofs_inode *inode)
 	return true;
 }
 
+static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
+{
+	int ret;
+	unsigned int nblocks, i;
+
+	inode->datalayout = EROFS_INODE_FLAT_INLINE;
+	nblocks = inode->i_size / EROFS_BLKSIZ;
+
+	ret = __allocate_inode_bh_data(inode, nblocks);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < nblocks; ++i) {
+		char buf[EROFS_BLKSIZ];
+
+		ret = read(fd, buf, EROFS_BLKSIZ);
+		if (ret != EROFS_BLKSIZ) {
+			if (ret < 0)
+				return -errno;
+			return -EAGAIN;
+		}
+
+		ret = blk_write(buf, inode->u.i_blkaddr + i, 1);
+		if (ret)
+			return ret;
+	}
+
+	/* read the tail-end data */
+	inode->idata_size = inode->i_size % EROFS_BLKSIZ;
+	if (inode->idata_size) {
+		inode->idata = malloc(inode->idata_size);
+		if (!inode->idata)
+			return -ENOMEM;
+
+		ret = read(fd, inode->idata, inode->idata_size);
+		if (ret < inode->idata_size) {
+			free(inode->idata);
+			inode->idata = NULL;
+			return -EIO;
+		}
+	}
+	return 0;
+}
+
 int erofs_write_file(struct erofs_inode *inode)
 {
-	unsigned int nblocks, i;
 	int ret, fd;
 
 	if (!inode->i_size) {
@@ -320,54 +363,11 @@ int erofs_write_file(struct erofs_inode *inode)
 	}
 
 	/* fallback to all data uncompressed */
-	inode->datalayout = EROFS_INODE_FLAT_INLINE;
-	nblocks = inode->i_size / EROFS_BLKSIZ;
-
-	ret = __allocate_inode_bh_data(inode, nblocks);
-	if (ret)
-		return ret;
-
 	fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
 	if (fd < 0)
 		return -errno;
 
-	for (i = 0; i < nblocks; ++i) {
-		char buf[EROFS_BLKSIZ];
-
-		ret = read(fd, buf, EROFS_BLKSIZ);
-		if (ret != EROFS_BLKSIZ) {
-			if (ret < 0)
-				goto fail;
-			close(fd);
-			return -EAGAIN;
-		}
-
-		ret = blk_write(buf, inode->u.i_blkaddr + i, 1);
-		if (ret)
-			goto fail;
-	}
-
-	/* read the tail-end data */
-	inode->idata_size = inode->i_size % EROFS_BLKSIZ;
-	if (inode->idata_size) {
-		inode->idata = malloc(inode->idata_size);
-		if (!inode->idata) {
-			close(fd);
-			return -ENOMEM;
-		}
-
-		ret = read(fd, inode->idata, inode->idata_size);
-		if (ret < inode->idata_size) {
-			free(inode->idata);
-			inode->idata = NULL;
-			close(fd);
-			return -EIO;
-		}
-	}
-	close(fd);
-	return 0;
-fail:
-	ret = -errno;
+	ret = write_uncompressed_file_from_fd(inode, fd);
 	close(fd);
 	return ret;
 }
