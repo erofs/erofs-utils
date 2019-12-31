@@ -98,8 +98,7 @@ static int parse_extended_opts(const char *opts)
 				return -EINVAL;
 			/* disable compacted indexes and 0padding */
 			cfg.c_legacy_compress = true;
-			sbi.feature_incompat &=
-				~EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
+			erofs_sb_clear_lz4_0padding();
 		}
 
 		if (MATCH_EXTENTED_OPT("force-inode-compact", token, keylen)) {
@@ -117,7 +116,7 @@ static int parse_extended_opts(const char *opts)
 		if (MATCH_EXTENTED_OPT("nosbcrc", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
-			sbi.feature_compat &= ~EROFS_FEATURE_COMPAT_SB_CHKSUM;
+			erofs_sb_clear_sb_chksum();
 		}
 	}
 	return 0;
@@ -424,7 +423,7 @@ int main(int argc, char **argv)
 	else
 		err = dev_resize(nblocks);
 
-	if (!err && (sbi.feature_compat & EROFS_FEATURE_COMPAT_SB_CHKSUM))
+	if (!err && erofs_sb_has_sb_chksum())
 		err = erofs_mkfs_superblock_csum_set();
 exit:
 	z_erofs_compress_exit();

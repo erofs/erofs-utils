@@ -120,13 +120,12 @@ static int write_uncompressed_block(struct z_erofs_vle_compress_ctx *ctx,
 	int ret;
 	unsigned int count;
 
-	if (!(sbi.feature_incompat & EROFS_FEATURE_INCOMPAT_LZ4_0PADDING)) {
-		/* fix up clusterofs to 0 if possable */
-		if (ctx->head >= ctx->clusterofs) {
-			ctx->head -= ctx->clusterofs;
-			*len += ctx->clusterofs;
-			ctx->clusterofs = 0;
-		}
+	/* reset clusterofs to 0 if permitted */
+	if (!erofs_sb_has_lz4_0padding() &&
+	    ctx->head >= ctx->clusterofs) {
+		ctx->head -= ctx->clusterofs;
+		*len += ctx->clusterofs;
+		ctx->clusterofs = 0;
 	}
 
 	/* write uncompressed data */
@@ -184,8 +183,7 @@ nocompression:
 			erofs_dbg("Writing %u compressed data to block %u",
 				  count, ctx->blkaddr);
 
-			if (sbi.feature_incompat &
-			    EROFS_FEATURE_INCOMPAT_LZ4_0PADDING)
+			if (erofs_sb_has_lz4_0padding())
 				ret = blk_write(dst - (EROFS_BLKSIZ - ret),
 						ctx->blkaddr, 1);
 			else
@@ -514,7 +512,7 @@ int z_erofs_compress_init(void)
 	 */
 	if (!cfg.c_compr_alg_master ||
 	    strncmp(cfg.c_compr_alg_master, "lz4", 3))
-		sbi.feature_incompat &= ~EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
+		erofs_sb_clear_lz4_0padding();
 
 	if (!cfg.c_compr_alg_master)
 		return 0;

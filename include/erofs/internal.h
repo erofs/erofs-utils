@@ -62,6 +62,23 @@ struct erofs_sb_info {
 /* global sbi */
 extern struct erofs_sb_info sbi;
 
+#define EROFS_FEATURE_FUNCS(name, compat, feature) \
+static inline bool erofs_sb_has_##name(void) \
+{ \
+	return sbi.feature_##compat & EROFS_FEATURE_##feature; \
+} \
+static inline void erofs_sb_set_##name(void) \
+{ \
+	sbi.feature_##compat |= EROFS_FEATURE_##feature; \
+} \
+static inline void erofs_sb_clear_##name(void) \
+{ \
+	sbi.feature_##compat &= ~EROFS_FEATURE_##feature; \
+}
+
+EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_LZ4_0PADDING)
+EROFS_FEATURE_FUNCS(sb_chksum, compat, COMPAT_SB_CHKSUM)
+
 struct erofs_inode {
 	struct list_head i_hash, i_subdirs, i_xattrs;
 
