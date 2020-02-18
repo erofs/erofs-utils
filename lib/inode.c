@@ -20,6 +20,7 @@
 #include "erofs/io.h"
 #include "erofs/compress.h"
 #include "erofs/xattr.h"
+#include "erofs/exclude.h"
 
 struct erofs_sb_info sbi;
 
@@ -875,6 +876,10 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 
 		if (is_dot_dotdot(dp->d_name) ||
 		    !strncmp(dp->d_name, "lost+found", strlen("lost+found")))
+			continue;
+
+		/* skip if it's a exclude file */
+		if (erofs_is_exclude_path(dir->i_srcpath, dp->d_name))
 			continue;
 
 		d = erofs_d_alloc(dir, dp->d_name);

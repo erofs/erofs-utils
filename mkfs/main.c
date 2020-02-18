@@ -21,6 +21,7 @@
 #include "erofs/io.h"
 #include "erofs/compress.h"
 #include "erofs/xattr.h"
+#include "erofs/exclude.h"
 
 #ifdef HAVE_LIBUUID
 #include <uuid/uuid.h>
@@ -30,6 +31,8 @@
 
 static struct option long_options[] = {
 	{"help", no_argument, 0, 1},
+	{"exclude-path", required_argument, NULL, 2},
+	{"exclude-regex", required_argument, NULL, 3},
 	{0, 0, 0, 0},
 };
 
@@ -50,12 +53,14 @@ static void usage(void)
 {
 	fputs("usage: [options] FILE DIRECTORY\n\n"
 	      "Generate erofs image from DIRECTORY to FILE, and [options] are:\n"
-	      " -zX[,Y]   X=compressor (Y=compression level, optional)\n"
-	      " -d#       set output message level to # (maximum 9)\n"
-	      " -x#       set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
-	      " -EX[,...] X=extended options\n"
-	      " -T#       set a fixed UNIX timestamp # to all files\n"
-	      " --help    display this help and exit\n"
+	      " -zX[,Y]           X=compressor (Y=compression level, optional)\n"
+	      " -d#               set output message level to # (maximum 9)\n"
+	      " -x#               set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
+	      " -EX[,...]         X=extended options\n"
+	      " -T#               set a fixed UNIX timestamp # to all files\n"
+	      " --exclude-path=X  avoid including file X (X = exact literal path)\n"
+	      " --exclude-regex=X avoid including files that match X (X = regular expression)\n"
+	      " --help            display this help and exit\n"
 	      "\nAvailable compressors are: ", stderr);
 	print_available_compressors(stderr, ", ");
 }
@@ -177,7 +182,22 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				return -EINVAL;
 			}
 			break;
-
+		case 2:
+			opt = erofs_parse_exclude_path(optarg, false);
+			if (opt) {
+				erofs_err("failed to parse exclude path: %s",
+					  erofs_strerror(opt));
+				return opt;
+			}
+			break;
+		case 3:
+			opt = erofs_parse_exclude_path(optarg, true);
+			if (opt) {
+				erofs_err("failed to parse exclude regex: %s",
+					  erofs_strerror(opt));
+				return opt;
+			}
+			break;
 		case 1:
 			usage();
 			exit(0);
@@ -372,6 +392,7 @@ int main(int argc, char **argv)
 	}
 
 	erofs_show_config();
+	erofs_exclude_set_root(cfg.c_src_path);
 
 	sb_bh = erofs_buffer_init();
 	if (IS_ERR(sb_bh)) {
@@ -428,6 +449,7 @@ int main(int argc, char **argv)
 exit:
 	z_erofs_compress_exit();
 	dev_close();
+	erofs_cleanup_exclude_rules();
 	erofs_exit_configure();
 
 	if (err) {
