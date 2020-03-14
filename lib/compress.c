@@ -7,7 +7,9 @@
  * Created by Miao Xie <miaoxie@huawei.com>
  * with heavy changes by Gao Xiang <gaoxiang25@huawei.com>
  */
+#ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
+#endif
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>

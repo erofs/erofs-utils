@@ -6,8 +6,12 @@
  *             http://www.huawei.com/
  * Created by Li Guifu <bluce.liguifu@huawei.com>
  */
+#ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
+#endif
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include "erofs/io.h"
