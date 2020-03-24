@@ -204,8 +204,9 @@ nocompression:
 		len -= count;
 
 		if (!final && ctx->head >= EROFS_CONFIG_COMPR_MAX_SZ) {
-			const uint qh_aligned = round_down(ctx->head, EROFS_BLKSIZ);
-			const uint qh_after = ctx->head - qh_aligned;
+			const unsigned int qh_aligned =
+				round_down(ctx->head, EROFS_BLKSIZ);
+			const unsigned int qh_after = ctx->head - qh_aligned;
 
 			memmove(ctx->queue, ctx->queue + qh_aligned,
 				len + qh_after);
@@ -308,11 +309,11 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 					unsigned int legacymetasize,
 					unsigned int logical_clusterbits)
 {
-	const uint headerpos = Z_EROFS_VLE_EXTENT_ALIGN(inode->inode_isize +
-							inode->xattr_isize) +
-			       sizeof(struct z_erofs_map_header);
-	const uint totalidx = (legacymetasize -
-			       Z_EROFS_LEGACY_MAP_HEADER_SIZE) / 8;
+	const unsigned int mpos = Z_EROFS_VLE_EXTENT_ALIGN(inode->inode_isize +
+							   inode->xattr_isize) +
+				  sizeof(struct z_erofs_map_header);
+	const unsigned int totalidx = (legacymetasize -
+				       Z_EROFS_LEGACY_MAP_HEADER_SIZE) / 8;
 	u8 *out, *in;
 	struct z_erofs_compressindex_vec cv[16];
 	/* # of 8-byte units so that it can be aligned with 32 bytes */
@@ -324,7 +325,7 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 	if (logical_clusterbits > 14)	/* currently not supported */
 		return -ENOTSUP;
 	if (logical_clusterbits == 12) {
-		compacted_4b_initial = (32 - headerpos % 32) / 4;
+		compacted_4b_initial = (32 - mpos % 32) / 4;
 		if (compacted_4b_initial == 32 / 4)
 			compacted_4b_initial = 0;
 
