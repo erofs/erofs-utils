@@ -23,8 +23,18 @@ typedef unsigned short umode_t;
 #define PATH_MAX        4096    /* # chars in a path name including nul */
 #endif
 
+#ifndef PAGE_SHIFT
 #define PAGE_SHIFT		(12)
+#endif
+
+#ifndef PAGE_SIZE
 #define PAGE_SIZE		(1U << PAGE_SHIFT)
+#endif
+
+/* no obvious reason to support explicit PAGE_SIZE != 4096 for now */
+#if PAGE_SIZE != 4096
+#error incompatible PAGE_SIZE is already defined
+#endif
 
 #define LOG_BLOCK_SIZE          (12)
 #define EROFS_BLKSIZ            (1U << LOG_BLOCK_SIZE)
