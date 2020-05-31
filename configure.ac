@@ -188,7 +188,6 @@ test -z $LZ4_LIBS && LZ4_LIBS='-llz4'
 
 if test "x$enable_lz4" = "xyes"; then
   test -z "${with_lz4_incdir}" || LZ4_CFLAGS="-I$with_lz4_incdir $LZ4_CFLAGS"
-  test -z "${with_lz4_libdir}" || LZ4_LIBS="-L$with_lz4_libdir $LZ4_LIBS"
 
   saved_CPPFLAGS=${CPPFLAGS}
   CPPFLAGS="${LZ4_CFLAGS} ${CPPFLAGS}"
@@ -196,6 +195,7 @@ if test "x$enable_lz4" = "xyes"; then
   AC_CHECK_HEADERS([lz4.h],[have_lz4h="yes"], [])
 
   if test "x${have_lz4h}" = "xyes" ; then
+    saved_LIBS="$LIBS"
     saved_LDFLAGS=${LDFLAGS}
     test -z "${with_lz4_libdir}" || LDFLAGS="-L$with_lz4_libdir ${LDFLAGS}"
     AC_CHECK_LIB(lz4, LZ4_compress_destSize, [
@@ -210,6 +210,7 @@ if test "x$enable_lz4" = "xyes"; then
       ])
     ], [AC_MSG_ERROR([Cannot find proper lz4 version (>= 1.8.0)])])
     LDFLAGS=${saved_LDFLAGS}
+    LIBS="${saved_LIBS}"
   fi
   CPPFLAGS=${saved_CPPFLAGS}
 fi
@@ -234,11 +235,11 @@ if test "x${have_lz4}" = "xyes"; then
   fi
 
   if test "x${lz4_force_static}" = "xyes"; then
-    LDFLAGS="-all-static ${LDFLAGS}"
+    LZ4_LIBS="-Wl,-Bstatic -Wl,-whole-archive -Xlinker ${LZ4_LIBS} -Wl,-no-whole-archive -Wl,-Bdynamic"
+    test -z "${with_lz4_libdir}" || LZ4_LIBS="-L${with_lz4_libdir} $LZ4_LIBS"
   else
-    test -z "${with_lz4_libdir}" || LZ4_LIBS="-R ${with_lz4_libdir} $LZ4_LIBS"
+    test -z "${with_lz4_libdir}" || LZ4_LIBS="-R${with_lz4_libdir} $LZ4_LIBS"
   fi
-  LIBS="$LZ4_LIBS $LIBS"
 fi
 
 AC_CONFIG_FILES([Makefile
