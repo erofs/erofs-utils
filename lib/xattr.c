@@ -186,6 +186,49 @@ static struct xattr_item *parse_one_xattr(const char *path, const char *key,
 	return get_xattritem(prefix, kvbuf, len);
 }
 
+static struct xattr_item *erofs_get_selabel_xattr(const char *srcpath,
+						  mode_t mode)
+{
+#ifdef HAVE_LIBSELINUX
+	if (cfg.sehnd) {
+		char *secontext;
+		int ret;
+		unsigned int len[2];
+		char *kvbuf, *fspath;
+
+		ret = asprintf(&fspath, "/%s", erofs_fspath(srcpath));
+		if (ret <= 0)
+			return ERR_PTR(-ENOMEM);
+
+		ret = selabel_lookup(cfg.sehnd, &secontext, fspath, mode);
+		free(fspath);
+
+		if (ret) {
+			ret = -errno;
+			if (ret != -ENOENT) {
+				erofs_err("failed to lookup selabel for %s: %s",
+					  srcpath, erofs_strerror(ret));
+				return ERR_PTR(ret);
+			}
+			/* secontext = "u:object_r:unlabeled:s0"; */
+			return NULL;
+		}
+
+		len[0] = sizeof("selinux") - 1;
+		len[1] = strlen(secontext);
+		kvbuf = malloc(len[0] + len[1] + 1);
+		if (!kvbuf) {
+			freecon(secontext);
+			return ERR_PTR(-ENOMEM);
+		}
+		sprintf(kvbuf, "selinux%s", secontext);
+		freecon(secontext);
+		return get_xattritem(EROFS_XATTR_INDEX_SECURITY, kvbuf, len);
+	}
+#endif
+	return NULL;
+}
+
 static int inode_xattr_add(struct list_head *hlist, struct xattr_item *item)
 {
 	struct inode_xattr_node *node = malloc(sizeof(*node));
@@ -215,19 +258,48 @@ static int shared_xattr_add(struct xattr_item *item)
 	return ++shared_xattrs_count;
 }
 
-static int read_xattrs_from_file(const char *path, struct list_head *ixattrs)
+static int erofs_xattr_add(struct list_head *ixattrs, struct xattr_item *item)
 {
-	int ret = 0;
-	char *keylst, *key;
+	if (ixattrs)
+		return inode_xattr_add(ixattrs, item);
+
+	if (item->count == cfg.c_inline_xattr_tolerance + 1) {
+		int ret = shared_xattr_add(item);
+
+		if (ret < 0)
+			return ret;
+	}
+	return 0;
+}
+
+static bool erofs_is_skipped_xattr(const char *key)
+{
+#ifdef HAVE_LIBSELINUX
+	/* if sehnd is valid, selabels will be overridden */
+	if (cfg.sehnd && !strcmp(key, XATTR_SECURITY_PREFIX "selinux"))
+		return true;
+#endif
+	return false;
+}
+
+static int read_xattrs_from_file(const char *path, mode_t mode,
+				 struct list_head *ixattrs)
+{
 	ssize_t kllen = llistxattr(path, NULL, 0);
+	int ret;
+	char *keylst, *key, *klend;
+	unsigned int keylen;
+	struct xattr_item *item;
 
 	if (kllen < 0 && errno != ENODATA) {
 		erofs_err("llistxattr to get the size of names for %s failed",
 			  path);
 		return -errno;
 	}
+
+	ret = 0;
 	if (kllen <= 1)
-		return 0;
+		goto out;
 
 	keylst = malloc(kllen);
 	if (!keylst)
@@ -246,36 +318,42 @@ static int read_xattrs_from_file(const char *path, struct list_head *ixattrs)
 	 * attribute keys. Use the remaining buffer length to determine
 	 * the end of the list.
 	 */
-	key = keylst;
-	while (kllen > 0) {
-		unsigned int keylen = strlen(key);
-		struct xattr_item *item = parse_one_xattr(path, key, keylen);
+	klend = keylst + kllen;
+	ret = 0;
 
+	for (key = keylst; key != klend; key += keylen + 1) {
+		keylen = strlen(key);
+		if (erofs_is_skipped_xattr(key))
+			continue;
+
+		item = parse_one_xattr(path, key, keylen);
 		if (IS_ERR(item)) {
 			ret = PTR_ERR(item);
 			goto err;
 		}
 
-		if (ixattrs) {
-			ret = inode_xattr_add(ixattrs, item);
-			if (ret < 0)
-				goto err;
-		} else if (item->count == cfg.c_inline_xattr_tolerance + 1) {
-			ret = shared_xattr_add(item);
-			if (ret < 0)
-				goto err;
-			ret = 0;
-		}
-		kllen -= keylen + 1;
-		key += keylen + 1;
+		ret = erofs_xattr_add(ixattrs, item);
+		if (ret < 0)
+			goto err;
 	}
+	free(keylst);
+
+out:
+	/* if some selabel is avilable, need to add right now */
+	item = erofs_get_selabel_xattr(path, mode);
+	if (IS_ERR(item))
+		return PTR_ERR(item);
+	if (item)
+		ret = erofs_xattr_add(ixattrs, item);
+	return ret;
+
 err:
 	free(keylst);
 	return ret;
-
 }
 
-int erofs_prepare_xattr_ibody(const char *path, struct list_head *ixattrs)
+int erofs_prepare_xattr_ibody(const char *path, mode_t mode,
+			      struct list_head *ixattrs)
 {
 	int ret;
 	struct inode_xattr_node *node;
@@ -284,7 +362,7 @@ int erofs_prepare_xattr_ibody(const char *path, struct list_head *ixattrs)
 	if (cfg.c_inline_xattr_tolerance < 0)
 		return 0;
 
-	ret = read_xattrs_from_file(path, ixattrs);
+	ret = read_xattrs_from_file(path, mode, ixattrs);
 	if (ret < 0)
 		return ret;
 
@@ -345,15 +423,15 @@ static int erofs_count_all_xattrs_from_path(const char *path)
 			goto fail;
 		}
 
-		ret = read_xattrs_from_file(buf, NULL);
-		if (ret)
-			goto fail;
-
 		ret = lstat64(buf, &st);
 		if (ret) {
 			ret = -errno;
 			goto fail;
 		}
+
+		ret = read_xattrs_from_file(buf, st.st_mode, NULL);
+		if (ret)
+			goto fail;
 
 		if (!S_ISDIR(st.st_mode))
 			continue;

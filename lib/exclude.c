@@ -17,13 +17,6 @@
 static LIST_HEAD(exclude_head);
 static LIST_HEAD(regex_exclude_head);
 
-static unsigned int rpathlen;		/* root directory prefix length */
-
-void erofs_exclude_set_root(const char *rootdir)
-{
-	rpathlen = strlen(rootdir);
-}
-
 static void dump_regerror(int errcode, const char *s, const regex_t *preg)
 {
 	char str[512];
@@ -120,10 +113,7 @@ struct erofs_exclude_rule *erofs_is_exclude_path(const char *dir,
 		s = buf;
 	}
 
-	s += rpathlen;
-	while (*s == '/')
-		s++;
-
+	s = erofs_fspath(s);
 	list_for_each_entry(r, &exclude_head, list) {
 		if (!strcmp(r->pattern, s))
 			return r;

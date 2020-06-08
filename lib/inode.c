@@ -827,7 +827,8 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 	struct dirent *dp;
 	struct erofs_dentry *d;
 
-	ret = erofs_prepare_xattr_ibody(dir->i_srcpath, &dir->i_xattrs);
+	ret = erofs_prepare_xattr_ibody(dir->i_srcpath,
+					dir->i_mode, &dir->i_xattrs);
 	if (ret < 0)
 		return ERR_PTR(ret);
 	dir->xattr_isize = ret;

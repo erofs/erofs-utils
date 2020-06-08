@@ -67,6 +67,15 @@ AC_ARG_WITH(uuid,
    [AS_HELP_STRING([--without-uuid],
       [Ignore presence of libuuid and disable uuid support @<:@default=enabled@:>@])])
 
+AC_ARG_WITH(selinux,
+   [AS_HELP_STRING([--with-selinux],
+      [enable and build with selinux support @<:@default=no@:>@])],
+   [case "$with_selinux" in
+      yes|no) ;;
+      *) AC_MSG_ERROR([invalid argument to --with-selinux])
+      ;;
+    esac], [with_selinux=no])
+
 # Checks for libraries.
 # Use customized LZ4 library path when specified.
 AC_ARG_WITH(lz4-incdir,
@@ -160,6 +169,20 @@ return 0;
   LIBS="${saved_LIBS}"
   CPPFLAGS="${saved_CPPFLAGS}"], [have_uuid="no"])
 
+# Configure selinux
+AS_IF([test "x$with_selinux" != "xno"], [
+  PKG_CHECK_MODULES([libselinux], [libselinux])
+  # Paranoia: don't trust the result reported by pkgconfig before trying out
+  saved_LIBS="$LIBS"
+  saved_CPPFLAGS=${CPPFLAGS}
+  CPPFLAGS="${libselinux_CFLAGS} ${CPPFLAGS}"
+  LIBS="${libselinux_LIBS} $LIBS"
+  AC_CHECK_LIB(selinux, selabel_lookup, [
+    have_selinux="yes" ], [
+    AC_MSG_ERROR([libselinux doesn't work properly])])
+  LIBS="${saved_LIBS}"
+  CPPFLAGS="${saved_CPPFLAGS}"], [have_selinux="no"])
+
 # Configure lz4
 test -z $LZ4_LIBS && LZ4_LIBS='-llz4'
 
@@ -197,6 +220,10 @@ AM_CONDITIONAL([ENABLE_LZ4HC], [test "x${have_lz4hc}" = "xyes"])
 
 if test "x$have_uuid" = "xyes"; then
   AC_DEFINE([HAVE_LIBUUID], 1, [Define to 1 if libuuid is found])
+fi
+
+if test "x$have_selinux" = "xyes"; then
+  AC_DEFINE([HAVE_LIBSELINUX], 1, [Define to 1 if libselinux is found])
 fi
 
 if test "x${have_lz4}" = "xyes"; then

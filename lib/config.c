@@ -36,6 +36,48 @@ void erofs_show_config(void)
 
 void erofs_exit_configure(void)
 {
-
+#ifdef HAVE_LIBSELINUX
+	if (cfg.sehnd)
+		selabel_close(cfg.sehnd);
+#endif
 }
+
+static unsigned int fullpath_prefix;	/* root directory prefix length */
+
+void erofs_set_fs_root(const char *rootdir)
+{
+	fullpath_prefix = strlen(rootdir);
+}
+
+const char *erofs_fspath(const char *fullpath)
+{
+	const char *s = fullpath + fullpath_prefix;
+
+	while (*s == '/')
+		s++;
+	return s;
+}
+
+#ifdef HAVE_LIBSELINUX
+int erofs_selabel_open(const char *file_contexts)
+{
+	struct selinux_opt seopts[] = {
+		{ .type = SELABEL_OPT_PATH, .value = file_contexts }
+	};
+
+	if (cfg.sehnd) {
+		erofs_info("ignore duplicated file contexts \"%s\"",
+			   file_contexts);
+		return -EBUSY;
+	}
+
+	cfg.sehnd = selabel_open(SELABEL_CTX_FILE, seopts, 1);
+	if (!cfg.sehnd) {
+		erofs_err("failed to open file contexts \"%s\"",
+			  file_contexts);
+		return -EINVAL;
+	}
+	return 0;
+}
+#endif
 

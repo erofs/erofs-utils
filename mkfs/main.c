@@ -33,6 +33,9 @@ static struct option long_options[] = {
 	{"help", no_argument, 0, 1},
 	{"exclude-path", required_argument, NULL, 2},
 	{"exclude-regex", required_argument, NULL, 3},
+#ifdef HAVE_LIBSELINUX
+	{"file-contexts", required_argument, NULL, 4},
+#endif
 	{0, 0, 0, 0},
 };
 
@@ -60,6 +63,9 @@ static void usage(void)
 	      " -T#               set a fixed UNIX timestamp # to all files\n"
 	      " --exclude-path=X  avoid including file X (X = exact literal path)\n"
 	      " --exclude-regex=X avoid including files that match X (X = regular expression)\n"
+#ifdef HAVE_LIBSELINUX
+	      " --file-contexts=X specify a file contexts file to setup selinux labels\n"
+#endif
 	      " --help            display this help and exit\n"
 	      "\nAvailable compressors are: ", stderr);
 	print_available_compressors(stderr, ", ");
@@ -198,6 +204,13 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				return opt;
 			}
 			break;
+
+		case 4:
+			opt = erofs_selabel_open(optarg);
+			if (opt && opt != -EBUSY)
+				return opt;
+			break;
+
 		case 1:
 			usage();
 			exit(0);
@@ -392,7 +405,7 @@ int main(int argc, char **argv)
 	}
 
 	erofs_show_config();
-	erofs_exclude_set_root(cfg.c_src_path);
+	erofs_set_fs_root(cfg.c_src_path);
 
 	sb_bh = erofs_buffer_init();
 	if (IS_ERR(sb_bh)) {
