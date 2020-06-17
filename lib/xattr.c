@@ -352,17 +352,17 @@ err:
 	return ret;
 }
 
-int erofs_prepare_xattr_ibody(const char *path, mode_t mode,
-			      struct list_head *ixattrs)
+int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
 {
 	int ret;
 	struct inode_xattr_node *node;
+	struct list_head *ixattrs = &inode->i_xattrs;
 
 	/* check if xattr is disabled */
 	if (cfg.c_inline_xattr_tolerance < 0)
 		return 0;
 
-	ret = read_xattrs_from_file(path, mode, ixattrs);
+	ret = read_xattrs_from_file(inode->i_srcpath, inode->i_mode, ixattrs);
 	if (ret < 0)
 		return ret;
 
@@ -381,6 +381,7 @@ int erofs_prepare_xattr_ibody(const char *path, mode_t mode,
 		ret += sizeof(struct erofs_xattr_entry);
 		ret = EROFS_XATTR_ALIGN(ret + item->len[0] + item->len[1]);
 	}
+	inode->xattr_isize = ret;
 	return ret;
 }
 
