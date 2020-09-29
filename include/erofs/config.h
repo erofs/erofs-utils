@@ -17,6 +17,13 @@
 #include <selinux/label.h>
 #endif
 
+#ifdef WITH_ANDROID
+#include <selinux/android.h>
+#include <private/android_filesystem_config.h>
+#include <private/canned_fs_config.h>
+#include <private/fs_config.h>
+#endif
+
 enum {
 	FORCE_INODE_COMPACT = 1,
 	FORCE_INODE_EXTENDED,
@@ -40,6 +47,11 @@ struct erofs_configure {
 	/* < 0, xattr disabled and INT_MAX, always use inline xattrs */
 	int c_inline_xattr_tolerance;
 	u64 c_unix_timestamp;
+#ifdef WITH_ANDROID
+	char *mount_point;
+	char *target_out_path;
+	char *fs_config_file;
+#endif
 };
 
 extern struct erofs_configure cfg;

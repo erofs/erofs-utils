@@ -36,6 +36,11 @@ static struct option long_options[] = {
 #ifdef HAVE_LIBSELINUX
 	{"file-contexts", required_argument, NULL, 4},
 #endif
+#ifdef WITH_ANDROID
+	{"mount-point", required_argument, NULL, 10},
+	{"product-out", required_argument, NULL, 11},
+	{"fs-config-file", required_argument, NULL, 12},
+#endif
 	{0, 0, 0, 0},
 };
 
@@ -210,7 +215,21 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			if (opt && opt != -EBUSY)
 				return opt;
 			break;
-
+#ifdef WITH_ANDROID
+		case 10:
+			cfg.mount_point = optarg;
+			/* all trailing '/' should be deleted */
+			opt = strlen(cfg.mount_point);
+			if (opt && optarg[opt - 1] == '/')
+				optarg[opt - 1] = '\0';
+			break;
+		case 11:
+			cfg.target_out_path = optarg;
+			break;
+		case 12:
+			cfg.fs_config_file = optarg;
+			break;
+#endif
 		case 1:
 			usage();
 			exit(0);
@@ -403,6 +422,14 @@ int main(int argc, char **argv)
 		usage();
 		return 1;
 	}
+
+#ifdef WITH_ANDROID
+	if (cfg.fs_config_file &&
+	    load_canned_fs_config(cfg.fs_config_file) < 0) {
+		erofs_err("failed to load fs config %s", cfg.fs_config_file);
+		return 1;
+	}
+#endif
 
 	erofs_show_config();
 	erofs_set_fs_root(cfg.c_src_path);

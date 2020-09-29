@@ -196,6 +196,12 @@ static struct xattr_item *erofs_get_selabel_xattr(const char *srcpath,
 		unsigned int len[2];
 		char *kvbuf, *fspath;
 
+#ifdef WITH_ANDROID
+		if (cfg.mount_point)
+			ret = asprintf(&fspath, "/%s/%s", cfg.mount_point,
+				       erofs_fspath(srcpath));
+		else
+#endif
 		ret = asprintf(&fspath, "/%s", erofs_fspath(srcpath));
 		if (ret <= 0)
 			return ERR_PTR(-ENOMEM);
@@ -352,6 +358,48 @@ err:
 	return ret;
 }
 
+#ifdef WITH_ANDROID
+static int erofs_droid_xattr_set_caps(struct erofs_inode *inode)
+{
+	const u64 capabilities = inode->capabilities;
+	char *kvbuf;
+	unsigned int len[2];
+	struct vfs_cap_data caps;
+	struct xattr_item *item;
+
+	if (!capabilities)
+		return 0;
+
+	len[0] = sizeof("capability") - 1;
+	len[1] = sizeof(caps);
+
+	kvbuf = malloc(len[0] + len[1]);
+	if (!kvbuf)
+		return -ENOMEM;
+
+	memcpy(kvbuf, "capability", len[0]);
+	caps.magic_etc = VFS_CAP_REVISION_2 | VFS_CAP_FLAGS_EFFECTIVE;
+	caps.data[0].permitted = (u32) capabilities;
+	caps.data[0].inheritable = 0;
+	caps.data[1].permitted = (u32) (capabilities >> 32);
+	caps.data[1].inheritable = 0;
+	memcpy(kvbuf + len[0], &caps, len[1]);
+
+	item = get_xattritem(EROFS_XATTR_INDEX_SECURITY, kvbuf, len);
+	if (IS_ERR(item))
+		return PTR_ERR(item);
+	if (!item)
+		return 0;
+
+	return erofs_xattr_add(&inode->i_xattrs, item);
+}
+#else
+static int erofs_droid_xattr_set_caps(struct erofs_inode *inode)
+{
+	return 0;
+}
+#endif
+
 int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
 {
 	int ret;
@@ -363,6 +411,10 @@ int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
 		return 0;
 
 	ret = read_xattrs_from_file(inode->i_srcpath, inode->i_mode, ixattrs);
+	if (ret < 0)
+		return ret;
+
+	ret = erofs_droid_xattr_set_caps(inode);
 	if (ret < 0)
 		return ret;
 

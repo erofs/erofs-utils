@@ -127,6 +127,9 @@ struct erofs_inode {
 
 	void *idata;
 	void *compressmeta;
+#ifdef WITH_ANDROID
+	uint64_t capabilities;
+#endif
 };
 
 static inline bool is_inode_layout_compression(struct erofs_inode *inode)

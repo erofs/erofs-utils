@@ -673,10 +673,59 @@ static u32 erofs_new_encode_dev(dev_t dev)
 	return (minor & 0xff) | (major << 8) | ((minor & ~0xff) << 12);
 }
 
+#ifdef WITH_ANDROID
+int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
+			       struct stat64 *st,
+			       const char *path)
+{
+	/* filesystem_config does not preserve file type bits */
+	mode_t stat_file_type_mask = st->st_mode & S_IFMT;
+	unsigned int uid = 0, gid = 0, mode = 0;
+	char *fspath;
+
+	inode->capabilities = 0;
+	if (cfg.fs_config_file)
+		canned_fs_config(erofs_fspath(path),
+				 S_ISDIR(st->st_mode),
+				 cfg.target_out_path,
+				 &uid, &gid, &mode, &inode->capabilities);
+	else if (cfg.mount_point) {
+		if (asprintf(&fspath, "%s/%s", cfg.mount_point,
+			     erofs_fspath(path)) <= 0)
+			return -ENOMEM;
+
+		fs_config(fspath, S_ISDIR(st->st_mode),
+			  cfg.target_out_path,
+			  &uid, &gid, &mode, &inode->capabilities);
+		free(fspath);
+	}
+	st->st_uid = uid;
+	st->st_gid = gid;
+	st->st_mode = mode | stat_file_type_mask;
+
+	erofs_dbg("/%s -> mode = 0x%x, uid = 0x%x, gid = 0x%x, "
+		  "capabilities = 0x%" PRIx64 "\n",
+		  erofs_fspath(path),
+		  mode, uid, gid, inode->capabilities);
+	return 0;
+}
+#else
+static int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
+				      struct stat64 *st,
+				      const char *path)
+{
+	return 0;
+}
+#endif
+
 int erofs_fill_inode(struct erofs_inode *inode,
 		     struct stat64 *st,
 		     const char *path)
 {
+	int err = erofs_droid_inode_fsconfig(inode, st, path);
+
+	if (err)
+		return err;
 	inode->i_mode = st->st_mode;
 	inode->i_uid = st->st_uid;
 	inode->i_gid = st->st_gid;
