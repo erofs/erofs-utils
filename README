@@ -78,6 +78,11 @@ Known issues
    LZ4_compress_HC_destSize()
    https://github.com/lz4/lz4/issues/784
 
+   which has been resolved in
+   https://github.com/lz4/lz4/commit/e7fe105ac6ed02019d34731d2ba3aceb11b51bb1
+
+   and will be included in lz4-1.9.3 if all goes well.
+
 Obsoleted erofs.mkfs
 ~~~~~~~~~~~~~~~~~~~~
 
