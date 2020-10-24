@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only OR Apache-2.0 */
 /*
- * erofs_utils/include/erofs_fs.h
+ * erofs-utils/include/erofs_fs.h
  * EROFS (Enhanced ROM File System) on-disk format definition
  *
  * Copyright (C) 2017-2018 HUAWEI, Inc.

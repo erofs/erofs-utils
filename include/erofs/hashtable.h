@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * erofs_utils/include/erofs/hashtable.h
+ * erofs-utils/include/erofs/hashtable.h
  *
  * Original code taken from 'linux/include/linux/hash{,table}.h'
  */

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * erofs_utils/lib/compress.c
+ * erofs-utils/lib/compress.c
  *
  * Copyright (C) 2018-2019 HUAWEI, Inc.
  *             http://www.huawei.com/
