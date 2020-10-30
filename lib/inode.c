@@ -729,8 +729,19 @@ int erofs_fill_inode(struct erofs_inode *inode,
 	inode->i_mode = st->st_mode;
 	inode->i_uid = st->st_uid;
 	inode->i_gid = st->st_gid;
-	inode->i_ctime = sbi.build_time;
-	inode->i_ctime_nsec = sbi.build_time_nsec;
+	inode->i_ctime = st->st_ctime;
+	inode->i_ctime_nsec = st->st_ctim.tv_nsec;
+
+	switch (cfg.c_timeinherit) {
+	case TIMESTAMP_CLAMPING:
+		if (st->st_ctime < sbi.build_time)
+			break;
+	case TIMESTAMP_FIXED:
+		inode->i_ctime = sbi.build_time;
+		inode->i_ctime_nsec = sbi.build_time_nsec;
+	default:
+		break;
+	}
 	inode->i_nlink = 1;	/* fix up later if needed */
 
 	switch (inode->i_mode & S_IFMT) {

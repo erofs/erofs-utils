@@ -198,6 +198,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				erofs_err("invalid UNIX timestamp %s", optarg);
 				return -EINVAL;
 			}
+			cfg.c_timeinherit = TIMESTAMP_FIXED;
 			break;
 		case 2:
 			opt = erofs_parse_exclude_path(optarg, false);
@@ -381,6 +382,33 @@ static void erofs_mkfs_generate_uuid(void)
 	erofs_info("filesystem UUID: %s", uuid_str);
 }
 
+/* https://reproducible-builds.org/specs/source-date-epoch/ for more details */
+int parse_source_date_epoch(void)
+{
+	char *source_date_epoch;
+	unsigned long long epoch = -1ULL;
+	char *endptr;
+
+	source_date_epoch = getenv("SOURCE_DATE_EPOCH");
+	if (!source_date_epoch)
+		return 0;
+
+	epoch = strtoull(source_date_epoch, &endptr, 10);
+	if (epoch == -1ULL || *endptr != '\0') {
+		erofs_err("Environment variable $SOURCE_DATE_EPOCH %s is invalid",
+			  source_date_epoch);
+		return -EINVAL;
+	}
+
+	if (cfg.c_force_inodeversion != FORCE_INODE_EXTENDED)
+		erofs_info("SOURCE_DATE_EPOCH is set, forcely generate extended inodes instead");
+
+	cfg.c_force_inodeversion = FORCE_INODE_EXTENDED;
+	cfg.c_unix_timestamp = epoch;
+	cfg.c_timeinherit = TIMESTAMP_CLAMPING;
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	int err = 0;
@@ -402,6 +430,12 @@ int main(int argc, char **argv)
 	if (err) {
 		if (err == -EINVAL)
 			usage();
+		return 1;
+	}
+
+	err = parse_source_date_epoch();
+	if (err) {
+		usage();
 		return 1;
 	}
 
