@@ -240,7 +240,9 @@ if test "x${have_lz4}" = "xyes"; then
   else
     test -z "${with_lz4_libdir}" || LZ4_LIBS="-R${with_lz4_libdir} $LZ4_LIBS"
   fi
+  liblz4_LIBS="${LZ4_LIBS}"
 fi
+AC_SUBST([liblz4_LIBS])
 
 AC_CONFIG_FILES([Makefile
 		 man/Makefile
