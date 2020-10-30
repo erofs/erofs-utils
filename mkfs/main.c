@@ -368,18 +368,18 @@ static int erofs_mkfs_superblock_csum_set(void)
 	return 0;
 }
 
-static void erofs_mkfs_generate_uuid(void)
+static void erofs_mkfs_default_options(void)
 {
-	char uuid_str[37] = "not available";
+	cfg.c_legacy_compress = false;
+	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
+	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM;
 
+	/* generate a default uuid first */
 #ifdef HAVE_LIBUUID
 	do {
 		uuid_generate(sbi.uuid);
 	} while (uuid_is_null(sbi.uuid));
-
-	uuid_unparse_lower(sbi.uuid, uuid_str);
 #endif
-	erofs_info("filesystem UUID: %s", uuid_str);
 }
 
 /* https://reproducible-builds.org/specs/source-date-epoch/ for more details */
@@ -418,13 +418,12 @@ int main(int argc, char **argv)
 	struct stat64 st;
 	erofs_blk_t nblocks;
 	struct timeval t;
+	char uuid_str[37] = "not available";
 
 	erofs_init_configure();
 	fprintf(stderr, "%s %s\n", basename(argv[0]), cfg.c_version);
 
-	cfg.c_legacy_compress = false;
-	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
-	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM;
+	erofs_mkfs_default_options();
 
 	err = mkfs_parse_options_cfg(argc, argv);
 	if (err) {
@@ -495,7 +494,11 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
-	erofs_mkfs_generate_uuid();
+#ifdef HAVE_LIBUUID
+	uuid_unparse_lower(sbi.uuid, uuid_str);
+#endif
+	erofs_info("filesystem UUID: %s", uuid_str);
+
 	erofs_inode_manager_init();
 
 	err = erofs_build_shared_xattrs_from_path(cfg.c_src_path);
