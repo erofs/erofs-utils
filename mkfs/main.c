@@ -66,6 +66,9 @@ static void usage(void)
 	      " -x#                set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
 	      " -EX[,...]          X=extended options\n"
 	      " -T#                set a fixed UNIX timestamp # to all files\n"
+#ifdef HAVE_LIBUUID
+	      " -UX                use a given filesystem UUID\n"
+#endif
 	      " --exclude-path=X   avoid including file X (X = exact literal path)\n"
 	      " --exclude-regex=X  avoid including files that match X (X = regular expression)\n"
 #ifdef HAVE_LIBSELINUX
@@ -149,7 +152,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	char *endptr;
 	int opt, i;
 
-	while((opt = getopt_long(argc, argv, "d:x:z:E:T:",
+	while((opt = getopt_long(argc, argv, "d:x:z:E:T:U:",
 				 long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'z':
@@ -200,6 +203,14 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			}
 			cfg.c_timeinherit = TIMESTAMP_FIXED;
 			break;
+#ifdef HAVE_LIBUUID
+		case 'U':
+			if (uuid_parse(optarg, sbi.uuid)) {
+				erofs_err("invalid UUID %s", optarg);
+				return -EINVAL;
+			}
+			break;
+#endif
 		case 2:
 			opt = erofs_parse_exclude_path(optarg, false);
 			if (opt) {
