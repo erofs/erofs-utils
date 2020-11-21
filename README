@@ -1,30 +1,32 @@
 erofs-utils
 ===========
 
-erofs-utils includes user-space tools for erofs filesystem images.
+erofs-utils includes user-space tools for erofs filesystem.
 Currently only mkfs.erofs is available.
 
 mkfs.erofs
 ----------
 
-It can create 2 primary kinds of erofs images: (un)compressed.
+It can generate 2 primary kinds of erofs images: (un)compressed.
 
- - For compressed images, it's able to use several compression
-   algorithms, but lz4(hc) are only supported due to the current
-   linux kernel implementation.
+ - For uncompressed images, there will be none of compression
+   files in these images. However, it can decide whether the tail
+   block of a file should be inlined or not properly [1].
 
- - For uncompressed images, it can decide whether the last page of
-   a file should be inlined or not properly [1].
+ - For compressed images, it will try to use lz4(hc) algorithm
+   first for each regular file and see if storage space can be
+   saved with compression. If not, fallback to an uncompressed
+   file.
 
 Dependencies
 ~~~~~~~~~~~~
 
- lz4-1.8.0+ for lz4 enabled [2], lz4-1.9.3+ recommended [4].
+ lz4-1.8.0+ for lz4 enabled [2], lz4-1.9.3+ highly recommended [4].
 
 How to build for lz4-1.9.0 or above
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To build you can run the following commands in order:
+To build, you can run the following commands in order:
 
 ::
 
@@ -32,23 +34,26 @@ To build you can run the following commands in order:
 	$ ./configure
 	$ make
 
-mkfs.erofs binary will be generated under mkfs folder. There are still
-some issues which affect the stability of LZ4_compress_destSize()
-* they have impacts on lz4 only rather than lz4HC * [3].
+mkfs.erofs binary will be generated under mkfs folder.
+
+* For lz4 < 1.9.2, there are some stability issues about
+  LZ4_compress_destSize(). (lz4hc isn't impacted) [3].
 
 How to build for lz4-1.8.0~1.8.3
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For these old lz4 versions, lz4hc algorithm cannot be supported without
-lz4 static libary due to LZ4_compress_HC_destSize unstable api usage,
-which means only lz4 algrithm is available if lz4 static library isn't found.
+For these old lz4 versions, lz4hc algorithm cannot be supported
+without lz4-static installed due to LZ4_compress_HC_destSize()
+unstable api usage, which means lz4 will only be available if
+lz4-static isn't found.
 
-On Fedora, static lz4 can be installed using:
+On Fedora, lz4-static can be installed by using:
 
 	yum install lz4-static.x86_64
 
-However, it's not recommended to use those versions since there were bugs
-in these compressors, see [2] [3] [4] as well.
+However, it's still not recommended using those versions directly
+since there are serious bugs in these compressors, see [2] [3] [4]
+as well.
 
 How to generate erofs images
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -56,36 +61,34 @@ How to generate erofs images
 Currently lz4 and lz4hc are available for compression, e.g.
  $ mkfs.erofs -zlz4hc foo.erofs.img foo/
 
-Or leave all files uncompressed as a option:
+Or leave all files uncompressed as an option:
  $ mkfs.erofs foo.erofs.img foo/
 
 How to generate legacy erofs images
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Decompression inplace and compacted indexes have been introduced in
-linux-5.3, which are not backward-compatible with older kernels.
+linux-5.3, which are not forward-compatible with older kernels.
 
 In order to generate _legacy_ erofs images for old kernels,
-add "-E legacy-compress" to the command line, e.g.
+consider adding "-E legacy-compress" to the command line, e.g.
 
  $ mkfs.erofs -E legacy-compress -zlz4hc foo.erofs.img foo/
 
 Obsoleted erofs.mkfs
 ~~~~~~~~~~~~~~~~~~~~
 
-There is an original erofs.mkfs version developped by Li Guifu,
+There is an original erofs.mkfs version developed by Li Guifu,
 which was replaced by the new erofs-utils implementation.
 
 git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b obsoleted_mkfs
 
-It may still be useful since new erofs-utils has not been widely used in
-commercial products. However, if that happens, please report bug to us
-as well.
+PLEASE NOTE: This version is highly _NOT recommended_ now.
 
 Contribution
 ------------
 
-erofs-utils is a GPLv2+ project as a part of erofs file system,
+erofs-utils is under GPLv2+ as a part of erofs project,
 feel free to send patches or feedback to us.
 
 To:
@@ -101,19 +104,20 @@ Cc:
 Comments
 --------
 
-[1] According to the erofs on-disk format, the last page of files could
-    be inlined aggressively with its metadata in order to reduce the I/O
-    overhead and save the storage space.
+[1] According to the erofs on-disk format, the tail block of files
+    could be inlined aggressively with its metadata in order to reduce
+    the I/O overhead and save the storage space (called tail-packing).
 
-[2] There was a bug until lz4-1.8.3, which can crash erofs-utils randomly.
-    Fortunately bugfix by our colleague Qiuyang Sun was merged in lz4-1.9.0.
+[2] There was a bug until lz4-1.8.3, which can crash erofs-utils
+    randomly. Fortunately bugfix by our colleague Qiuyang Sun was
+    merged in lz4-1.9.0.
 
     For more details, please refer to
     https://github.com/lz4/lz4/commit/660d21272e4c8a0f49db5fc1e6853f08713dff82
 
-[3] There are many crash fixes merged to lz4 1.9.2 for LZ4_compress_destSize(),
-    and I once ran into some crashs due to those issues.
-    * Again lz4HC is not effected for this section. *
+[3] There were many bugfixes merged into lz4-1.9.2 for
+    LZ4_compress_destSize(), and I once ran into some crashs due to
+    those issues. * Again lz4hc is not affected. *
 
     [LZ4_compress_destSize] Allow 2 more bytes of match length
     https://github.com/lz4/lz4/commit/690009e2c2f9e5dcb0d40e7c0c40610ce6006eda
@@ -134,7 +138,7 @@ Comments
     preferred to use latest upstream lz4 library (although some regressions
     could happen since new features are also introduced to latest upstream
     version as well) or backport all stable bugfixes to old stable versions,
-    e.g. our unoffical lz4 fork: https://github.com/erofs/lz4
+    e.g. our unofficial lz4 fork: https://github.com/erofs/lz4
 
 [4] LZ4HC didn't compress long zeroed buffer properly with
     LZ4_compress_HC_destSize()
