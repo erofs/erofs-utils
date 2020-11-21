@@ -19,7 +19,7 @@ It can create 2 primary kinds of erofs images: (un)compressed.
 Dependencies
 ~~~~~~~~~~~~
 
- lz4-1.8.0+ for lz4 enabled [2], lz4-1.9.0+ recommended
+ lz4-1.8.0+ for lz4 enabled [2], lz4-1.9.3+ recommended [4].
 
 How to build for lz4-1.9.0 or above
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -48,7 +48,7 @@ On Fedora, static lz4 can be installed using:
 	yum install lz4-static.x86_64
 
 However, it's not recommended to use those versions since there were bugs
-in these compressors, see [2] [3] as well.
+in these compressors, see [2] [3] [4] as well.
 
 How to generate erofs images
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -69,19 +69,6 @@ In order to generate _legacy_ erofs images for old kernels,
 add "-E legacy-compress" to the command line, e.g.
 
  $ mkfs.erofs -E legacy-compress -zlz4hc foo.erofs.img foo/
-
-
-Known issues
-~~~~~~~~~~~~
-
-1. LZ4HC cannot compress long zeroed buffer properly with
-   LZ4_compress_HC_destSize()
-   https://github.com/lz4/lz4/issues/784
-
-   which has been resolved in
-   https://github.com/lz4/lz4/commit/e7fe105ac6ed02019d34731d2ba3aceb11b51bb1
-
-   and will be included in lz4-1.9.3 if all goes well.
 
 Obsoleted erofs.mkfs
 ~~~~~~~~~~~~~~~~~~~~
@@ -148,4 +135,14 @@ Comments
     could happen since new features are also introduced to latest upstream
     version as well) or backport all stable bugfixes to old stable versions,
     e.g. our unoffical lz4 fork: https://github.com/erofs/lz4
+
+[4] LZ4HC didn't compress long zeroed buffer properly with
+    LZ4_compress_HC_destSize()
+    https://github.com/lz4/lz4/issues/784
+
+    which has been resolved in
+    https://github.com/lz4/lz4/commit/e7fe105ac6ed02019d34731d2ba3aceb11b51bb1
+
+    and already included in lz4-1.9.3, see:
+    https://github.com/lz4/lz4/releases/tag/v1.9.3
 
