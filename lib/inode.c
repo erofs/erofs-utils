@@ -908,7 +908,9 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 			if (ret)
 				return ERR_PTR(ret);
 		} else {
-			erofs_write_file(dir);
+			ret = erofs_write_file(dir);
+			if (ret)
+				return ERR_PTR(ret);
 		}
 
 		erofs_prepare_inode_buffer(dir);
@@ -982,10 +984,11 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 
 		d->inode = erofs_mkfs_build_tree_from_path(dir, buf);
 		if (IS_ERR(d->inode)) {
+			ret = PTR_ERR(d->inode);
 fail:
 			d->inode = NULL;
 			d->type = EROFS_FT_UNKNOWN;
-			continue;
+			goto err_closedir;
 		}
 
 		d->type = erofs_type_by_mode[d->inode->i_mode >> S_SHIFT];
