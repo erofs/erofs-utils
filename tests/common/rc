@@ -309,6 +309,12 @@ _get_filesize()
 	stat -c %s "$1"
 }
 
+_require_fssum()
+{
+	FSSUM_PROG=${PWD}/src/fssum
+	[ -x $FSSUM_PROG ] || _notrun "fssum not built"
+}
+
 _check_results()
 {
 	[ -z $srcdir ] && return 0
