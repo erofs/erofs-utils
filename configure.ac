@@ -922,5 +922,6 @@ AC_CONFIG_FILES([Makefile
 		 fuse/Makefile
 		 fsck/Makefile
 		 mount/Makefile
-		 contrib/Makefile])
+		 contrib/Makefile
+		 tests/Makefile])
 AC_OUTPUT

@@ -7,3 +7,6 @@ if ENABLE_FUSE
 SUBDIRS += fuse
 endif
 SUBDIRS += mount contrib
+
+# Testcases are handled in the end
+SUBDIRS += tests
