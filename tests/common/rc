@@ -1,0 +1,322 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+
+tmp=/tmp/$$
+mkdir -p $tmp 1>/dev/null 2>&1
+
+if [ ! -z $srcdir ]; then
+	exec > $tmp.out
+	cd $srcdir; here="`pwd`"; cd - > /dev/null
+else
+	here="`pwd`"
+fi
+
+rm -f $seqres.* 1>/dev/null 2>&1
+
+# set up signal handler
+status=1	# failure is the default!
+trap "_cleanup; exit \$status" 0 1 2 3 15
+
+# all tests should use a common language setting to prevent golden
+# output mismatches.
+export LANG=C
+export LC_ALL=C
+
+[ -z $FSTYP ] && FSTYP="erofs"
+
+# make sure we have a standard umask
+umask 022
+
+tmp=/tmp/$$
+mkdir -p $tmp 1>/dev/null 2>&1
+
+_cleanup()
+{
+	_check_results
+	res=$?
+	_scratch_unmount 2> /dev/null
+	_test_unmount 2> /dev/null
+	cleanup
+	rm -rf $tmp/ 1>/dev/null 2>&1
+	[ $res -ne 0 ] && exit 1
+}
+
+_fatal()
+{
+    echo "$*"
+    status=1
+    exit 1
+}
+
+export MOUNT_PROG="`bash -c "type -P mount"`"
+[ "$MOUNT_PROG" = "" ] && _fatal "mount not found"
+
+export UMOUNT_PROG="`bash -c "type -P umount"`"
+[ "$UMOUNT_PROG" = "" ] && _fatal "umount not found"
+[ "$MKFS_EROFS_PROG" = "" ] && _fatal "mkfs.erofs not found"
+
+[ "$FSTYP" = "erofsfuse" -a "$EROFSFUSE_PROG" = "" ] && \
+	_fatal "erofsfuse not found"
+
+# just plain bail out
+_fail()
+{
+    echo "$*" | tee -a $seqres.full
+    echo "(see $seqres.full for details)"
+    status=1
+    exit 1
+}
+
+# bail out, setting up .notrun file. Need to kill the filesystem check files
+# here, otherwise they are set incorrectly for the next test.
+#
+_notrun()
+{
+    echo "$*" > $seqres.notrun
+    echo "$seq not run: $*"
+    rm -f ${RESULT_DIR}/require_test*
+    rm -f ${RESULT_DIR}/require_scratch*
+
+    status=77
+    exit 77
+}
+
+_require_root()
+{
+	[ "$(id -u)" = "0" ] || _notrun "must be run as root"
+}
+
+# this test requires erofs kernel support
+_require_erofs()
+{
+	if [ "$FSTYP" = "erofsfuse" ]; then
+		return
+	fi
+
+	_require_root
+	modprobe erofs >/dev/null 2>&1
+	grep -q erofs /proc/filesystems ||
+		_notrun "this test requires EROFS kernel support"
+}
+
+# this test requires overlayfs kernel support
+_require_overlayfs()
+{
+	_require_root
+	modprobe overlay >/dev/null 2>&1
+	grep -q overlay /proc/filesystems ||
+		_notrun "this test requires overlayfs kernel support"
+}
+
+# this test requires fscache/cachefiles kernel support
+_require_fscache()
+{
+	[ "$FSTYP" = "erofsfuse" ] && \
+		_notrun "erofsfuse doesn't support FSCACHE mode"
+
+	[ `echo "$(uname -r | cut -d. -f-2) < 5.19" | bc` -eq 1 ] && \
+		_notrun "this test requires kernel release >= 5.19"
+
+	_require_root
+	modprobe fscache >/dev/null 2>&1
+	grep -q fscache /proc/kallsyms ||
+		_notrun "this test requires FSCACHE kernel support"
+
+	modprobe cachefiles >/dev/null 2>&1
+	grep -q cachefiles /proc/kallsyms ||
+		_notrun "this test requires CACHEFILES kernel support"
+
+	[ -z "$CACHEFILESD_PROG" ] && CACHEFILESD_PROG=${PWD}/src/cachefilesd2
+	[ -x $CACHEFILESD_PROG ] || _notrun "cachefilesd not built"
+}
+
+# Do the actual mkfs work.
+_do_mkfs()
+{
+	local mkfs_cmd=$1
+	local mkfs_filter=$2
+	local mkfs_dev=$3
+	shift 3
+	local test_mkfs_options="$*"
+	local mkfs_status
+	local tmp=`mktemp -u`
+
+	eval "$mkfs_cmd $MKFS_OPTIONS $mkfs_dev $test_mkfs_options" \
+		1>$tmp.mkfsstd 2>$tmp.mkfserr
+	mkfs_status=$?
+
+	# output stored mkfs output, filtering unnecessary output from stderr
+	cat $tmp.mkfsstd
+	eval "cat $tmp.mkfserr | $mkfs_filter" >&2
+
+	rm -f $tmp.mkfserr $tmp.mkfsstd
+	return $mkfs_status
+}
+
+_mkfs()
+{
+	local mkfs_dev=$1
+	shift 1
+	local test_mkfs_options="$*"
+	local mkfs_cmd="$MKFS_EROFS_PROG"
+	local mkfs_filter="true"
+
+	_do_mkfs "$mkfs_cmd" "$mkfs_filter" "$mkfs_dev" "$test_mkfs_options" \
+		2>$tmp.mkfserr 1>$tmp.mkfsstd
+	mkfs_status=$?
+
+	# output mkfs stdout and stderr
+	cat $tmp.mkfsstd
+	cat $tmp.mkfserr >&2
+	rm -f $tmp.mkfserr $tmp.mkfsstd
+
+	# check the integrity of the generated image.
+	local blobdev=$(echo $test_mkfs_options | sed -n 's/^.*blobdev=\(.*\)$/\1/p' | awk '{print $1}')
+	local fsck_options="--extract"
+	[ -n "$blobdev" ] && fsck_options="$fsck_options --device=$blobdev"
+
+	[ $mkfs_status -eq 0 ] && $FSCK_EROFS_PROG $fsck_options $mkfs_dev || return 1
+	return $mkfs_status
+}
+
+_scratch_mkfs()
+{
+	_mkfs $SCRATCH_DEV "$*"
+}
+
+_test_mkfs()
+{
+	_mkfs $TEST_DEV "$*"
+}
+
+
+# Do the actual mount work.
+_do_mount()
+{
+	local test_mount_options="$*"
+	local mount_status
+	local tmp=`mktemp -u`
+	local mount_filter="awk '{print \$NF}' FS=":" | sed 's/^ *//g'"
+
+	eval "$MOUNT_PROG -t $FSTYP $test_mount_options" \
+		1>$tmp.mountstd 2>$tmp.mounterr
+	mount_status=$?
+
+	# output stored mount output, filtering unnecessary output from stderr
+	cat $tmp.mountstd
+	eval "cat $tmp.mounterr | $mount_filter" >&2
+
+	rm -f $tmp.mounterr $tmp.mountstd
+	return $mount_status
+}
+
+_scratch_mount_options()
+{
+	if $(echo "$SCRATCH_OPTIONS" | grep -q fsid); then
+		echo $SCRATCH_OPTIONS nodev $SCRATCH_MNT $*
+	else
+		[ "$FSTYP" != "erofsfuse" -a -f $SCRATCH_DEV ] &&
+			SCRATCH_OPTIONS="$SCRATCH_OPTIONS -o loop"
+		echo $SCRATCH_OPTIONS $SCRATCH_DEV $SCRATCH_MNT $*
+	fi
+}
+
+_test_mount_options()
+{
+	if $(echo "$TEST_OPTIONS" | grep -q fsid); then
+		echo $TEST_OPTIONS nodev $TEST_MNT $*
+	else
+		[ "$FSTYP" != "erofsfuse" -a -f $TEST_DEV ] &&
+			TEST_OPTIONS="$TEST_OPTIONS -o loop"
+		echo $TEST_OPTIONS $TEST_DEV $TEST_MNT $*
+	fi
+}
+
+# mount device with given options but don't check mount status
+_try_mount()
+{
+	if [ "$FSTYP" = "erofsfuse" ]; then
+		$EROFSFUSE_PROG $*
+	else
+		_do_mount $*
+	fi
+}
+
+_try_scratch_mount()
+{
+	_try_mount `_scratch_mount_options` $*
+}
+
+_try_test_mount()
+{
+	_try_mount `_test_mount_options` $*
+}
+
+# mount device with given options and _fail if mount fails
+_scratch_mount()
+{
+	_try_scratch_mount $* || _fail "scratch mount failed"
+}
+
+_test_mount()
+{
+	_try_test_mount $* || _fail "test mount failed"
+}
+
+_do_unmount()
+{
+	local mnt_path=$1
+
+	if [ "$FSTYP" = "erofsfuse" ]; then
+		fusermount -u $mnt_path
+	else
+		$UMOUNT_PROG $mnt_path
+	fi
+}
+
+_scratch_unmount()
+{
+	_do_unmount $SCRATCH_MNT
+}
+
+_test_unmount()
+{
+	_do_unmount $TEST_MNT
+}
+
+# clean up old mounts first
+_scratch_unmount 2> /dev/null
+_test_unmount 2> /dev/null
+
+_scratch_remount()
+{
+	local opts="$1"
+
+	test -n "$opts" && _try_scratch_mount "-o remount,$opts"
+}
+
+_scratch_cycle_mount()
+{
+	local opts="$1"
+
+	test -n "$opts" && opts="-o $opts"
+	_scratch_unmount
+	_try_scratch_mount "$opts" || _fail "cycle mount failed"
+}
+
+_get_filesize()
+{
+	stat -c %s "$1"
+}
+
+_check_results()
+{
+	[ -z $srcdir ] && return 0
+	[ -f $seqres.notrun ] && return 0
+
+	if ! diff `dirname $0`/$seq.out $tmp.out >/dev/null 2>&1 ; then
+		mv $tmp.out $seqres.out.bad
+		return 1
+	fi
+	return 0
+}

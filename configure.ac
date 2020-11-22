@@ -665,5 +665,6 @@ AC_CONFIG_FILES([Makefile
 		 dump/Makefile
 		 fuse/Makefile
 		 fsck/Makefile
-		 contrib/Makefile])
+		 contrib/Makefile
+		 tests/Makefile])
 AC_OUTPUT

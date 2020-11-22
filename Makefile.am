@@ -7,3 +7,6 @@ if ENABLE_FUSE
 SUBDIRS += fuse
 endif
 SUBDIRS += contrib
+
+# Testcases are handled in the end
+SUBDIRS += tests
