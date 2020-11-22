@@ -6,3 +6,6 @@ SUBDIRS = man lib mkfs dump fsck
 if ENABLE_FUSE
 SUBDIRS += fuse
 endif
+
+# testcases are handled in the end
+SUBDIRS += tests
