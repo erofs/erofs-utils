@@ -2,6 +2,8 @@
 # Makefile.am
 
 AUTOMAKE_OPTIONS = serial-tests
+SUBDIRS = src
+
 TESTS =
 
 TESTS_ENVIRONMENT = \
