@@ -78,7 +78,17 @@ static int erofsfuse_read(const char *path, char *buffer,
 	return size;
 }
 
+static int erofsfuse_readlink(const char *path, char *buffer, size_t size)
+{
+	int ret = erofsfuse_read(path, buffer, size, 0, NULL);
+
+	if (ret < 0)
+		return ret;
+	return 0;
+}
+
 static struct fuse_operations erofs_ops = {
+	.readlink = erofsfuse_readlink,
 	.getattr = erofsfuse_getattr,
 	.readdir = erofsfuse_readdir,
 	.open = erofsfuse_open,

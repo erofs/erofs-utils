@@ -15,6 +15,14 @@
 #include "erofs/print.h"
 #include "erofs/io.h"
 
+static dev_t erofs_new_decode_dev(u32 dev)
+{
+	const unsigned int major = (dev & 0xfff00) >> 8;
+	const unsigned int minor = (dev & 0xff) | ((dev >> 12) & 0xfff00);
+
+	return makedev(major, minor);
+}
+
 static int erofs_read_inode_from_disk(struct erofs_inode *vi)
 {
 	int ret, ifmt;
@@ -57,10 +65,13 @@ static int erofs_read_inode_from_disk(struct erofs_inode *vi)
 			break;
 		case S_IFCHR:
 		case S_IFBLK:
-			return -EOPNOTSUPP;
+			vi->u.i_rdev =
+				erofs_new_decode_dev(le32_to_cpu(die->i_u.rdev));
+			break;
 		case S_IFIFO:
 		case S_IFSOCK:
-			return -EOPNOTSUPP;
+			vi->u.i_rdev = 0;
+			break;
 		default:
 			goto bogusimode;
 		}
@@ -86,10 +97,13 @@ static int erofs_read_inode_from_disk(struct erofs_inode *vi)
 			break;
 		case S_IFCHR:
 		case S_IFBLK:
-			return -EOPNOTSUPP;
+			vi->u.i_rdev =
+				erofs_new_decode_dev(le32_to_cpu(dic->i_u.rdev));
+			break;
 		case S_IFIFO:
 		case S_IFSOCK:
-			return -EOPNOTSUPP;
+			vi->u.i_rdev = 0;
+			break;
 		default:
 			goto bogusimode;
 		}
