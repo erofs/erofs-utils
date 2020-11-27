@@ -18,6 +18,7 @@
 #include "erofs/hashtable.h"
 #include "erofs/xattr.h"
 #include "erofs/cache.h"
+#include "erofs/io.h"
 
 #define EA_HASHTABLE_BITS 16
 
@@ -522,6 +523,21 @@ static void erofs_cleanxattrs(bool sharedxattrs)
 	shared_xattrs_size = shared_xattrs_count = 0;
 }
 
+static bool erofs_bh_flush_write_shared_xattrs(struct erofs_buffer_head *bh)
+{
+	void *buf = bh->fsprivate;
+	int err = dev_write(buf, erofs_btell(bh, false), shared_xattrs_size);
+
+	if (err)
+		return false;
+	free(buf);
+	return erofs_bh_flush_generic_end(bh);
+}
+
+static struct erofs_bhops erofs_write_shared_xattrs_bhops = {
+	.flush = erofs_bh_flush_write_shared_xattrs,
+};
+
 int erofs_build_shared_xattrs_from_path(const char *path)
 {
 	int ret;
@@ -586,7 +602,7 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 		free(node);
 	}
 	bh->fsprivate = buf;
-	bh->op = &erofs_buf_write_bhops;
+	bh->op = &erofs_write_shared_xattrs_bhops;
 out:
 	erofs_cleanxattrs(true);
 	return 0;
