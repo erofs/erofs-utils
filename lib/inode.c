@@ -958,11 +958,11 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 
 	ret = erofs_prepare_dir_file(dir);
 	if (ret)
-		goto err_closedir;
+		goto err;
 
 	ret = erofs_prepare_inode_buffer(dir);
 	if (ret)
-		goto err_closedir;
+		goto err;
 
 	if (IS_ROOT(dir))
 		erofs_fixup_meta_blkaddr(dir);
@@ -988,7 +988,7 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 fail:
 			d->inode = NULL;
 			d->type = EROFS_FT_UNKNOWN;
-			goto err_closedir;
+			goto err;
 		}
 
 		d->type = erofs_type_by_mode[d->inode->i_mode >> S_SHIFT];
@@ -1003,6 +1003,7 @@ fail:
 
 err_closedir:
 	closedir(_dir);
+err:
 	return ERR_PTR(ret);
 }
 
