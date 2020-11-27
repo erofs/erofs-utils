@@ -547,7 +547,7 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 	if (!shared_xattrs_size)
 		goto out;
 
-	buf = malloc(shared_xattrs_size);
+	buf = calloc(1, shared_xattrs_size);
 	if (!buf)
 		return -ENOMEM;
 
