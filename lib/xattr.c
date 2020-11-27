@@ -506,8 +506,9 @@ static void erofs_cleanxattrs(bool sharedxattrs)
 {
 	unsigned int i;
 	struct xattr_item *item;
+	struct hlist_node *tmp;
 
-	hash_for_each(ea_hashtable, i, item, node) {
+	hash_for_each_safe(ea_hashtable, i, tmp, item, node) {
 		if (sharedxattrs && item->shared_xattr_id >= 0)
 			continue;
 
