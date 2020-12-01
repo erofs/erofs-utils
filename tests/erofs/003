@@ -1,0 +1,58 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# test long symlink (non-fast symlink)
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# mkfs long symlink (non-fast symlink)
+FNAME1=$(printf %255s | tr " " "x")
+FNAME4="$FNAME1/$FNAME1/$FNAME1/$FNAME1"
+FNAME="$FNAME4/$FNAME4/$FNAME4/$FNAME4"
+
+if ! $(ln -s $FNAME $localdir/symlink 2>/dev/null); then
+	# some filesystems (XFS), the maximum length of a symlink is 1024B.
+	MD5='c5f93d546176259f96cdfd2d0a3c6a41'
+	ln -s $FNAME4 $localdir/symlink || _notrun
+else
+	MD5='a487a80b24d56a83b952fa70ff961297'
+fi
+
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+_scratch_mount 2>>$seqres.full
+
+realmd5=$(readlink $SCRATCH_MNT/symlink | tr -d '\n' | md5sum | cut -d' ' -f1)
+[ "x$realmd5" = "x$MD5" ] || _fail "-->checkmd5 FAILED"
+
+_scratch_unmount
+
+echo Silence is golden
+status=0
+exit 0
