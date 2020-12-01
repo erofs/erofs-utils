@@ -1,0 +1,67 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# (legacy image) verify lz4 compressed image
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_fssum
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+[ -z "$lz4_on" ] && \
+	_notrun "lz4 compression is disabled, skipped."
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# collect files pending for verification
+dirs=`find ../ -maxdepth 1 -type d -printf '%p:'`
+IFS=':'
+for d in $dirs; do
+	[ $d = '../' ] && continue
+	[ -z "${d##\.\./tests*}" ] && continue
+	[ -z "${d##\.\./\.*}" ] && continue
+	cp -nR $d $localdir
+done
+unset IFS
+
+MKFS_OPTIONS="${MKFS_OPTIONS} -E legacy-compress -zlz4"
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+_scratch_mount 2>>$seqres.full
+
+FSSUM_OPTS="-MAC"
+[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
+
+sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+echo "$localdir checksum is $sum1" >>$seqres.full
+sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
+echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+
+[ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+_scratch_unmount
+
+echo Silence is golden
+status=0
+exit 0
