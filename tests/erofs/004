@@ -1,0 +1,57 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# test character/block device
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_root
+_require_erofs
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# test character device
+mknod $localdir/nulldev c 1 3
+
+# test block device
+mknod $localdir/loopdev b 7 123
+
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+_scratch_mount 2>>$seqres.full
+
+ttypenul='character special file:1,3'
+ttypelop='block special file:7,7b'
+
+[ "x$(stat -c "%F:%t,%T" $SCRATCH_MNT/nulldev | tr -d '\n')" = "x$ttypenul" ] || \
+       _fail "-->checknulldev FAILED"
+[ "x$(stat -c "%F:%t,%T" $SCRATCH_MNT/loopdev | tr -d '\n')" = "x$ttypelop" ] || \
+       _fail "-->checkloopdev FAILED"
+
+_scratch_unmount
+
+echo Silence is golden
+status=0
+exit 0
