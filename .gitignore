@@ -1,11 +1,16 @@
 .*
 *~
+*.[ao]
 *.diff
-*.o
 *.la
-*.a
+*.lo
+*.mod.c
+*.orig
 *.patch
 *.rej
+*.so
+*.so.dbg
+*.tar.*
 
 #
 # Generated files
