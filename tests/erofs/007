@@ -1,0 +1,28 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+[ -z "$lz4_on" ] && \
+	_notrun "lz4 compression is disabled, skipped."
+
+${PWD}/src/badlz4 >> $seqres.full 2>&1 || _fail "--> lz4 test FAILED"
+
+echo Silence is golden
+status=0
+exit 0
