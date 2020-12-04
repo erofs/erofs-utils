@@ -112,7 +112,12 @@ EROFS_FEATURE_FUNCS(sb_chksum, compat, COMPAT_SB_CHKSUM)
 struct erofs_inode {
 	struct list_head i_hash, i_subdirs, i_xattrs;
 
-	unsigned int flags;
+	union {
+		/* (erofsfuse) runtime flags */
+		unsigned int flags;
+		/* (mkfs.erofs) device ID containing source file */
+		u32 dev;
+	};
 	unsigned int i_count;
 	struct erofs_inode *i_parent;
 

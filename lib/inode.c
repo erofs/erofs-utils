@@ -35,7 +35,7 @@ static unsigned char erofs_type_by_mode[S_IFMT >> S_SHIFT] = {
 	[S_IFLNK >> S_SHIFT]  = EROFS_FT_SYMLINK,
 };
 
-#define NR_INODE_HASHTABLE	64
+#define NR_INODE_HASHTABLE	16384
 
 struct list_head inode_hashtable[NR_INODE_HASHTABLE];
 
@@ -54,14 +54,14 @@ static struct erofs_inode *erofs_igrab(struct erofs_inode *inode)
 }
 
 /* get the inode from the (source) inode # */
-struct erofs_inode *erofs_iget(ino_t ino)
+struct erofs_inode *erofs_iget(dev_t dev, ino_t ino)
 {
 	struct list_head *head =
-		&inode_hashtable[ino % NR_INODE_HASHTABLE];
+		&inode_hashtable[(ino ^ dev) % NR_INODE_HASHTABLE];
 	struct erofs_inode *inode;
 
 	list_for_each_entry(inode, head, i_hash)
-		if (inode->i_ino[1] == ino)
+		if (inode->i_ino[1] == ino && inode->dev == dev)
 			return erofs_igrab(inode);
 	return NULL;
 }
@@ -764,6 +764,7 @@ int erofs_fill_inode(struct erofs_inode *inode,
 	strncpy(inode->i_srcpath, path, sizeof(inode->i_srcpath) - 1);
 	inode->i_srcpath[sizeof(inode->i_srcpath) - 1] = '\0';
 
+	inode->dev = st->st_dev;
 	inode->i_ino[1] = st->st_ino;
 
 	if (erofs_should_use_inode_extended(inode)) {
@@ -778,7 +779,8 @@ int erofs_fill_inode(struct erofs_inode *inode,
 	}
 
 	list_add(&inode->i_hash,
-		 &inode_hashtable[st->st_ino % NR_INODE_HASHTABLE]);
+		 &inode_hashtable[(st->st_ino ^ st->st_dev) %
+				  NR_INODE_HASHTABLE]);
 	return 0;
 }
 
@@ -829,7 +831,7 @@ struct erofs_inode *erofs_iget_from_path(const char *path, bool is_src)
 	 * since hard-link directory isn't allowed.
 	 */
 	if (!S_ISDIR(st.st_mode)) {
-		inode = erofs_iget(st.st_ino);
+		inode = erofs_iget(st.st_dev, st.st_ino);
 		if (inode)
 			return inode;
 	}
