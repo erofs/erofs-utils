@@ -328,3 +328,15 @@ _check_results()
 	fi
 	return 0
 }
+
+_get_inode_number()
+{
+	case "$(uname -s)" in
+	'Linux')
+		stat -c'%i' $1;;
+	*'BSD')
+		stat -f'%Di' $1;;
+	*)
+		echo -1;;
+	esac
+}
