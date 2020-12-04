@@ -823,9 +823,16 @@ struct erofs_inode *erofs_iget_from_path(const char *path, bool is_src)
 	if (ret)
 		return ERR_PTR(-errno);
 
-	inode = erofs_iget(st.st_ino);
-	if (inode)
-		return inode;
+	/*
+	 * lookup in hash table first, if it already exists we have a
+	 * hard-link, just return it. Also don't lookup for directories
+	 * since hard-link directory isn't allowed.
+	 */
+	if (!S_ISDIR(st.st_mode)) {
+		inode = erofs_iget(st.st_ino);
+		if (inode)
+			return inode;
+	}
 
 	/* cannot find in the inode cache */
 	inode = erofs_new_inode();
