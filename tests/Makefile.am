@@ -67,7 +67,8 @@ TESTS += erofs/011
 # 012 - check the hard-link functionality
 TESTS += erofs/012
 
-60589e... erofs-utils: tests: add test for # of hardlinks
+# 013 - check if hardlinked directories are allowed
+TESTS += erofs/013
 
 EXTRA_DIST = common/rc erofs
 
