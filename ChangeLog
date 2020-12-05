@@ -1,3 +1,17 @@
+erofs-utils (1.2-1) unstable; urgency=medium
+
+ * This release includes the following features and bugfixes:
+   - (mkfs.erofs) support selinux file contexts;
+   - (mkfs.erofs) support $SOURCE_DATE_EPOCH;
+   - (mkfs.erofs) support a pre-defined UUID;
+   - (mkfs.erofs) fix random padding for reproducable builds;
+   - (mkfs.erofs) several fixes around hard links;
+   - (mkfs.erofs) minor code cleanups;
+   - (mkfs.erofs, AOSP) support Android fs_config;
+   - (experimental, disabled by default) add erofsfuse approach;
+
+ -- Gao Xiang <xiang@kernel.org>  Tue, 06 Dec 2020 00:00:00 +0800
+
 erofs-utils (1.1-1) unstable; urgency=low
 
  * a maintenance release includes the following updates:
