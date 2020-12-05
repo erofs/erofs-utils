@@ -2,26 +2,14 @@ erofs-utils
 ===========
 
 erofs-utils includes user-space tools for erofs filesystem.
-Currently only mkfs.erofs is available.
+Currently mkfs.erofs and erofsfuse (experimental) are available.
 
-mkfs.erofs
-----------
+Dependencies & build
+--------------------
 
-It can generate 2 primary kinds of erofs images: (un)compressed.
+ lz4 1.8.0+ for lz4 enabled [2], lz4 1.9.3+ highly recommended [4][5].
 
- - For uncompressed images, there will be none of compression
-   files in these images. However, it can decide whether the tail
-   block of a file should be inlined or not properly [1].
-
- - For compressed images, it will try to use lz4(hc) algorithm
-   first for each regular file and see if storage space can be
-   saved with compression. If not, fallback to an uncompressed
-   file.
-
-Dependencies
-~~~~~~~~~~~~
-
- lz4-1.8.0+ for lz4 enabled [2], lz4-1.9.3+ highly recommended [4].
+ libfuse 2.6+ for erofsfuse enabled as a plus.
 
 How to build for lz4-1.9.0 or above
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -39,6 +27,10 @@ mkfs.erofs binary will be generated under mkfs folder.
 * For lz4 < 1.9.2, there are some stability issues about
   LZ4_compress_destSize(). (lz4hc isn't impacted) [3].
 
+** For lz4 = 1.9.2, there is a noticeable regression about
+   LZ4_decompress_safe_partial() [5], which impacts erofsfuse
+   functionality for legacy images (without 0PADDING).
+
 How to build for lz4-1.8.0~1.8.3
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -54,6 +46,20 @@ On Fedora, lz4-static can be installed by using:
 However, it's still not recommended using those versions directly
 since there are serious bugs in these compressors, see [2] [3] [4]
 as well.
+
+mkfs.erofs
+----------
+
+two main kinds of erofs images can be generated: (un)compressed.
+
+ - For uncompressed images, there will be none of compression
+   files in these images. However, it can decide whether the tail
+   block of a file should be inlined or not properly [1].
+
+ - For compressed images, it will try to use lz4(hc) algorithm
+   first for each regular file and see if storage space can be
+   saved with compression. If not, fallback to an uncompressed
+   file.
 
 How to generate erofs images
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -84,6 +90,51 @@ which was replaced by the new erofs-utils implementation.
 git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b obsoleted_mkfs
 
 PLEASE NOTE: This version is highly _NOT recommended_ now.
+
+erofsfuse (experimental, unstable)
+----------------------------------
+
+erofsfuse is introduced to support erofs format for various platforms
+(including older linux kernels) and new on-disk features iteration.
+It can also be used as an unpacking tool for unprivileged users.
+
+It supports fixed-sized output decompression *without* any in-place
+I/O or in-place decompression optimization. Also like the other FUSE
+implementations, it suffers from most common performance issues (e.g.
+significant I/O overhead, double caching, etc.)
+
+Therefore, NEVER use it if performance is the top concern.
+
+Note that xattr & ACL aren't implemented yet due to the current Android
+use-case vs limited time. If you have some interest, contribution is,
+as always, welcome.
+
+How to build erofsfuse
+~~~~~~~~~~~~~~~~~~~~~~
+
+It's disabled by default as an experimental feature for now, to enable
+and build it manually:
+
+	$ ./configure --enable-fuse
+	$ make
+
+erofsfuse binary will be generated under fuse folder.
+
+How to mount an erofs image with erofsfuse
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+As the other FUSE implementations, it's quite simple to mount with
+erofsfuse, e.g.:
+ $ erofsfuse foo.erofs.img foo/
+
+Alternatively, to make it run in foreground (with debugging level 3):
+ $ erofsfuse -f --dbglevel=3 foo.erofs.img foo/
+
+To debug erofsfuse (also automatically run in foreground):
+ $ erofsfuse -d foo.erofs.img foo/
+
+To unmount an erofsfuse mountpoint as a non-root user:
+ $ fusermount -u foo/
 
 Contribution
 ------------
@@ -149,4 +200,9 @@ Comments
 
     and already included in lz4-1.9.3, see:
     https://github.com/lz4/lz4/releases/tag/v1.9.3
+
+[5] LZ4_decompress_safe_partial is broken in 1.9.2
+    https://github.com/lz4/lz4/issues/783
+
+    which is also resolved in lz4-1.9.3.
 
