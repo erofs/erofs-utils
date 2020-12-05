@@ -64,6 +64,10 @@ TESTS += erofs/010
 # 011 - (legacy image) verify lz4hc compressed image
 TESTS += erofs/011
 
+# 012 - check the hard-link functionality
+TESTS += erofs/012
+
+60589e... erofs-utils: tests: add test for # of hardlinks
 
 EXTRA_DIST = common/rc erofs
 
