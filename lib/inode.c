@@ -25,7 +25,7 @@
 struct erofs_sb_info sbi;
 
 #define S_SHIFT                 12
-static unsigned char erofs_type_by_mode[S_IFMT >> S_SHIFT] = {
+static unsigned char erofs_ftype_by_mode[S_IFMT >> S_SHIFT] = {
 	[S_IFREG >> S_SHIFT]  = EROFS_FT_REG_FILE,
 	[S_IFDIR >> S_SHIFT]  = EROFS_FT_DIR,
 	[S_IFCHR >> S_SHIFT]  = EROFS_FT_CHRDEV,
@@ -34,6 +34,11 @@ static unsigned char erofs_type_by_mode[S_IFMT >> S_SHIFT] = {
 	[S_IFSOCK >> S_SHIFT] = EROFS_FT_SOCK,
 	[S_IFLNK >> S_SHIFT]  = EROFS_FT_SYMLINK,
 };
+
+static unsigned char erofs_mode_to_ftype(umode_t mode)
+{
+	return erofs_ftype_by_mode[(mode & S_IFMT) >> S_SHIFT];
+}
 
 #define NR_INODE_HASHTABLE	16384
 
@@ -156,7 +161,7 @@ static int __allocate_inode_bh_data(struct erofs_inode *inode,
 int erofs_prepare_dir_file(struct erofs_inode *dir)
 {
 	struct erofs_dentry *d;
-	unsigned int d_size;
+	unsigned int d_size, i_nlink;
 	int ret;
 
 	/* dot is pointed to the current dir inode */
@@ -169,16 +174,28 @@ int erofs_prepare_dir_file(struct erofs_inode *dir)
 	d->inode = erofs_igrab(dir->i_parent);
 	d->type = EROFS_FT_DIR;
 
-	/* let's calculate dir size */
+	/* let's calculate dir size and update i_nlink */
 	d_size = 0;
+	i_nlink = 0;
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
 		int len = strlen(d->name) + sizeof(struct erofs_dirent);
 
 		if (d_size % EROFS_BLKSIZ + len > EROFS_BLKSIZ)
 			d_size = round_up(d_size, EROFS_BLKSIZ);
 		d_size += len;
+
+		i_nlink += (d->type == EROFS_FT_DIR);
 	}
 	dir->i_size = d_size;
+	/*
+	 * if there're too many subdirs as compact form, set nlink=1
+	 * rather than upgrade to use extented form instead.
+	 */
+	if (i_nlink > USHRT_MAX &&
+	    dir->inode_isize == sizeof(struct erofs_inode_compact))
+		dir->i_nlink = 1;
+	else
+		dir->i_nlink = i_nlink;
 
 	/* no compression for all dirs */
 	dir->datalayout = EROFS_INODE_FLAT_INLINE;
@@ -957,6 +974,10 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 			ret = PTR_ERR(d);
 			goto err_closedir;
 		}
+
+		/* to count i_nlink for directories */
+		d->type = (dp->d_type == DT_DIR ?
+			EROFS_FT_DIR : EROFS_FT_UNKNOWN);
 	}
 
 	if (errno) {
@@ -978,6 +999,7 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
 		char buf[PATH_MAX];
+		unsigned char ftype;
 
 		if (is_dot_dotdot(d->name)) {
 			erofs_d_invalidate(d);
@@ -1000,7 +1022,10 @@ fail:
 			goto err;
 		}
 
-		d->type = erofs_type_by_mode[d->inode->i_mode >> S_SHIFT];
+		ftype = erofs_mode_to_ftype(d->inode->i_mode);
+		DBG_BUGON(ftype == EROFS_FT_DIR && d->type != ftype);
+		d->type = ftype;
+
 		erofs_d_invalidate(d);
 		erofs_info("add file %s/%s (nid %llu, type %d)",
 			   dir->i_srcpath, d->name, (unsigned long long)d->nid,
