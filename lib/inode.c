@@ -22,8 +22,6 @@
 #include "erofs/xattr.h"
 #include "erofs/exclude.h"
 
-struct erofs_sb_info sbi;
-
 #define S_SHIFT                 12
 static unsigned char erofs_ftype_by_mode[S_IFMT >> S_SHIFT] = {
 	[S_IFREG >> S_SHIFT]  = EROFS_FT_REG_FILE,

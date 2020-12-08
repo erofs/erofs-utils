@@ -11,6 +11,7 @@
 #include "erofs/internal.h"
 
 struct erofs_configure cfg;
+struct erofs_sb_info sbi;
 
 void erofs_init_configure(void)
 {

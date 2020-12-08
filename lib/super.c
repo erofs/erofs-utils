@@ -11,8 +11,6 @@
 #include "erofs/io.h"
 #include "erofs/print.h"
 
-struct erofs_sb_info sbi;
-
 static bool check_layout_compatibility(struct erofs_sb_info *sbi,
 				       struct erofs_super_block *dsb)
 {
