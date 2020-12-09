@@ -24,7 +24,7 @@
 #include "erofs/exclude.h"
 
 #ifdef HAVE_LIBUUID
-#include <uuid/uuid.h>
+#include <uuid.h>
 #endif
 
 #define EROFS_SUPER_END (EROFS_SUPER_OFFSET + sizeof(struct erofs_super_block))
