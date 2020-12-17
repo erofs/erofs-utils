@@ -96,6 +96,7 @@ AC_ARG_VAR([LZ4_LIBS], [linker flags for lz4])
 # Checks for header files.
 AC_CHECK_HEADERS(m4_flatten([
 	dirent.h
+	execinfo.h
 	fcntl.h
 	getopt.h
 	inttypes.h
@@ -147,7 +148,7 @@ AC_CHECK_DECL(lseek64,[AC_DEFINE(HAVE_LSEEK64_PROTOTYPE, 1,
    #include <unistd.h>])
 
 # Checks for library functions.
-AC_CHECK_FUNCS([fallocate gettimeofday memset realpath strdup strerror strrchr strtoull])
+AC_CHECK_FUNCS([backtrace fallocate gettimeofday memset realpath strdup strerror strrchr strtoull])
 
 # Configure libuuid
 AS_IF([test "x$with_uuid" != "xno"], [
