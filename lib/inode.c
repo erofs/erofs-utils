@@ -696,32 +696,42 @@ int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
 	/* filesystem_config does not preserve file type bits */
 	mode_t stat_file_type_mask = st->st_mode & S_IFMT;
 	unsigned int uid = 0, gid = 0, mode = 0;
-	char *fspath;
+	const char *fspath;
+	char *decorated = NULL;
 
 	inode->capabilities = 0;
-	if (cfg.fs_config_file)
-		canned_fs_config(erofs_fspath(path),
-				 S_ISDIR(st->st_mode),
-				 cfg.target_out_path,
-				 &uid, &gid, &mode, &inode->capabilities);
-	else if (cfg.mount_point) {
-		if (asprintf(&fspath, "%s/%s", cfg.mount_point,
+	if (!cfg.fs_config_file && !cfg.mount_point)
+		return 0;
+
+	if (!cfg.mount_point ||
+	/* have to drop the mountpoint for rootdir of canned fsconfig */
+	    (cfg.fs_config_file && erofs_fspath(path)[0] == '\0')) {
+		fspath = erofs_fspath(path);
+	} else {
+		if (asprintf(&decorated, "%s/%s", cfg.mount_point,
 			     erofs_fspath(path)) <= 0)
 			return -ENOMEM;
+		fspath = decorated;
+	}
 
+	if (cfg.fs_config_file)
+		canned_fs_config(fspath, S_ISDIR(st->st_mode),
+				 cfg.target_out_path,
+				 &uid, &gid, &mode, &inode->capabilities);
+	else
 		fs_config(fspath, S_ISDIR(st->st_mode),
 			  cfg.target_out_path,
 			  &uid, &gid, &mode, &inode->capabilities);
-		free(fspath);
-	}
-	st->st_uid = uid;
-	st->st_gid = gid;
-	st->st_mode = mode | stat_file_type_mask;
 
 	erofs_dbg("/%s -> mode = 0x%x, uid = 0x%x, gid = 0x%x, "
 		  "capabilities = 0x%" PRIx64 "\n",
-		  erofs_fspath(path),
-		  mode, uid, gid, inode->capabilities);
+		  fspath, mode, uid, gid, inode->capabilities);
+
+	if (decorated)
+		free(decorated);
+	st->st_uid = uid;
+	st->st_gid = gid;
+	st->st_mode = mode | stat_file_type_mask;
 	return 0;
 }
 #else
