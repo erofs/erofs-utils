@@ -1,3 +1,12 @@
+erofs-utils (1.2.1-1) unstable; urgency=medium
+
+ * A quick maintenance release includes the following updates:
+   - fix reported build issues due to different configurations;
+   - (mkfs.erofs, AOSP) fix sub-directory prefix for canned fs_config;
+   - update some obsoleted email address;
+
+ -- Gao Xiang <xiang@kernel.org>  Sun, 10 Jan 2021 00:00:00 +0800
+
 erofs-utils (1.2-1) unstable; urgency=medium
 
  * This release includes the following features and bugfixes:
@@ -10,7 +19,7 @@ erofs-utils (1.2-1) unstable; urgency=medium
    - (mkfs.erofs, AOSP) support Android fs_config;
    - (experimental, disabled by default) add erofsfuse approach;
 
- -- Gao Xiang <xiang@kernel.org>  Tue, 06 Dec 2020 00:00:00 +0800
+ -- Gao Xiang <xiang@kernel.org>  Sun, 06 Dec 2020 00:00:00 +0800
 
 erofs-utils (1.1-1) unstable; urgency=low
 
