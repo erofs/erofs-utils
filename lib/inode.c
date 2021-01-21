@@ -867,8 +867,10 @@ struct erofs_inode *erofs_iget_from_path(const char *path, bool is_src)
 		return inode;
 
 	ret = erofs_fill_inode(inode, &st, path);
-	if (ret)
+	if (ret) {
+		free(inode);
 		return ERR_PTR(ret);
+	}
 
 	return inode;
 }
