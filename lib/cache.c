@@ -125,25 +125,25 @@ int erofs_bh_balloon(struct erofs_buffer_head *bh, erofs_off_t incr)
 	return __erofs_battach(bb, NULL, incr, 1, 0, false);
 }
 
-struct erofs_buffer_head *erofs_balloc(int type, erofs_off_t size,
-				       unsigned int required_ext,
-				       unsigned int inline_ext)
+static int erofs_bfind_for_attach(int type, erofs_off_t size,
+				  unsigned int required_ext,
+				  unsigned int inline_ext,
+				  unsigned int alignsize,
+				  struct erofs_buffer_block **bbp)
 {
 	struct erofs_buffer_block *cur, *bb;
-	struct erofs_buffer_head *bh;
-	unsigned int alignsize, used0, usedmax;
-
-	int ret = get_alignsize(type, &type);
-
-	if (ret < 0)
-		return ERR_PTR(ret);
-	alignsize = ret;
+	unsigned int used0, usedmax;
 
 	used0 = (size + required_ext) % EROFS_BLKSIZ + inline_ext;
+	/* inline data should be in the same fs block */
+	if (used0 > EROFS_BLKSIZ)
+		return -ENOSPC;
+
 	usedmax = 0;
 	bb = NULL;
 
 	list_for_each_entry(cur, &blkh.list, list) {
+		int ret;
 		unsigned int used_before, used;
 
 		used_before = cur->buffers.off % EROFS_BLKSIZ;
@@ -179,34 +179,53 @@ struct erofs_buffer_head *erofs_balloc(int type, erofs_off_t size,
 			usedmax = used;
 		}
 	}
+	*bbp = bb;
+	return 0;
+}
+
+struct erofs_buffer_head *erofs_balloc(int type, erofs_off_t size,
+				       unsigned int required_ext,
+				       unsigned int inline_ext)
+{
+	struct erofs_buffer_block *bb;
+	struct erofs_buffer_head *bh;
+	unsigned int alignsize;
+
+	int ret = get_alignsize(type, &type);
+
+	if (ret < 0)
+		return ERR_PTR(ret);
+	alignsize = ret;
+
+	/* try to find if we could reuse an allocated buffer block */
+	ret = erofs_bfind_for_attach(type, size, required_ext, inline_ext,
+				     alignsize, &bb);
+	if (ret)
+		return ERR_PTR(ret);
 
 	if (bb) {
 		bh = malloc(sizeof(struct erofs_buffer_head));
 		if (!bh)
 			return ERR_PTR(-ENOMEM);
-		goto found;
+	} else {
+		/* get a new buffer block instead */
+		bb = malloc(sizeof(struct erofs_buffer_block));
+		if (!bb)
+			return ERR_PTR(-ENOMEM);
+
+		bb->type = type;
+		bb->blkaddr = NULL_ADDR;
+		bb->buffers.off = 0;
+		init_list_head(&bb->buffers.list);
+		list_add_tail(&bb->list, &blkh.list);
+
+		bh = malloc(sizeof(struct erofs_buffer_head));
+		if (!bh) {
+			free(bb);
+			return ERR_PTR(-ENOMEM);
+		}
 	}
 
-	/* allocate a new buffer block */
-	if (used0 > EROFS_BLKSIZ)
-		return ERR_PTR(-ENOSPC);
-
-	bb = malloc(sizeof(struct erofs_buffer_block));
-	if (!bb)
-		return ERR_PTR(-ENOMEM);
-
-	bb->type = type;
-	bb->blkaddr = NULL_ADDR;
-	bb->buffers.off = 0;
-	init_list_head(&bb->buffers.list);
-	list_add_tail(&bb->list, &blkh.list);
-
-	bh = malloc(sizeof(struct erofs_buffer_head));
-	if (!bh) {
-		free(bb);
-		return ERR_PTR(-ENOMEM);
-	}
-found:
 	ret = __erofs_battach(bb, bh, size, alignsize,
 			      required_ext + inline_ext, false);
 	if (ret < 0)
