@@ -39,6 +39,7 @@ struct erofs_buffer_head {
 
 struct erofs_buffer_block {
 	struct list_head list;
+	struct list_head mapped_list;
 
 	erofs_blk_t blkaddr;
 	int type;
