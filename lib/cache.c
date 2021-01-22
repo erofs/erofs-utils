@@ -257,16 +257,14 @@ static erofs_blk_t __erofs_mapbh(struct erofs_buffer_block *bb)
 	return blkaddr;
 }
 
-erofs_blk_t erofs_mapbh(struct erofs_buffer_block *bb, bool end)
+erofs_blk_t erofs_mapbh(struct erofs_buffer_block *bb)
 {
 	struct erofs_buffer_block *t, *nt;
 
 	if (!bb || bb->blkaddr == NULL_ADDR) {
 		list_for_each_entry_safe(t, nt, &blkh.list, list) {
-			if (!end && (t == bb || nt == &blkh))
-				break;
 			(void)__erofs_mapbh(t);
-			if (end && t == bb)
+			if (t == bb)
 				break;
 		}
 	}
