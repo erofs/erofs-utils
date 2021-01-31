@@ -87,7 +87,7 @@ typedef int64_t         s64;
 #ifndef __OPTIMIZE__
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2 * !!(condition)]))
 #else
-#define BUILD_BUG_ON(condition) assert(condition)
+#define BUILD_BUG_ON(condition) assert(!(condition))
 #endif
 
 #define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
