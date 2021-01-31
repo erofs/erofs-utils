@@ -412,7 +412,7 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		u.dic.i_uid = cpu_to_le16((u16)inode->i_uid);
 		u.dic.i_gid = cpu_to_le16((u16)inode->i_gid);
 
-		switch ((inode->i_mode) >> S_SHIFT) {
+		switch (inode->i_mode & S_IFMT) {
 		case S_IFCHR:
 		case S_IFBLK:
 		case S_IFIFO:
@@ -445,7 +445,7 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		u.die.i_ctime = cpu_to_le64(inode->i_ctime);
 		u.die.i_ctime_nsec = cpu_to_le32(inode->i_ctime_nsec);
 
-		switch ((inode->i_mode) >> S_SHIFT) {
+		switch (inode->i_mode & S_IFMT) {
 		case S_IFCHR:
 		case S_IFBLK:
 		case S_IFIFO:
