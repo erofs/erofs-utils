@@ -102,7 +102,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 			   bool dryrun)
 {
 	const erofs_off_t alignedoffset = roundup(bb->buffers.off, alignsize);
-	const int oob = cmpsgn(roundup(bb->buffers.off % EROFS_BLKSIZ,
+	const int oob = cmpsgn(roundup((bb->buffers.off - 1) % EROFS_BLKSIZ + 1,
 				       alignsize) + incr + extrasize,
 			       EROFS_BLKSIZ);
 	bool tailupdate = false;
@@ -134,7 +134,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 			tail_blkaddr = blkaddr + BLK_ROUND_UP(bb->buffers.off);
 		erofs_bupdate_mapped(bb);
 	}
-	return (alignedoffset + incr) % EROFS_BLKSIZ;
+	return (alignedoffset + incr - 1) % EROFS_BLKSIZ + 1;
 }
 
 int erofs_bh_balloon(struct erofs_buffer_head *bh, erofs_off_t incr)

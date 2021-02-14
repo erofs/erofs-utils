@@ -456,8 +456,9 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 	vle_write_indexes_final(&ctx);
 
 	close(fd);
+	DBG_BUGON(!compressed_blocks);
 	ret = erofs_bh_balloon(bh, blknr_to_addr(compressed_blocks));
-	DBG_BUGON(ret);
+	DBG_BUGON(ret != EROFS_BLKSIZ);
 
 	erofs_info("compressed %s (%llu bytes) into %u blocks",
 		   inode->i_srcpath, (unsigned long long)inode->i_size,
