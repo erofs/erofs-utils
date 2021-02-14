@@ -155,8 +155,8 @@ static int erofs_bfind_for_attach(int type, erofs_off_t size,
 				  struct erofs_buffer_block **bbp)
 {
 	struct erofs_buffer_block *cur, *bb;
-	unsigned int used0, usedmax, used;
-	int used_before, ret;
+	unsigned int used0, used_before, usedmax, used;
+	int ret;
 
 	used0 = (size + required_ext) % EROFS_BLKSIZ + inline_ext;
 	/* inline data should be in the same fs block */
@@ -177,7 +177,7 @@ static int erofs_bfind_for_attach(int type, erofs_off_t size,
 
 	used_before = rounddown(EROFS_BLKSIZ -
 				(size + required_ext + inline_ext), alignsize);
-	do {
+	for (; used_before; --used_before) {
 		struct list_head *bt = mapped_buckets[type] + used_before;
 
 		if (list_empty(bt))
@@ -203,7 +203,7 @@ static int erofs_bfind_for_attach(int type, erofs_off_t size,
 		bb = cur;
 		usedmax = used;
 		break;
-	} while (--used_before > 0);
+	}
 
 skip_mapped:
 	/* try to start from the last mapped one, which can be expended */
