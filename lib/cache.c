@@ -186,8 +186,14 @@ static int erofs_bfind_for_attach(int type, erofs_off_t size,
 				       mapped_list);
 
 		/* last mapped block can be expended, don't handle it here */
-		if (cur == last_mapped_block)
+		if (list_next_entry(cur, list)->blkaddr == NULL_ADDR) {
+			DBG_BUGON(cur != last_mapped_block);
 			continue;
+		}
+
+		DBG_BUGON(cur->type != type);
+		DBG_BUGON(cur->blkaddr == NULL_ADDR);
+		DBG_BUGON(used_before != cur->buffers.off % EROFS_BLKSIZ);
 
 		ret = __erofs_battach(cur, NULL, size, alignsize,
 				      required_ext + inline_ext, true);
