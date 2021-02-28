@@ -29,6 +29,7 @@ static int erofs_map_blocks_flatmode(struct erofs_inode *inode,
 	if (offset >= inode->i_size) {
 		/* leave out-of-bound access unmapped */
 		map->m_flags = 0;
+		map->m_plen = 0;
 		goto out;
 	}
 
@@ -80,6 +81,7 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 	erofs_off_t ptr = offset;
 
 	while (ptr < offset + size) {
+		char *const estart = buffer + ptr - offset;
 		erofs_off_t eend;
 
 		map.m_la = ptr;
@@ -89,29 +91,30 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 
 		DBG_BUGON(map.m_plen != map.m_llen);
 
-		if (!(map.m_flags & EROFS_MAP_MAPPED)) {
-			if (!map.m_llen) {
-				ptr = offset + size;
-				continue;
-			}
-			ptr = map.m_la + map.m_llen;
-			continue;
-		}
-
 		/* trim extent */
 		eend = min(offset + size, map.m_la + map.m_llen);
 		DBG_BUGON(ptr < map.m_la);
+
+		if (!(map.m_flags & EROFS_MAP_MAPPED)) {
+			if (!map.m_llen) {
+				/* reached EOF */
+				memset(estart, 0, offset + size - ptr);
+				ptr = offset + size;
+				continue;
+			}
+			memset(estart, 0, eend - ptr);
+			ptr = eend;
+			continue;
+		}
 
 		if (ptr > map.m_la) {
 			map.m_pa += ptr - map.m_la;
 			map.m_la = ptr;
 		}
 
-		ret = dev_read(buffer + ptr - offset,
-			       map.m_pa, eend - map.m_la);
+		ret = dev_read(estart, map.m_pa, eend - map.m_la);
 		if (ret < 0)
 			return -EIO;
-
 		ptr = eend;
 	}
 	return 0;
@@ -137,19 +140,6 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 		if (ret)
 			return ret;
 
-		if (!(map.m_flags & EROFS_MAP_MAPPED)) {
-			end = map.m_la;
-			continue;
-		}
-
-		ret = dev_read(raw, map.m_pa, EROFS_BLKSIZ);
-		if (ret < 0)
-			return -EIO;
-
-		algorithmformat = map.m_flags & EROFS_MAP_ZIPPED ?
-						Z_EROFS_COMPRESSION_LZ4 :
-						Z_EROFS_COMPRESSION_SHIFTED;
-
 		/*
 		 * trim to the needed size if the returned extent is quite
 		 * larger than requested, and set up partial flag as well.
@@ -170,6 +160,20 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 			skip = 0;
 			end = map.m_la;
 		}
+
+		if (!(map.m_flags & EROFS_MAP_MAPPED)) {
+			memset(buffer + end - offset, 0, length);
+			end = map.m_la;
+			continue;
+		}
+
+		ret = dev_read(raw, map.m_pa, EROFS_BLKSIZ);
+		if (ret < 0)
+			return -EIO;
+
+		algorithmformat = map.m_flags & EROFS_MAP_ZIPPED ?
+						Z_EROFS_COMPRESSION_LZ4 :
+						Z_EROFS_COMPRESSION_SHIFTED;
 
 		ret = z_erofs_decompress(&(struct z_erofs_decompress_req) {
 					.in = raw,

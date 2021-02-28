@@ -74,6 +74,10 @@ static int erofsfuse_read(const char *path, char *buffer,
 	ret = erofs_pread(&vi, buffer, size, offset);
 	if (ret)
 		return ret;
+	if (offset + size > vi.i_size)
+		return vi.i_size - offset;
+	if (offset >= vi.i_size)
+		return 0;
 	return size;
 }
 
@@ -83,6 +87,10 @@ static int erofsfuse_readlink(const char *path, char *buffer, size_t size)
 
 	if (ret < 0)
 		return ret;
+	DBG_BUGON(ret > size);
+	if (ret == size)
+		buffer[size - 1] = '\0';
+	erofs_dbg("readlink(%s): %s", path, buffer);
 	return 0;
 }
 
