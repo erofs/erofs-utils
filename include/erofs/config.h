@@ -54,6 +54,7 @@ struct erofs_configure {
 	/* < 0, xattr disabled and INT_MAX, always use inline xattrs */
 	int c_inline_xattr_tolerance;
 	u64 c_unix_timestamp;
+	u32 c_uid, c_gid;
 #ifdef WITH_ANDROID
 	char *mount_point;
 	char *target_out_path;

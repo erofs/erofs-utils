@@ -752,8 +752,8 @@ int erofs_fill_inode(struct erofs_inode *inode,
 	if (err)
 		return err;
 	inode->i_mode = st->st_mode;
-	inode->i_uid = st->st_uid;
-	inode->i_gid = st->st_gid;
+	inode->i_uid = cfg.c_uid == -1 ? st->st_uid : cfg.c_uid;
+	inode->i_gid = cfg.c_gid == -1 ? st->st_gid : cfg.c_gid;
 	inode->i_ctime = st->st_ctime;
 	inode->i_ctime_nsec = st->st_ctim.tv_nsec;
 

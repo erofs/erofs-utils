@@ -69,6 +69,15 @@ You may give multiple `--exclude-regex` options.
 .BI "\-\-file-contexts=" file
 Specify a \fIfile_contexts\fR file to setup / override selinux labels.
 .TP
+.BI "\-\-force-uid=" UID
+Set all file uids to \fIUID\fR.
+.TP
+.BI "\-\-force-gid=" GID
+Set all file gids to \fIGID\fR.
+.TP
+.B \-\-all-root
+Make all files owned by root.
+.TP
 .B \-\-help
 Display this help and exit.
 .SH AUTHOR

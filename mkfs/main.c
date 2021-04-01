@@ -36,6 +36,9 @@ static struct option long_options[] = {
 #ifdef HAVE_LIBSELINUX
 	{"file-contexts", required_argument, NULL, 4},
 #endif
+	{"force-uid", required_argument, NULL, 5},
+	{"force-gid", required_argument, NULL, 6},
+	{"all-root", no_argument, NULL, 7},
 #ifdef WITH_ANDROID
 	{"mount-point", required_argument, NULL, 10},
 	{"product-out", required_argument, NULL, 11},
@@ -74,6 +77,9 @@ static void usage(void)
 #ifdef HAVE_LIBSELINUX
 	      " --file-contexts=X  specify a file contexts file to setup selinux labels\n"
 #endif
+	      " --force-uid=#      set all file uids to # (# = UID)\n"
+	      " --force-gid=#      set all file gids to # (# = GID)\n"
+	      " --all-root         make all files owned by root\n"
 	      " --help             display this help and exit\n"
 #ifdef WITH_ANDROID
 	      "\nwith following android-specific options:\n"
@@ -232,6 +238,23 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			opt = erofs_selabel_open(optarg);
 			if (opt && opt != -EBUSY)
 				return opt;
+			break;
+		case 5:
+			cfg.c_uid = strtoul(optarg, &endptr, 0);
+			if (cfg.c_uid == -1 || *endptr != '\0') {
+				erofs_err("invalid uid %s", optarg);
+				return -EINVAL;
+			}
+			break;
+		case 6:
+			cfg.c_gid = strtoul(optarg, &endptr, 0);
+			if (cfg.c_gid == -1 || *endptr != '\0') {
+				erofs_err("invalid gid %s", optarg);
+				return -EINVAL;
+			}
+			break;
+		case 7:
+			cfg.c_uid = cfg.c_gid = 0;
 			break;
 #ifdef WITH_ANDROID
 		case 10:

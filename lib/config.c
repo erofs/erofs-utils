@@ -24,6 +24,8 @@ void erofs_init_configure(void)
 	cfg.c_force_inodeversion = 0;
 	cfg.c_inline_xattr_tolerance = 2;
 	cfg.c_unix_timestamp = -1;
+	cfg.c_uid = -1;
+	cfg.c_gid = -1;
 }
 
 void erofs_show_config(void)
