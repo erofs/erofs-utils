@@ -65,6 +65,7 @@ static void usage(void)
 	fputs("usage: [options] FILE DIRECTORY\n\n"
 	      "Generate erofs image from DIRECTORY to FILE, and [options] are:\n"
 	      " -zX[,Y]            X=compressor (Y=compression level, optional)\n"
+	      " -C#                specify the size of compress physical cluster in bytes\n"
 	      " -d#                set output message level to # (maximum 9)\n"
 	      " -x#                set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
 	      " -EX[,...]          X=extended options\n"
@@ -158,7 +159,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	char *endptr;
 	int opt, i;
 
-	while((opt = getopt_long(argc, argv, "d:x:z:E:T:U:",
+	while((opt = getopt_long(argc, argv, "d:x:z:E:T:U:C:",
 				 long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'z':
@@ -271,6 +272,17 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			cfg.fs_config_file = optarg;
 			break;
 #endif
+		case 'C':
+			i = strtoull(optarg, &endptr, 0);
+			if (*endptr != '\0' ||
+			    i < EROFS_BLKSIZ || i % EROFS_BLKSIZ) {
+				erofs_err("invalid physical clustersize %s",
+					  optarg);
+				return -EINVAL;
+			}
+			cfg.c_physical_clusterblks = i / EROFS_BLKSIZ;
+			break;
+
 		case 1:
 			usage();
 			exit(0);

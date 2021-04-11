@@ -53,6 +53,8 @@ struct erofs_configure {
 	int c_force_inodeversion;
 	/* < 0, xattr disabled and INT_MAX, always use inline xattrs */
 	int c_inline_xattr_tolerance;
+
+	u32 c_physical_clusterblks;
 	u64 c_unix_timestamp;
 	u32 c_uid, c_gid;
 #ifdef WITH_ANDROID
