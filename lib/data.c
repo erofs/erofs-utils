@@ -130,7 +130,7 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 	};
 	bool partial;
 	unsigned int algorithmformat;
-	char raw[EROFS_BLKSIZ];
+	char raw[Z_EROFS_PCLUSTER_MAX_SIZE];
 
 	end = offset + size;
 	while (end > offset) {
@@ -167,7 +167,7 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 			continue;
 		}
 
-		ret = dev_read(raw, map.m_pa, EROFS_BLKSIZ);
+		ret = dev_read(raw, map.m_pa, map.m_plen);
 		if (ret < 0)
 			return -EIO;
 
