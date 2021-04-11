@@ -267,9 +267,10 @@ static void *write_compacted_indexes(u8 *out,
 				     erofs_blk_t *blkaddr_ret,
 				     unsigned int destsize,
 				     unsigned int logical_clusterbits,
-				     bool final)
+				     bool final, bool *dummy_head)
 {
-	unsigned int vcnt, encodebits, pos, i;
+	unsigned int vcnt, encodebits, pos, i, cblks;
+	bool update_blkaddr;
 	erofs_blk_t blkaddr;
 
 	if (destsize == 4) {
@@ -281,6 +282,7 @@ static void *write_compacted_indexes(u8 *out,
 	}
 	encodebits = (vcnt * destsize * 8 - 32) / vcnt;
 	blkaddr = *blkaddr_ret;
+	update_blkaddr = erofs_sb_has_big_pcluster();
 
 	pos = 0;
 	for (i = 0; i < vcnt; ++i) {
@@ -288,13 +290,26 @@ static void *write_compacted_indexes(u8 *out,
 		u8 ch, rem;
 
 		if (cv[i].clustertype == Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD) {
-			if (i + 1 == vcnt)
-				offset = cv[i].u.delta[1];
-			else
+			if (cv[i].u.delta[0] & Z_EROFS_VLE_DI_D0_CBLKCNT) {
+				cblks = cv[i].u.delta[0] & ~Z_EROFS_VLE_DI_D0_CBLKCNT;
 				offset = cv[i].u.delta[0];
+				blkaddr += cblks;
+				*dummy_head = false;
+			} else if (i + 1 == vcnt) {
+				offset = cv[i].u.delta[1];
+			} else {
+				offset = cv[i].u.delta[0];
+			}
 		} else {
 			offset = cv[i].clusterofs;
-			++blkaddr;
+			if (*dummy_head) {
+				++blkaddr;
+				if (update_blkaddr)
+					*blkaddr_ret = blkaddr;
+			}
+			*dummy_head = true;
+			update_blkaddr = false;
+
 			if (cv[i].u.blkaddr != blkaddr) {
 				if (i + 1 != vcnt)
 					DBG_BUGON(!final);
@@ -330,6 +345,7 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 	/* # of 8-byte units so that it can be aligned with 32 bytes */
 	unsigned int compacted_4b_initial, compacted_4b_end;
 	unsigned int compacted_2b;
+	bool dummy_head;
 
 	if (logical_clusterbits < LOG_BLOCK_SIZE || LOG_BLOCK_SIZE < 12)
 		return -EINVAL;
@@ -359,11 +375,19 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 	out += sizeof(mapheader);
 	in += Z_EROFS_LEGACY_MAP_HEADER_SIZE;
 
+	dummy_head = false;
+	/* prior to bigpcluster, blkaddr was bumped up once coming into HEAD */
+	if (!erofs_sb_has_big_pcluster()) {
+		--blkaddr;
+		dummy_head = true;
+	}
+
 	/* generate compacted_4b_initial */
 	while (compacted_4b_initial) {
 		in = parse_legacy_indexes(cv, 2, in);
 		out = write_compacted_indexes(out, cv, &blkaddr,
-					      4, logical_clusterbits, false);
+					      4, logical_clusterbits, false,
+					      &dummy_head);
 		compacted_4b_initial -= 2;
 	}
 	DBG_BUGON(compacted_4b_initial);
@@ -372,7 +396,8 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 	while (compacted_2b) {
 		in = parse_legacy_indexes(cv, 16, in);
 		out = write_compacted_indexes(out, cv, &blkaddr,
-					      2, logical_clusterbits, false);
+					      2, logical_clusterbits, false,
+					      &dummy_head);
 		compacted_2b -= 16;
 	}
 	DBG_BUGON(compacted_2b);
@@ -381,7 +406,8 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 	while (compacted_4b_end > 1) {
 		in = parse_legacy_indexes(cv, 2, in);
 		out = write_compacted_indexes(out, cv, &blkaddr,
-					      4, logical_clusterbits, false);
+					      4, logical_clusterbits, false,
+					      &dummy_head);
 		compacted_4b_end -= 2;
 	}
 
@@ -390,7 +416,8 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 		memset(cv, 0, sizeof(cv));
 		in = parse_legacy_indexes(cv, 1, in);
 		out = write_compacted_indexes(out, cv, &blkaddr,
-					      4, logical_clusterbits, true);
+					      4, logical_clusterbits, true,
+					      &dummy_head);
 	}
 	inode->extent_isize = out - (u8 *)inode->compressmeta;
 	inode->datalayout = EROFS_INODE_FLAT_COMPRESSION;
@@ -485,12 +512,11 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 	inode->u.i_blocks = compressed_blocks;
 
 	legacymetasize = ctx.metacur - compressmeta;
-	/* XXX: temporarily use legacy index instead for mbpcluster */
-	if (cfg.c_legacy_compress || cfg.c_physical_clusterblks > 1) {
+	if (cfg.c_legacy_compress) {
 		inode->extent_isize = legacymetasize;
 		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION_LEGACY;
 	} else {
-		ret = z_erofs_convert_to_compacted_format(inode, blkaddr - 1,
+		ret = z_erofs_convert_to_compacted_format(inode, blkaddr,
 							  legacymetasize, 12);
 		DBG_BUGON(ret);
 	}
@@ -591,6 +617,8 @@ int z_erofs_compress_init(struct erofs_buffer_head *sb_bh)
 		}
 		erofs_sb_set_big_pcluster();
 		mapheader.h_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_1;
+		if (!cfg.c_legacy_compress)
+			mapheader.h_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_2;
 	}
 	mapheader.h_algorithmtype = algorithmtype[1] << 4 |
 					  algorithmtype[0];
