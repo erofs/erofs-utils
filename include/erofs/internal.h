@@ -79,6 +79,8 @@ struct erofs_sb_info {
 	u64 inos;
 
 	u8 uuid[16];
+
+	u16 available_compr_algs;
 	u16 lz4_max_distance;
 };
 
@@ -105,6 +107,7 @@ static inline void erofs_sb_clear_##name(void) \
 }
 
 EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_LZ4_0PADDING)
+EROFS_FEATURE_FUNCS(compr_cfgs, incompat, INCOMPAT_COMPR_CFGS)
 EROFS_FEATURE_FUNCS(sb_chksum, compat, COMPAT_SB_CHKSUM)
 
 #define EROFS_I_EA_INITED	(1 << 0)

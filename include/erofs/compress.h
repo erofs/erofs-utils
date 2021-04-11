@@ -18,7 +18,7 @@
 
 int erofs_write_compressed_file(struct erofs_inode *inode);
 
-int z_erofs_compress_init(void);
+int z_erofs_compress_init(struct erofs_buffer_head *bh);
 int z_erofs_compress_exit(void);
 
 const char *z_erofs_list_available_compressors(unsigned int i);

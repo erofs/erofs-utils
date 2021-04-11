@@ -500,7 +500,37 @@ static int erofs_get_compress_algorithm_id(const char *name)
 	return -ENOTSUP;
 }
 
-int z_erofs_compress_init(void)
+int z_erofs_build_compr_cfgs(struct erofs_buffer_head *sb_bh)
+{
+	struct erofs_buffer_head *bh = sb_bh;
+	int ret = 0;
+
+	if (sbi.available_compr_algs & (1 << Z_EROFS_COMPRESSION_LZ4)) {
+		struct {
+			__le16 size;
+			struct z_erofs_lz4_cfgs lz4;
+		} __packed lz4alg = {
+			.size = cpu_to_le16(sizeof(struct z_erofs_lz4_cfgs)),
+			.lz4 = {
+				.max_distance =
+					cpu_to_le16(sbi.lz4_max_distance),
+			}
+		};
+
+		bh = erofs_battach(bh, META, sizeof(lz4alg));
+		if (IS_ERR(bh)) {
+			DBG_BUGON(1);
+			return PTR_ERR(bh);
+		}
+		erofs_mapbh(bh->block);
+		ret = dev_write(&lz4alg, erofs_btell(bh, false),
+				sizeof(lz4alg));
+		bh->op = &erofs_drop_directly_bhops;
+	}
+	return ret;
+}
+
+int z_erofs_compress_init(struct erofs_buffer_head *sb_bh)
 {
 	unsigned int algorithmtype[2];
 	/* initialize for primary compression algorithm */
@@ -536,6 +566,11 @@ int z_erofs_compress_init(void)
 	mapheader.h_algorithmtype = algorithmtype[1] << 4 |
 					  algorithmtype[0];
 	mapheader.h_clusterbits = LOG_BLOCK_SIZE - 12;
+
+	if (erofs_sb_has_compr_cfgs()) {
+		sbi.available_compr_algs |= 1 << ret;
+		return z_erofs_build_compr_cfgs(sb_bh);
+	}
 	return 0;
 }
 

@@ -322,7 +322,6 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 		.feature_incompat = cpu_to_le32(sbi.feature_incompat),
 		.feature_compat = cpu_to_le32(sbi.feature_compat &
 					      ~EROFS_FEATURE_COMPAT_SB_CHKSUM),
-		.lz4_max_distance = cpu_to_le16(sbi.lz4_max_distance),
 	};
 	const unsigned int sb_blksize =
 		round_up(EROFS_SUPER_END, EROFS_BLKSIZ);
@@ -332,6 +331,11 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	sb.blocks       = cpu_to_le32(*blocks);
 	sb.root_nid     = cpu_to_le16(root_nid);
 	memcpy(sb.uuid, sbi.uuid, sizeof(sb.uuid));
+
+	if (erofs_sb_has_compr_cfgs())
+		sb.u1.available_compr_algs = sbi.available_compr_algs;
+	else
+		sb.u1.lz4_max_distance = cpu_to_le16(sbi.lz4_max_distance);
 
 	buf = calloc(sb_blksize, 1);
 	if (!buf) {
@@ -522,7 +526,7 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
-	err = z_erofs_compress_init();
+	err = z_erofs_compress_init(sb_bh);
 	if (err) {
 		erofs_err("Failed to initialize compressor: %s",
 			  erofs_strerror(err));
