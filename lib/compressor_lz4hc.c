@@ -11,6 +11,10 @@
 #include "erofs/internal.h"
 #include "compressor.h"
 
+#ifndef LZ4_DISTANCE_MAX	/* history window size */
+#define LZ4_DISTANCE_MAX 65535	/* set to maximum value by default */
+#endif
+
 static int lz4hc_compress_destsize(struct erofs_compress *c,
 				   int compression_level,
 				   void *src,
@@ -44,6 +48,8 @@ static int compressor_lz4hc_init(struct erofs_compress *c)
 	c->private_data = LZ4_createStreamHC();
 	if (!c->private_data)
 		return -ENOMEM;
+
+	sbi.lz4_max_distance = LZ4_DISTANCE_MAX;
 	return 0;
 }
 

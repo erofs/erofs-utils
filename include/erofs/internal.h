@@ -79,6 +79,7 @@ struct erofs_sb_info {
 	u64 inos;
 
 	u8 uuid[16];
+	u16 lz4_max_distance;
 };
 
 /* global sbi */
