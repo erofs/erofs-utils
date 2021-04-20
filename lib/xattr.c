@@ -446,8 +446,8 @@ static int erofs_count_all_xattrs_from_path(const char *path)
 
 	_dir = opendir(path);
 	if (!_dir) {
-		erofs_err("%s, failed to opendir at %s: %s",
-			  __func__, path, erofs_strerror(errno));
+		erofs_err("failed to opendir at %s: %s",
+			  path, erofs_strerror(errno));
 		return -errno;
 	}
 

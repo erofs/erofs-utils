@@ -967,8 +967,8 @@ struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 
 	_dir = opendir(dir->i_srcpath);
 	if (!_dir) {
-		erofs_err("%s, failed to opendir at %s: %s",
-			  __func__, dir->i_srcpath, erofs_strerror(errno));
+		erofs_err("failed to opendir at %s: %s",
+			  dir->i_srcpath, erofs_strerror(errno));
 		return ERR_PTR(-errno);
 	}
 
