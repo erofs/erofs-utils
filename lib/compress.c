@@ -189,18 +189,22 @@ nocompression:
 			ctx->compressedblks = 1;
 			raw = true;
 		} else {
-			const unsigned int used = ret & (EROFS_BLKSIZ - 1);
-			const unsigned int margin =
-				erofs_sb_has_lz4_0padding() && used ?
-					EROFS_BLKSIZ - used : 0;
+			const unsigned int tailused = ret & (EROFS_BLKSIZ - 1);
+			const unsigned int padding =
+				erofs_sb_has_lz4_0padding() && tailused ?
+					EROFS_BLKSIZ - tailused : 0;
 
 			ctx->compressedblks = DIV_ROUND_UP(ret, EROFS_BLKSIZ);
+			/* zero out garbage trailing data for non-0padding */
+			if (!erofs_sb_has_lz4_0padding())
+				memset(dst + ret, 0,
+				       roundup(ret, EROFS_BLKSIZ) - ret);
 
 			/* write compressed data */
 			erofs_dbg("Writing %u compressed data to %u of %u blocks",
 				  count, ctx->blkaddr, ctx->compressedblks);
 
-			ret = blk_write(dst - margin, ctx->blkaddr,
+			ret = blk_write(dst - padding, ctx->blkaddr,
 					ctx->compressedblks);
 			if (ret)
 				return ret;
