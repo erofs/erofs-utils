@@ -619,6 +619,8 @@ int z_erofs_compress_init(struct erofs_buffer_head *sb_bh)
 		mapheader.h_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_1;
 		if (!cfg.c_legacy_compress)
 			mapheader.h_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_2;
+
+		erofs_warn("EXPERIMENTAL big pcluster feature in use. Use at your own risk!");
 	}
 	mapheader.h_algorithmtype = algorithmtype[1] << 4 |
 					  algorithmtype[0];

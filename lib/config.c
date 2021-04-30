@@ -17,7 +17,7 @@ void erofs_init_configure(void)
 {
 	memset(&cfg, 0, sizeof(cfg));
 
-	cfg.c_dbg_lvl  = 0;
+	cfg.c_dbg_lvl  = 2;
 	cfg.c_version  = PACKAGE_VERSION;
 	cfg.c_dry_run  = false;
 	cfg.c_compr_level_master = -1;
