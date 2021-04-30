@@ -1,0 +1,44 @@
+.\" Copyright (c) 2021 Gao Xiang <xiang@kernel.org>
+.\"
+.TH EROFSFUSE 1
+.SH NAME
+erofsfuse \- FUSE file system client for erofs file system
+.SH SYNOPSIS
+\fBerofsfuse\fR [\fIOPTIONS\fR] \fIDEVICE\fR \fIMOUNTPOINT\fR
+.SH DESCRIPTION
+.B erofsfuse
+is a FUSE file system client that supports reading from devices or image files
+containing erofs file system.
+.SH OPTIONS
+.SS "general options:"
+.TP
+\fB\-o\fR opt,[opt...]
+mount options
+.TP
+\fB\-h\fR   \fB\-\-help\fR
+display help and exit
+.SS "erofsfuse options:"
+.TP
+.BI "\-\-dbglevel=" #
+Specify the level of debugging messages. The default is 2, which shows basic
+warning messages.
+.SS "FUSE options:"
+.TP
+\fB-d -o\fR debug
+enable debug output (implies -f)
+.TP
+\fB-f\fR
+foreground operation
+.TP
+\fB-s\fR
+disable multi-threaded operation
+.P
+For other FUSE options please see
+.BR mount.fuse (8)
+or see the output of
+.I erofsfuse \-\-help
+.SH AVAILABILITY
+\fBerofsfuse\fR is part of erofs-utils package and is available from
+git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git.
+.SH SEE ALSO
+.BR mount.fuse (8)
