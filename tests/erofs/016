@@ -1,0 +1,66 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0+
+#
+# verify the uncompressed image with 2-level random files
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_fssum
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p "$localdir/empty"
+
+IFS=': '
+# collect files pending for verification
+for i in `seq -s':' 0 $((RANDOM % 200))`; do
+	d1=`tr -dc A-Za-z0-9 </dev/urandom | head -c $((RANDOM % 150 + 1))`
+	mkdir -p "$localdir/$d1"
+	for j in `seq -s':' 0 $((RANDOM % 100))`; do
+		d2=`tr -dc A-Za-z0-9 </dev/urandom | head -c $((RANDOM % 150 + 1))`
+		dd if=/dev/urandom of="$localdir/$d1/$d2" count=1 \
+			bs=$((RANDOM % 13315)) 2> /dev/null
+	done
+done
+unset IFS
+
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+_scratch_mount 2>>$seqres.full
+
+# verify the uncompressed image
+FSSUM_OPTS="-MAC"
+[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
+
+sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+echo "$localdir checksum is $sum1" >>$seqres.full
+sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
+echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+
+[ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+_scratch_unmount
+
+echo Silence is golden
+status=0
+exit 0

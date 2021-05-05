@@ -76,6 +76,9 @@ TESTS += erofs/014
 # 015 - regression test for battach on full buffer block
 TESTS += erofs/015
 
+# 016 - verify the uncompressed image with 2-level random files
+TESTS += erofs/016
+
 EXTRA_DIST = common/rc erofs
 
 clean-local: clean-local-check
