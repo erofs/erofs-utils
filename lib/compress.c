@@ -166,9 +166,12 @@ static int vle_compress_one(struct erofs_inode *inode,
 		bool raw;
 
 		if (len <= pclustersize) {
-			if (final)
-				goto nocompression;
-			break;
+			if (final) {
+				if (len <= EROFS_BLKSIZ)
+					goto nocompression;
+			} else {
+				break;
+			}
 		}
 
 		count = len;
@@ -195,6 +198,8 @@ nocompression:
 					EROFS_BLKSIZ - tailused : 0;
 
 			ctx->compressedblks = DIV_ROUND_UP(ret, EROFS_BLKSIZ);
+			DBG_BUGON(ctx->compressedblks * EROFS_BLKSIZ >= count);
+
 			/* zero out garbage trailing data for non-0padding */
 			if (!erofs_sb_has_lz4_0padding())
 				memset(dst + ret, 0,

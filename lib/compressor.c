@@ -28,6 +28,7 @@ int erofs_compress_destsize(struct erofs_compress *c,
 			    void *dst,
 			    unsigned int dstsize)
 {
+	unsigned uncompressed_size;
 	int ret;
 
 	DBG_BUGON(!c->alg);
@@ -40,7 +41,9 @@ int erofs_compress_destsize(struct erofs_compress *c,
 		return ret;
 
 	/* check if there is enough gains to compress */
-	if (*srcsize <= dstsize * c->compress_threshold / 100)
+	uncompressed_size = *srcsize;
+	if (roundup(ret, EROFS_BLKSIZ) >= uncompressed_size *
+	    c->compress_threshold / 100)
 		return -EAGAIN;
 	return ret;
 }
