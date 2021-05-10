@@ -386,16 +386,13 @@ static int z_erofs_get_extent_compressedlen(struct z_erofs_maprecorder *m,
 
 	DBG_BUGON(m->type != Z_EROFS_VLE_CLUSTER_TYPE_PLAIN &&
 		  m->type != Z_EROFS_VLE_CLUSTER_TYPE_HEAD);
-	if (!((map->m_flags & EROFS_MAP_ZIPPED) &&
-	      (vi->z_advise & Z_EROFS_ADVISE_BIG_PCLUSTER_1))) {
+	if (!(map->m_flags & EROFS_MAP_ZIPPED) ||
+	    !(vi->z_advise & Z_EROFS_ADVISE_BIG_PCLUSTER_1)) {
 		map->m_plen = 1 << lclusterbits;
 		return 0;
 	}
 
 	lcn = m->lcn + 1;
-	if (lcn == initial_lcn && !m->compressedlcs)
-		m->compressedlcs = 2;
-
 	if (m->compressedlcs)
 		goto out;
 
@@ -403,21 +400,46 @@ static int z_erofs_get_extent_compressedlen(struct z_erofs_maprecorder *m,
 	if (err)
 		return err;
 
+	/*
+	 * If the 1st NONHEAD lcluster has already been handled initially w/o
+	 * valid compressedlcs, which means at least it mustn't be CBLKCNT, or
+	 * an internal implemenatation error is detected.
+	 *
+	 * The following code can also handle it properly anyway, but let's
+	 * BUG_ON in the debugging mode only for developers to notice that.
+	 */
+	DBG_BUGON(lcn == initial_lcn &&
+		  m->type == Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD);
+
 	switch (m->type) {
+	case Z_EROFS_VLE_CLUSTER_TYPE_PLAIN:
+	case Z_EROFS_VLE_CLUSTER_TYPE_HEAD:
+		/*
+		 * if the 1st NONHEAD lcluster is actually PLAIN or HEAD type
+		 * rather than CBLKCNT, it's a 1 lcluster-sized pcluster.
+		 */
+		m->compressedlcs = 1;
+		break;
 	case Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD:
-		DBG_BUGON(m->delta[0] != 1);
-		if (m->compressedlcs) {
+		if (m->delta[0] != 1)
+			goto err_bonus_cblkcnt;
+		if (m->compressedlcs)
 			break;
-		}
+		/* fallthrough */
 	default:
 		erofs_err("cannot found CBLKCNT @ lcn %lu of nid %llu",
-			  lcn, (unsigned long long)vi->nid);
+			  lcn, vi->nid | 0ULL);
 		DBG_BUGON(1);
 		return -EFSCORRUPTED;
 	}
 out:
 	map->m_plen = m->compressedlcs << lclusterbits;
 	return 0;
+err_bonus_cblkcnt:
+	erofs_err("bogus CBLKCNT @ lcn %lu of nid %llu",
+		  lcn, vi->nid | 0ULL);
+	DBG_BUGON(1);
+	return -EFSCORRUPTED;
 }
 
 int z_erofs_map_blocks_iter(struct erofs_inode *vi,
