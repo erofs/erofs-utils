@@ -164,7 +164,6 @@ struct erofs_inode {
 			uint16_t z_advise;
 			uint8_t  z_algorithmtype[2];
 			uint8_t  z_logical_clusterbits;
-			uint8_t  z_physical_clusterbits[2];
 		};
 	};
 #ifdef WITH_ANDROID
