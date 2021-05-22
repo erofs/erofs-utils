@@ -59,6 +59,12 @@ AC_DEFUN([EROFS_UTILS_PARSE_DIRECTORY],
  fi
 ])
 
+AC_ARG_ENABLE([debug],
+    [AS_HELP_STRING([--enable-debug],
+                    [enable debugging mode @<:@default=no@:>@])],
+    [enable_debug="$enableval"],
+    [enable_debug="no"])
+
 AC_ARG_ENABLE(lz4,
    [AS_HELP_STRING([--disable-lz4], [disable LZ4 compression support @<:@default=enabled@:>@])],
    [enable_lz4="$enableval"], [enable_lz4="yes"])
@@ -149,6 +155,12 @@ AC_CHECK_DECL(lseek64,[AC_DEFINE(HAVE_LSEEK64_PROTOTYPE, 1,
 
 # Checks for library functions.
 AC_CHECK_FUNCS([backtrace fallocate gettimeofday memset realpath strdup strerror strrchr strtoull])
+
+# Configure debug mode
+AS_IF([test "x$enable_debug" != "xno"], [], [
+  dnl Turn off all assert checking.
+  CPPFLAGS="$CPPFLAGS -DNDEBUG"
+])
 
 # Configure libuuid
 AS_IF([test "x$with_uuid" != "xno"], [
