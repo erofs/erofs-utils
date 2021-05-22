@@ -40,6 +40,9 @@ struct erofs_configure {
 	int c_dbg_lvl;
 	bool c_dry_run;
 	bool c_legacy_compress;
+#ifndef NDEBUG
+	bool c_random_pclusterblks;
+#endif
 	char c_timeinherit;
 
 #ifdef HAVE_LIBSELINUX

@@ -152,6 +152,10 @@ static int write_uncompressed_extent(struct z_erofs_vle_compress_ctx *ctx,
 /* TODO: apply per-(sub)file strategies here */
 static unsigned int z_erofs_get_max_pclusterblks(struct erofs_inode *inode)
 {
+#ifndef NDEBUG
+	if (cfg.c_random_pclusterblks)
+		return 1 + rand() % cfg.c_physical_clusterblks;
+#endif
 	return cfg.c_physical_clusterblks;
 }
 

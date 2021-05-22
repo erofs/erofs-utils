@@ -39,6 +39,9 @@ static struct option long_options[] = {
 	{"force-uid", required_argument, NULL, 5},
 	{"force-gid", required_argument, NULL, 6},
 	{"all-root", no_argument, NULL, 7},
+#ifndef NDEBUG
+	{"random-pclusterblks", no_argument, NULL, 8},
+#endif
 #ifdef WITH_ANDROID
 	{"mount-point", required_argument, NULL, 10},
 	{"product-out", required_argument, NULL, 11},
@@ -64,29 +67,32 @@ static void usage(void)
 {
 	fputs("usage: [options] FILE DIRECTORY\n\n"
 	      "Generate erofs image from DIRECTORY to FILE, and [options] are:\n"
-	      " -zX[,Y]            X=compressor (Y=compression level, optional)\n"
-	      " -C#                specify the size of compress physical cluster in bytes\n"
-	      " -d#                set output message level to # (maximum 9)\n"
-	      " -x#                set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
-	      " -EX[,...]          X=extended options\n"
-	      " -T#                set a fixed UNIX timestamp # to all files\n"
+	      " -zX[,Y]               X=compressor (Y=compression level, optional)\n"
+	      " -C#                   specify the size of compress physical cluster in bytes\n"
+	      " -d#                   set output message level to # (maximum 9)\n"
+	      " -x#                   set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
+	      " -EX[,...]             X=extended options\n"
+	      " -T#                   set a fixed UNIX timestamp # to all files\n"
 #ifdef HAVE_LIBUUID
-	      " -UX                use a given filesystem UUID\n"
+	      " -UX                   use a given filesystem UUID\n"
 #endif
-	      " --exclude-path=X   avoid including file X (X = exact literal path)\n"
-	      " --exclude-regex=X  avoid including files that match X (X = regular expression)\n"
+	      " --exclude-path=X      avoid including file X (X = exact literal path)\n"
+	      " --exclude-regex=X     avoid including files that match X (X = regular expression)\n"
 #ifdef HAVE_LIBSELINUX
-	      " --file-contexts=X  specify a file contexts file to setup selinux labels\n"
+	      " --file-contexts=X     specify a file contexts file to setup selinux labels\n"
 #endif
-	      " --force-uid=#      set all file uids to # (# = UID)\n"
-	      " --force-gid=#      set all file gids to # (# = GID)\n"
-	      " --all-root         make all files owned by root\n"
-	      " --help             display this help and exit\n"
+	      " --force-uid=#         set all file uids to # (# = UID)\n"
+	      " --force-gid=#         set all file gids to # (# = GID)\n"
+	      " --all-root            make all files owned by root\n"
+	      " --help                display this help and exit\n"
+#ifndef NDEBUG
+	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
+#endif
 #ifdef WITH_ANDROID
 	      "\nwith following android-specific options:\n"
-	      " --mount-point=X    X=prefix of target fs path (default: /)\n"
-	      " --product-out=X    X=product_out directory\n"
-	      " --fs-config-file=X X=fs_config file\n"
+	      " --mount-point=X       X=prefix of target fs path (default: /)\n"
+	      " --product-out=X       X=product_out directory\n"
+	      " --fs-config-file=X    X=fs_config file\n"
 #endif
 	      "\nAvailable compressors are: ", stderr);
 	print_available_compressors(stderr, ", ");
@@ -257,6 +263,11 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		case 7:
 			cfg.c_uid = cfg.c_gid = 0;
 			break;
+#ifndef NDEBUG
+		case 8:
+			cfg.c_random_pclusterblks = true;
+			break;
+#endif
 #ifdef WITH_ANDROID
 		case 10:
 			cfg.mount_point = optarg;
@@ -523,7 +534,10 @@ int main(int argc, char **argv)
 
 	erofs_show_config();
 	erofs_set_fs_root(cfg.c_src_path);
-
+#ifndef NDEBUG
+	if (cfg.c_random_pclusterblks)
+		srand(time(NULL));
+#endif
 	sb_bh = erofs_buffer_init();
 	if (IS_ERR(sb_bh)) {
 		err = PTR_ERR(sb_bh);
