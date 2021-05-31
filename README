@@ -74,6 +74,24 @@ In addition, you could specify a higher compression level to get a
 (slightly) better compression ratio than the default level, e.g.
  $ mkfs.erofs -zlz4hc,12 foo.erofs.img foo/
 
+How to generate EROFS big pcluster images (Linux 5.13+)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In order to get much better compression ratios (thus better sequential
+read performance for common storage devices), big pluster feature has
+been introduced since linux-5.13, which is not forward-compatible with
+old kernels.
+
+In details, -C is used to specify the maximum size of each big pcluster
+in bytes, e.g.
+ $ mkfs.erofs -zlz4hc -C65536 foo.erofs.img foo/
+
+So in that case, pcluster size can be 64KiB at most.
+
+Note that large pcluster size can cause bad random performance, so
+please evaluate carefully in advance. Or make your own per-(sub)file
+compression strategies according to file access patterns if needed.
+
 How to generate legacy EROFS images (Linux 4.19+)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
