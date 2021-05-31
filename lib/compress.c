@@ -184,7 +184,7 @@ static int vle_compress_one(struct erofs_inode *inode,
 			}
 		}
 
-		count = len;
+		count = min(len, cfg.c_max_decompressed_extent_bytes);
 		ret = erofs_compress_destsize(h, compressionlevel,
 					      ctx->queue + ctx->head,
 					      &count, dst, pclustersize);

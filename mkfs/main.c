@@ -42,6 +42,7 @@ static struct option long_options[] = {
 #ifndef NDEBUG
 	{"random-pclusterblks", no_argument, NULL, 8},
 #endif
+	{"max-extent-bytes", required_argument, NULL, 9},
 #ifdef WITH_ANDROID
 	{"mount-point", required_argument, NULL, 10},
 	{"product-out", required_argument, NULL, 11},
@@ -85,6 +86,7 @@ static void usage(void)
 	      " --force-gid=#         set all file gids to # (# = GID)\n"
 	      " --all-root            make all files owned by root\n"
 	      " --help                display this help and exit\n"
+	      " --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
 #ifndef NDEBUG
 	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
 #endif
@@ -268,6 +270,15 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			cfg.c_random_pclusterblks = true;
 			break;
 #endif
+		case 9:
+			cfg.c_max_decompressed_extent_bytes =
+				strtoul(optarg, &endptr, 0);
+			if (*endptr != '\0') {
+				erofs_err("invalid maximum uncompressed extent size %s",
+					  optarg);
+				return -EINVAL;
+			}
+			break;
 #ifdef WITH_ANDROID
 		case 10:
 			cfg.mount_point = optarg;

@@ -58,6 +58,7 @@ struct erofs_configure {
 	int c_inline_xattr_tolerance;
 
 	u32 c_physical_clusterblks;
+	u32 c_max_decompressed_extent_bytes;
 	u64 c_unix_timestamp;
 	u32 c_uid, c_gid;
 #ifdef WITH_ANDROID
