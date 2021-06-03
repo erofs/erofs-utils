@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0+
 # Makefile.am
 
-dist_man_MANS = mkfs.erofs.1 erofsfuse.1
+dist_man_MANS = mkfs.erofs.1
 
+EXTRA_DIST = erofsfuse.1
+if ENABLE_FUSE
+man_MANS = erofsfuse.1
+endif
