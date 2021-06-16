@@ -119,7 +119,7 @@ static int __allocate_inode_bh_data(struct erofs_inode *inode,
 	int ret;
 
 	if (!nblocks) {
-		/* it has only tail-end inlined data */
+		/* it has only tail-end data */
 		inode->u.i_blkaddr = NULL_ADDR;
 		return 0;
 	}
