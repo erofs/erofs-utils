@@ -251,7 +251,7 @@ static int write_dirblock(unsigned int q, struct erofs_dentry *head,
 	return blk_write(buf, blkaddr, 1);
 }
 
-int erofs_write_dir_file(struct erofs_inode *dir)
+static int erofs_write_dir_file(struct erofs_inode *dir)
 {
 	struct erofs_dentry *head = list_first_entry(&dir->i_subdirs,
 						     struct erofs_dentry,
@@ -298,7 +298,7 @@ int erofs_write_dir_file(struct erofs_inode *dir)
 	return 0;
 }
 
-int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
+static int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 {
 	const unsigned int nblocks = erofs_blknr(inode->i_size);
 	int ret;
@@ -516,7 +516,7 @@ static struct erofs_bhops erofs_write_inode_bhops = {
 	.flush = erofs_bh_flush_write_inode,
 };
 
-int erofs_prepare_tail_block(struct erofs_inode *inode)
+static int erofs_prepare_tail_block(struct erofs_inode *inode)
 {
 	struct erofs_buffer_head *bh;
 	int ret;
@@ -545,7 +545,7 @@ int erofs_prepare_tail_block(struct erofs_inode *inode)
 	return 0;
 }
 
-int erofs_prepare_inode_buffer(struct erofs_inode *inode)
+static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 {
 	unsigned int inodesize;
 	struct erofs_buffer_head *bh, *ibh;
@@ -623,7 +623,7 @@ static struct erofs_bhops erofs_write_inline_bhops = {
 	.flush = erofs_bh_flush_write_inline,
 };
 
-int erofs_write_tail_end(struct erofs_inode *inode)
+static int erofs_write_tail_end(struct erofs_inode *inode)
 {
 	struct erofs_buffer_head *bh, *ibh;
 
@@ -753,9 +753,9 @@ static int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
 }
 #endif
 
-int erofs_fill_inode(struct erofs_inode *inode,
-		     struct stat64 *st,
-		     const char *path)
+static int erofs_fill_inode(struct erofs_inode *inode,
+			    struct stat64 *st,
+			    const char *path)
 {
 	int err = erofs_droid_inode_fsconfig(inode, st, path);
 
@@ -819,7 +819,7 @@ int erofs_fill_inode(struct erofs_inode *inode,
 	return 0;
 }
 
-struct erofs_inode *erofs_new_inode(void)
+static struct erofs_inode *erofs_new_inode(void)
 {
 	static unsigned int counter;
 	struct erofs_inode *inode;
@@ -846,7 +846,7 @@ struct erofs_inode *erofs_new_inode(void)
 }
 
 /* get the inode from the (source) path */
-struct erofs_inode *erofs_iget_from_path(const char *path, bool is_src)
+static struct erofs_inode *erofs_iget_from_path(const char *path, bool is_src)
 {
 	struct stat64 st;
 	struct erofs_inode *inode;
@@ -885,7 +885,7 @@ struct erofs_inode *erofs_iget_from_path(const char *path, bool is_src)
 	return inode;
 }
 
-void erofs_fixup_meta_blkaddr(struct erofs_inode *rootdir)
+static void erofs_fixup_meta_blkaddr(struct erofs_inode *rootdir)
 {
 	const erofs_off_t rootnid_maxoffset = 0xffff << EROFS_ISLOTBITS;
 	struct erofs_buffer_head *const bh = rootdir->bh;
@@ -918,7 +918,7 @@ erofs_nid_t erofs_lookupnid(struct erofs_inode *inode)
 	return inode->nid = (off - meta_offset) >> EROFS_ISLOTBITS;
 }
 
-void erofs_d_invalidate(struct erofs_dentry *d)
+static void erofs_d_invalidate(struct erofs_dentry *d)
 {
 	struct erofs_inode *const inode = d->inode;
 
@@ -926,7 +926,7 @@ void erofs_d_invalidate(struct erofs_dentry *d)
 	erofs_iput(inode);
 }
 
-struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
+static struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 {
 	int ret;
 	DIR *_dir;
