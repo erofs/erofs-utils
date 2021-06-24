@@ -65,6 +65,7 @@ struct erofs_configure {
 	char *mount_point;
 	char *target_out_path;
 	char *fs_config_file;
+	char *block_list_file;
 #endif
 };
 

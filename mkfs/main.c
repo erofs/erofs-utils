@@ -22,6 +22,7 @@
 #include "erofs/compress.h"
 #include "erofs/xattr.h"
 #include "erofs/exclude.h"
+#include "erofs/block_list.h"
 
 #ifdef HAVE_LIBUUID
 #include <uuid.h>
@@ -47,6 +48,7 @@ static struct option long_options[] = {
 	{"mount-point", required_argument, NULL, 10},
 	{"product-out", required_argument, NULL, 11},
 	{"fs-config-file", required_argument, NULL, 12},
+	{"block-list-file", required_argument, NULL, 13},
 #endif
 	{0, 0, 0, 0},
 };
@@ -95,6 +97,7 @@ static void usage(void)
 	      " --mount-point=X       X=prefix of target fs path (default: /)\n"
 	      " --product-out=X       X=product_out directory\n"
 	      " --fs-config-file=X    X=fs_config file\n"
+	      " --block-list-file=X    X=block_list file\n"
 #endif
 	      "\nAvailable compressors are: ", stderr);
 	print_available_compressors(stderr, ", ");
@@ -292,6 +295,9 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			break;
 		case 12:
 			cfg.fs_config_file = optarg;
+			break;
+		case 13:
+			cfg.block_list_file = optarg;
 			break;
 #endif
 		case 'C':
@@ -541,6 +547,11 @@ int main(int argc, char **argv)
 		erofs_err("failed to load fs config %s", cfg.fs_config_file);
 		return 1;
 	}
+
+	if (cfg.block_list_file && erofs_droid_blocklist_fopen() < 0) {
+		erofs_err("failed to open %s", cfg.block_list_file);
+		return 1;
+	}
 #endif
 
 	erofs_show_config();
@@ -607,6 +618,9 @@ int main(int argc, char **argv)
 		err = erofs_mkfs_superblock_csum_set();
 exit:
 	z_erofs_compress_exit();
+#ifdef WITH_ANDROID
+	erofs_droid_blocklist_fclose();
+#endif
 	dev_close();
 	erofs_cleanup_exclude_rules();
 	erofs_exit_configure();
