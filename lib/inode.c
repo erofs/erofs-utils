@@ -562,6 +562,11 @@ static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 	if (is_inode_layout_compression(inode))
 		goto noinline;
 
+	if (cfg.c_noinline_data && S_ISREG(inode->i_mode)) {
+		inode->datalayout = EROFS_INODE_FLAT_PLAIN;
+		goto noinline;
+	}
+
 	/*
 	 * if the file size is block-aligned for uncompressed files,
 	 * should use EROFS_INODE_FLAT_PLAIN data mapping mode.
