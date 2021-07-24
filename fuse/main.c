@@ -10,7 +10,7 @@
 #include <libgen.h>
 #include <fuse.h>
 #include <fuse_opt.h>
-
+#include "macosx.h"
 #include "erofs/config.h"
 #include "erofs/print.h"
 #include "erofs/io.h"
@@ -74,10 +74,10 @@ static int erofsfuse_read(const char *path, char *buffer,
 	ret = erofs_pread(&vi, buffer, size, offset);
 	if (ret)
 		return ret;
-	if (offset + size > vi.i_size)
-		return vi.i_size - offset;
 	if (offset >= vi.i_size)
 		return 0;
+	if (offset + size > vi.i_size)
+		return vi.i_size - offset;
 	return size;
 }
 

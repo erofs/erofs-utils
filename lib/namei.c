@@ -4,14 +4,15 @@
  *
  * Created by Li Guifu <blucerlee@gmail.com>
  */
-#include <linux/kdev_t.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <config.h>
+#if defined(HAVE_SYS_SYSMACROS_H)
 #include <sys/sysmacros.h>
-
+#endif
 #include "erofs/print.h"
 #include "erofs/io.h"
 

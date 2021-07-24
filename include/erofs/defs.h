@@ -96,6 +96,7 @@ typedef int64_t         s64;
 #define round_up(x, y)          ((((x)-1) | __round_mask(x, y))+1)
 #define round_down(x, y)        ((x) & ~__round_mask(x, y))
 
+#ifndef roundup
 /* The `const' in roundup() prevents gcc-3.3 from calling __divdi3 */
 #define roundup(x, y) (					\
 {							\
@@ -103,6 +104,7 @@ typedef int64_t         s64;
 	(((x) + (__y - 1)) / __y) * __y;		\
 }							\
 )
+#endif
 #define rounddown(x, y) (				\
 {							\
 	typeof(x) __x = (x);				\
@@ -175,5 +177,28 @@ static inline u32 get_unaligned_le32(const u8 *p)
 	return p[0] | p[1] << 8 | p[2] << 16 | p[3] << 24;
 }
 
+#ifndef __always_inline
+#define __always_inline	inline
 #endif
 
+#ifdef HAVE_STRUCT_STAT_ST_ATIM
+/* Linux */
+#define ST_ATIM_NSEC(stbuf) ((stbuf)->st_atim.tv_nsec)
+#define ST_CTIM_NSEC(stbuf) ((stbuf)->st_ctim.tv_nsec)
+#define ST_MTIM_NSEC(stbuf) ((stbuf)->st_mtim.tv_nsec)
+#elif defined(HAVE_STRUCT_STAT_ST_ATIMENSEC)
+/* macOS */
+#define ST_ATIM_NSEC(stbuf) ((stbuf)->st_atimensec)
+#define ST_CTIM_NSEC(stbuf) ((stbuf)->st_ctimensec)
+#define ST_MTIM_NSEC(stbuf) ((stbuf)->st_mtimensec)
+#else
+#define ST_ATIM_NSEC(stbuf) 0
+#define ST_CTIM_NSEC(stbuf) 0
+#define ST_MTIM_NSEC(stbuf) 0
+#endif
+
+#ifdef __APPLE__
+#define stat64		stat
+#define lstat64		lstat
+#endif
+#endif

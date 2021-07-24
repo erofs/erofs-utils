@@ -6,8 +6,6 @@
  */
 #include <string.h>
 #include <stdlib.h>
-#include <asm-generic/errno-base.h>
-
 #include "erofs/io.h"
 #include "erofs/print.h"
 

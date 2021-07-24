@@ -266,7 +266,9 @@ int z_erofs_fill_inode(struct erofs_inode *vi);
 int z_erofs_map_blocks_iter(struct erofs_inode *vi,
 			    struct erofs_map_blocks *map);
 
+#ifdef EUCLEAN
 #define EFSCORRUPTED	EUCLEAN		/* Filesystem is corrupted */
-
+#else
+#define EFSCORRUPTED	EIO
 #endif
-
+#endif

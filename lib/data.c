@@ -5,6 +5,7 @@
  * Copyright (C) 2020 Gao Xiang <hsiangkao@aol.com>
  * Compression support by Huang Jianan <huangjianan@oppo.com>
  */
+#include <stdlib.h>
 #include "erofs/print.h"
 #include "erofs/internal.h"
 #include "erofs/io.h"
@@ -123,22 +124,23 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 			     erofs_off_t size, erofs_off_t offset)
 {
-	int ret;
 	erofs_off_t end, length, skip;
 	struct erofs_map_blocks map = {
 		.index = UINT_MAX,
 	};
 	bool partial;
-	unsigned int algorithmformat;
-	char raw[Z_EROFS_PCLUSTER_MAX_SIZE];
+	unsigned int algorithmformat, bufsize;
+	char *raw = NULL;
+	int ret = 0;
 
 	end = offset + size;
+	bufsize = 0;
 	while (end > offset) {
 		map.m_la = end - 1;
 
 		ret = z_erofs_map_blocks_iter(inode, &map);
 		if (ret)
-			return ret;
+			break;
 
 		/*
 		 * trim to the needed size if the returned extent is quite
@@ -167,9 +169,17 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 			continue;
 		}
 
+		if (map.m_plen > bufsize) {
+			bufsize = map.m_plen;
+			raw = realloc(raw, bufsize);
+			if (!raw) {
+				ret = -ENOMEM;
+				break;
+			}
+		}
 		ret = dev_read(raw, map.m_pa, map.m_plen);
 		if (ret < 0)
-			return -EIO;
+			break;
 
 		algorithmformat = map.m_flags & EROFS_MAP_ZIPPED ?
 						Z_EROFS_COMPRESSION_LZ4 :
@@ -185,9 +195,11 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 					.partial_decoding = partial
 					 });
 		if (ret < 0)
-			return ret;
+			break;
 	}
-	return 0;
+	if (raw)
+		free(raw);
+	return ret < 0 ? ret : 0;
 }
 
 int erofs_pread(struct erofs_inode *inode, char *buf,

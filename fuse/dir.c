@@ -6,7 +6,7 @@
  */
 #include <fuse.h>
 #include <fuse_opt.h>
-
+#include "macosx.h"
 #include "erofs/internal.h"
 #include "erofs/print.h"
 

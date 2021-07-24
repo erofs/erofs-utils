@@ -128,6 +128,8 @@ AC_TYPE_INT64_T
 AC_TYPE_SIZE_T
 AC_TYPE_SSIZE_T
 AC_CHECK_MEMBERS([struct stat.st_rdev])
+AC_CHECK_MEMBERS([struct stat.st_atim])
+AC_CHECK_MEMBERS([struct stat.st_atimensec])
 AC_TYPE_UINT64_T
 
 #
@@ -154,7 +156,20 @@ AC_CHECK_DECL(lseek64,[AC_DEFINE(HAVE_LSEEK64_PROTOTYPE, 1,
    #include <unistd.h>])
 
 # Checks for library functions.
-AC_CHECK_FUNCS([backtrace fallocate gettimeofday memset realpath strdup strerror strrchr strtoull])
+AC_CHECK_FUNCS(m4_flatten([
+	backtrace
+	fallocate
+	gettimeofday
+	lgetxattr
+	llistxattr
+	memset
+	realpath
+	pread64
+	pwrite64
+	strdup
+	strerror
+	strrchr
+	strtoull]))
 
 # Configure debug mode
 AS_IF([test "x$enable_debug" != "xno"], [], [

@@ -148,7 +148,11 @@ int dev_write(const void *buf, u64 offset, size_t len)
 		return -EINVAL;
 	}
 
+#ifdef HAVE_PWRITE64
 	ret = pwrite64(erofs_devfd, buf, len, (off64_t)offset);
+#else
+	ret = pwrite(erofs_devfd, buf, len, (off_t)offset);
+#endif
 	if (ret != (int)len) {
 		if (ret < 0) {
 			erofs_err("Failed to write data into device - %s:[%" PRIu64 ", %zd].",
@@ -245,8 +249,11 @@ int dev_read(void *buf, u64 offset, size_t len)
 			  offset, len, erofs_devsz);
 		return -EINVAL;
 	}
-
+#ifdef HAVE_PREAD64
 	ret = pread64(erofs_devfd, buf, len, (off64_t)offset);
+#else
+	ret = pread(erofs_devfd, buf, len, (off_t)offset);
+#endif
 	if (ret != (int)len) {
 		erofs_err("Failed to read data from device - %s:[%" PRIu64 ", %zd].",
 			  erofs_devname, offset, len);
