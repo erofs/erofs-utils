@@ -3,7 +3,7 @@
 
 AC_PREREQ([2.69])
 
-m4_define([erofs_utils_version], m4_esyscmd([sed -n '1p' VERSION | tr -d '\n']))
+m4_define([erofs_utils_version], m4_esyscmd_s([scripts/get-version-number]))
 m4_define([erofs_utils_date], m4_esyscmd([sed -n '2p' VERSION | tr -d '\n']))
 
 AC_INIT([erofs-utils], [erofs_utils_version], [linux-erofs@lists.ozlabs.org])

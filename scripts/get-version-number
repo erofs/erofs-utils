@@ -1,0 +1,33 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+
+scm_version()
+{
+	# Check for git and a git repo.
+	if test -z "$(git rev-parse --show-cdup 2>/dev/null)" &&
+	   head="$(git rev-parse --verify HEAD 2>/dev/null)"; then
+		# If we are at a tagged commit, we ignore it.
+		if [ -z "$(git describe --exact-match 2>/dev/null)" ]; then
+			# Add -g and 8 hex chars.
+			printf '%s%s' -g "$(echo $head | cut -c1-8)"
+		fi
+		# Check for uncommitted changes.
+		# This script must avoid any write attempt to the source tree,
+		# which might be read-only.
+		# You cannot use 'git describe --dirty' because it tries to
+		# create .git/index.lock .
+		# First, with git-status, but --no-optional-locks is only
+		# supported in git >= 2.14, so fall back to git-diff-index if
+		# it fails. Note that git-diff-index does not refresh the
+		# index, so it may give misleading results. See
+		# git-update-index(1), git-diff-index(1), and git-status(1).
+		if {
+			git --no-optional-locks status -uno --porcelain 2>/dev/null ||
+			git diff-index --name-only HEAD
+		} | read dummy; then
+			printf '%s' -dirty
+		fi
+	fi
+}
+
+echo $(sed -n '1p' VERSION | tr -d '\n')$(scm_version)
