@@ -27,4 +27,5 @@ configure.scan
 libtool
 stamp-h
 stamp-h1
-
+/mkfs/mkfs.erofs
+/fuse/erofsfuse
