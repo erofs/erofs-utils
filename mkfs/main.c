@@ -45,10 +45,10 @@ static struct option long_options[] = {
 #endif
 	{"max-extent-bytes", required_argument, NULL, 9},
 #ifdef WITH_ANDROID
-	{"mount-point", required_argument, NULL, 10},
-	{"product-out", required_argument, NULL, 11},
-	{"fs-config-file", required_argument, NULL, 12},
-	{"block-list-file", required_argument, NULL, 13},
+	{"mount-point", required_argument, NULL, 512},
+	{"product-out", required_argument, NULL, 513},
+	{"fs-config-file", required_argument, NULL, 514},
+	{"block-list-file", required_argument, NULL, 515},
 #endif
 	{0, 0, 0, 0},
 };
@@ -289,20 +289,20 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			}
 			break;
 #ifdef WITH_ANDROID
-		case 10:
+		case 512:
 			cfg.mount_point = optarg;
 			/* all trailing '/' should be deleted */
 			opt = strlen(cfg.mount_point);
 			if (opt && optarg[opt - 1] == '/')
 				optarg[opt - 1] = '\0';
 			break;
-		case 11:
+		case 513:
 			cfg.target_out_path = optarg;
 			break;
-		case 12:
+		case 514:
 			cfg.fs_config_file = optarg;
 			break;
-		case 13:
+		case 515:
 			cfg.block_list_file = optarg;
 			break;
 #endif
