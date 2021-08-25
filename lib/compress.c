@@ -17,6 +17,7 @@
 #include "erofs/compress.h"
 #include "compressor.h"
 #include "erofs/block_list.h"
+#include "erofs/compress_hints.h"
 
 static struct erofs_compress compresshandle;
 static int compressionlevel;
@@ -90,7 +91,7 @@ static void vle_write_indexes(struct z_erofs_vle_compress_ctx *ctx,
 
 	do {
 		/* XXX: big pcluster feature should be per-inode */
-		if (d0 == 1 && cfg.c_physical_clusterblks > 1) {
+		if (d0 == 1 && erofs_sb_has_big_pcluster()) {
 			type = Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD;
 			di.di_u.delta[0] = cpu_to_le16(ctx->compressedblks |
 					Z_EROFS_VLE_DI_D0_CBLKCNT);
@@ -149,14 +150,18 @@ static int write_uncompressed_extent(struct z_erofs_vle_compress_ctx *ctx,
 	return count;
 }
 
-/* TODO: apply per-(sub)file strategies here */
 static unsigned int z_erofs_get_max_pclusterblks(struct erofs_inode *inode)
 {
 #ifndef NDEBUG
 	if (cfg.c_random_pclusterblks)
-		return 1 + rand() % cfg.c_physical_clusterblks;
+		return 1 + rand() % cfg.c_pclusterblks_max;
 #endif
-	return cfg.c_physical_clusterblks;
+	if (cfg.c_compress_hints_file) {
+		z_erofs_apply_compress_hints(inode);
+		DBG_BUGON(!inode->z_physical_clusterblks);
+		return inode->z_physical_clusterblks;
+	}
+	return cfg.c_pclusterblks_def;
 }
 
 static int vle_compress_one(struct erofs_inode *inode,
@@ -493,7 +498,7 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION_LEGACY;
 	}
 
-	if (cfg.c_physical_clusterblks > 1) {
+	if (erofs_sb_has_big_pcluster()) {
 		inode->z_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_1;
 		if (inode->datalayout == EROFS_INODE_FLAT_COMPRESSION)
 			inode->z_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_2;
@@ -603,7 +608,7 @@ int z_erofs_build_compr_cfgs(struct erofs_buffer_head *sb_bh)
 			.lz4 = {
 				.max_distance =
 					cpu_to_le16(sbi.lz4_max_distance),
-				.max_pclusterblks = cfg.c_physical_clusterblks,
+				.max_pclusterblks = cfg.c_pclusterblks_max,
 			}
 		};
 
@@ -655,11 +660,11 @@ int z_erofs_compress_init(struct erofs_buffer_head *sb_bh)
 	 * if big pcluster is enabled, an extra CBLKCNT lcluster index needs
 	 * to be loaded in order to get those compressed block counts.
 	 */
-	if (cfg.c_physical_clusterblks > 1) {
-		if (cfg.c_physical_clusterblks >
+	if (cfg.c_pclusterblks_max > 1) {
+		if (cfg.c_pclusterblks_max >
 		    Z_EROFS_PCLUSTER_MAX_SIZE / EROFS_BLKSIZ) {
 			erofs_err("unsupported clusterblks %u (too large)",
-				  cfg.c_physical_clusterblks);
+				  cfg.c_pclusterblks_max);
 			return -EINVAL;
 		}
 		erofs_sb_set_big_pcluster();

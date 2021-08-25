@@ -21,6 +21,7 @@
 #include "erofs/xattr.h"
 #include "erofs/exclude.h"
 #include "erofs/block_list.h"
+#include "erofs/compress_hints.h"
 
 #ifdef HAVE_LIBUUID
 #include <uuid.h>
@@ -42,6 +43,7 @@ static struct option long_options[] = {
 	{"random-pclusterblks", no_argument, NULL, 8},
 #endif
 	{"max-extent-bytes", required_argument, NULL, 9},
+	{"compress-hints", required_argument, NULL, 10},
 #ifdef WITH_ANDROID
 	{"mount-point", required_argument, NULL, 512},
 	{"product-out", required_argument, NULL, 513},
@@ -87,6 +89,7 @@ static void usage(void)
 	      " --all-root            make all files owned by root\n"
 	      " --help                display this help and exit\n"
 	      " --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
+	      " --compress-hints=X    specify a file to configure per-file compression strategy\n"
 #ifndef NDEBUG
 	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
 #endif
@@ -95,7 +98,7 @@ static void usage(void)
 	      " --mount-point=X       X=prefix of target fs path (default: /)\n"
 	      " --product-out=X       X=product_out directory\n"
 	      " --fs-config-file=X    X=fs_config file\n"
-	      " --block-list-file=X    X=block_list file\n"
+	      " --block-list-file=X   X=block_list file\n"
 #endif
 	      "\nAvailable compressors are: ", stderr);
 	print_available_compressors(stderr, ", ");
@@ -286,6 +289,9 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				return -EINVAL;
 			}
 			break;
+		case 10:
+			cfg.c_compress_hints_file = optarg;
+			break;
 #ifdef WITH_ANDROID
 		case 512:
 			cfg.mount_point = optarg;
@@ -312,7 +318,8 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 					  optarg);
 				return -EINVAL;
 			}
-			cfg.c_physical_clusterblks = i / EROFS_BLKSIZ;
+			cfg.c_pclusterblks_max = i / EROFS_BLKSIZ;
+			cfg.c_pclusterblks_def = cfg.c_pclusterblks_max;
 			break;
 
 		case 1:
@@ -578,6 +585,13 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
+	err = erofs_load_compress_hints();
+	if (err) {
+		erofs_err("Failed to load compress hints %s",
+			  cfg.c_compress_hints_file);
+		goto exit;
+	}
+
 	err = z_erofs_compress_init(sb_bh);
 	if (err) {
 		erofs_err("Failed to initialize compressor: %s",
@@ -626,6 +640,7 @@ exit:
 	erofs_droid_blocklist_fclose();
 #endif
 	dev_close();
+	erofs_cleanup_compress_hints();
 	erofs_cleanup_exclude_rules();
 	erofs_exit_configure();
 

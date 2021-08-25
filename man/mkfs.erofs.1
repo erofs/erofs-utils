@@ -88,6 +88,17 @@ Display this help and exit.
 .TP
 .B \-\-max-extent-bytes #
 Specify maximum decompressed extent size # in bytes.
+.TP
+.BI "\-\-compress-hints " file
+If the optional
+.BI "\-\-compress-hints " file
+argument is given,
+.B mkfs.erofs
+uses it to apply the per-file compression strategy. Each line is defined by
+tokens separated by spaces in the following form:
+.RS 1.2i
+<pcluster-in-bytes> <match-pattern>
+.RE
 .SH AUTHOR
 This version of \fBmkfs.erofs\fR is written by Li Guifu <blucerlee@gmail.com>,
 Miao Xie <miaoxie@huawei.com> and Gao Xiang <xiang@kernel.org> with
