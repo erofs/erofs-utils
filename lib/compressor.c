@@ -26,7 +26,7 @@ int erofs_compress_destsize(struct erofs_compress *c,
 			    void *dst,
 			    unsigned int dstsize)
 {
-	unsigned uncompressed_size;
+	unsigned int uncompressed_size;
 	int ret;
 
 	DBG_BUGON(!c->alg);

@@ -11,13 +11,10 @@
 #define pr_fmt(fmt) "EROFS block_list: " FUNC_LINE_FMT fmt "\n"
 #include "erofs/print.h"
 
-static FILE *block_list_fp = NULL;
+static FILE *block_list_fp;
 
 int erofs_droid_blocklist_fopen(void)
 {
-	if (block_list_fp)
-		return 0;
-
 	block_list_fp = fopen(cfg.block_list_file, "w");
 
 	if (!block_list_fp)

@@ -18,8 +18,8 @@ void erofs_droid_blocklist_write_tail_end(struct erofs_inode *inode,
 #else
 static inline void erofs_droid_blocklist_write(struct erofs_inode *inode,
 				 erofs_blk_t blk_start, erofs_blk_t nblocks) {}
-static inline
-void erofs_droid_blocklist_write_tail_end(struct erofs_inode *inode,
+static inline void
+erofs_droid_blocklist_write_tail_end(struct erofs_inode *inode,
 					  erofs_blk_t blkaddr) {}
 #endif
 #endif

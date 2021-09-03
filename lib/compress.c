@@ -292,13 +292,12 @@ static void *write_compacted_indexes(u8 *out,
 	bool update_blkaddr;
 	erofs_blk_t blkaddr;
 
-	if (destsize == 4) {
+	if (destsize == 4)
 		vcnt = 2;
-	} else if (destsize == 2 && logical_clusterbits == 12) {
+	else if (destsize == 2 && logical_clusterbits == 12)
 		vcnt = 16;
-	} else {
+	else
 		return ERR_PTR(-EINVAL);
-	}
 	encodebits = (vcnt * destsize * 8 - 32) / vcnt;
 	blkaddr = *blkaddr_ret;
 	update_blkaddr = erofs_sb_has_big_pcluster();
@@ -467,8 +466,8 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 	erofs_blk_t blkaddr, compressed_blocks;
 	unsigned int legacymetasize;
 	int ret, fd;
-
 	u8 *compressmeta = malloc(vle_compressmeta_capacity(inode->i_size));
+
 	if (!compressmeta)
 		return -ENOMEM;
 
