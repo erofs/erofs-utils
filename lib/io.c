@@ -242,8 +242,7 @@ int dev_read(void *buf, u64 offset, size_t len)
 	}
 	if (offset >= erofs_devsz || len > erofs_devsz ||
 	    offset > erofs_devsz - len) {
-		erofs_err("read posion[%" PRIu64 ", %zd] is too large beyond"
-			  "the end of device(%" PRIu64 ").",
+		erofs_err("read posion[%" PRIu64 ", %zd] is too large beyond the end of device(%" PRIu64 ").",
 			  offset, len, erofs_devsz);
 		return -EINVAL;
 	}

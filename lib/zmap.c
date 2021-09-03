@@ -57,8 +57,7 @@ static int z_erofs_fill_inode_lazy(struct erofs_inode *vi)
 	if (vi->datalayout == EROFS_INODE_FLAT_COMPRESSION &&
 	    !(vi->z_advise & Z_EROFS_ADVISE_BIG_PCLUSTER_1) ^
 	    !(vi->z_advise & Z_EROFS_ADVISE_BIG_PCLUSTER_2)) {
-		erofs_err(
-"big pcluster head1/2 of compact indexes should be consistent for nid %llu",
+		erofs_err("big pcluster head1/2 of compact indexes should be consistent for nid %llu",
 			  vi->nid * 1ULL);
 		return -EFSCORRUPTED;
 	}
