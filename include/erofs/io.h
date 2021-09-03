@@ -1,7 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * erofs-utils/include/erofs/io.h
- *
  * Copyright (C) 2018-2019 HUAWEI, Inc.
  *             http://www.huawei.com/
  * Created by Li Guifu <bluce.liguifu@huawei.com>
@@ -41,4 +39,3 @@ static inline int blk_read(void *buf, erofs_blk_t start,
 }
 
 #endif
-

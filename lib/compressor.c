@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * erofs-utils/lib/compressor.c
- *
  * Copyright (C) 2018-2019 HUAWEI, Inc.
  *             http://www.huawei.com/
  * Created by Gao Xiang <gaoxiang25@huawei.com>
@@ -91,4 +89,3 @@ int erofs_compressor_exit(struct erofs_compress *c)
 		return c->alg->exit(c);
 	return 0;
 }
-

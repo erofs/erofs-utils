@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * erofs-utils/lib/namei.c
- *
  * Created by Li Guifu <blucerlee@gmail.com>
  */
 #include <sys/types.h>
@@ -262,4 +260,3 @@ int erofs_ilookup(const char *path, struct erofs_inode *vi)
 	vi->nid = nd.nid;
 	return erofs_read_inode_from_disk(vi);
 }
-

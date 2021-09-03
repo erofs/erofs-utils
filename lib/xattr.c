@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * erofs-utils/lib/xattr.c
- *
  * Originally contributed by an anonymous person,
  * heavily changed by Li Guifu <blucerlee@gmail.com>
  *                and Gao Xiang <hsiangkao@aol.com>
@@ -687,4 +685,3 @@ char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size)
 	DBG_BUGON(p > size);
 	return buf;
 }
-

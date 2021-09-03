@@ -1,7 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * erofs-utils/include/erofs/compress.h
- *
  * Copyright (C) 2019 HUAWEI, Inc.
  *             http://www.huawei.com/
  * Created by Gao Xiang <gaoxiang25@huawei.com>
@@ -24,4 +22,3 @@ int z_erofs_compress_exit(void);
 const char *z_erofs_list_available_compressors(unsigned int i);
 
 #endif
-

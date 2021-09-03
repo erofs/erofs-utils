@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * erofs-utils/lib/super.c
- *
  * Created by Li Guifu <blucerlee@gmail.com>
  */
 #include <string.h>
@@ -71,4 +69,3 @@ int erofs_read_superblock(void)
 	memcpy(&sbi.uuid, dsb->uuid, sizeof(dsb->uuid));
 	return 0;
 }
-

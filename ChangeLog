@@ -58,4 +58,3 @@ erofs-utils (1.0-1) unstable; urgency=low
    - (mkfs.erofs) Posix ACL support;
 
  -- Gao Xiang <xiang@kernel.org>  Thu, 24 Oct 2019 00:00:00 +0800
-

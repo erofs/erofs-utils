@@ -297,4 +297,3 @@ AC_CONFIG_FILES([Makefile
 		 mkfs/Makefile
 		 fuse/Makefile])
 AC_OUTPUT
-

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * erofs-utils/fuse/main.c
- *
  * Created by Li Guifu <blucerlee@gmail.com>
  */
 #include <stdlib.h>
@@ -249,4 +247,3 @@ err:
 	erofs_exit_configure();
 	return ret ? EXIT_FAILURE : EXIT_SUCCESS;
 }
-

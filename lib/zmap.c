@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * erofs-utils/lib/zmap.c
- *
  * (a large amount of code was adapted from Linux kernel. )
  *
  * Copyright (C) 2018-2019 HUAWEI, Inc.

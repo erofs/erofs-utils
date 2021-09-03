@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * erofs-utils/lib/cache.c
- *
  * Copyright (C) 2018-2019 HUAWEI, Inc.
  *             http://www.huawei.com/
  * Created by Miao Xie <miaoxie@huawei.com>
@@ -442,4 +440,3 @@ void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke)
 	if (rollback)
 		tail_blkaddr = blkaddr;
 }
-

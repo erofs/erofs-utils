@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * erofs-utils/lib/compressor-lz4hc.c
- *
  * Copyright (C) 2018-2019 HUAWEI, Inc.
  *             http://www.huawei.com/
  * Created by Gao Xiang <gaoxiang25@huawei.com>
@@ -61,4 +59,3 @@ struct erofs_compressor erofs_compressor_lz4hc = {
 	.exit = compressor_lz4hc_exit,
 	.compress_destsize = lz4hc_compress_destsize,
 };
-

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * erofs-utils/fuse/dir.c
- *
  * Created by Li Guifu <blucerlee@gmail.com>
  */
 #include <fuse.h>
@@ -100,4 +98,3 @@ int erofsfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	}
 	return 0;
 }
-

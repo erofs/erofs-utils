@@ -1,7 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
- * erofs-utils/include/erofs/cache.h
- *
  * Copyright (C) 2018 HUAWEI, Inc.
  *             http://www.huawei.com/
  * Created by Miao Xie <miaoxie@huawei.com>
@@ -102,4 +100,3 @@ bool erofs_bflush(struct erofs_buffer_block *bb);
 void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke);
 
 #endif
-

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: GPL-2.0+
-# Makefile.am
 
 noinst_LTLIBRARIES = liberofs.la
 noinst_HEADERS = $(top_srcdir)/include/erofs_fs.h \
@@ -30,4 +29,3 @@ if ENABLE_LZ4HC
 liberofs_la_SOURCES += compressor_lz4hc.c
 endif
 endif
-
