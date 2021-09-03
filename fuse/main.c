@@ -109,15 +109,12 @@ static struct options {
 	bool odebug;
 } fusecfg;
 
-#define OPTION(t, p)                           \
-    { t, offsetof(struct options, p), 1 }
+#define OPTION(t, p) { t, offsetof(struct options, p), 1 }
 static const struct fuse_opt option_spec[] = {
 	OPTION("--dbglevel=%u", debug_lvl),
 	OPTION("--help", show_help),
 	FUSE_OPT_END
 };
-
-#define OPTION(t, p)    { t, offsetof(struct options, p), 1 }
 
 static void usage(void)
 {
