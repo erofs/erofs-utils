@@ -34,7 +34,9 @@ typedef unsigned short umode_t;
 #error incompatible PAGE_SIZE is already defined
 #endif
 
+#ifndef PAGE_MASK
 #define PAGE_MASK		(~(PAGE_SIZE-1))
+#endif
 
 #define LOG_BLOCK_SIZE          (12)
 #define EROFS_BLKSIZ            (1U << LOG_BLOCK_SIZE)
