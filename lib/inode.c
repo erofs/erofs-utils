@@ -831,24 +831,15 @@ static struct erofs_inode *erofs_new_inode(void)
 	static unsigned int counter;
 	struct erofs_inode *inode;
 
-	inode = malloc(sizeof(struct erofs_inode));
+	inode = calloc(1, sizeof(struct erofs_inode));
 	if (!inode)
 		return ERR_PTR(-ENOMEM);
-
-	inode->i_parent = NULL;	/* also used to indicate a new inode */
 
 	inode->i_ino[0] = counter++;	/* inode serial number */
 	inode->i_count = 1;
 
 	init_list_head(&inode->i_subdirs);
 	init_list_head(&inode->i_xattrs);
-
-	inode->idata_size = 0;
-	inode->xattr_isize = 0;
-	inode->extent_isize = 0;
-
-	inode->bh = inode->bh_inline = inode->bh_data = NULL;
-	inode->idata = NULL;
 	return inode;
 }
 
