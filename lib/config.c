@@ -5,6 +5,7 @@
  * Created by Li Guifu <bluce.liguifu@huawei.com>
  */
 #include <string.h>
+#include <stdlib.h>
 #include "erofs/print.h"
 #include "erofs/internal.h"
 
@@ -44,6 +45,8 @@ void erofs_exit_configure(void)
 	if (cfg.sehnd)
 		selabel_close(cfg.sehnd);
 #endif
+	if (cfg.c_img_path)
+		free(cfg.c_img_path);
 }
 
 static unsigned int fullpath_prefix;	/* root directory prefix length */

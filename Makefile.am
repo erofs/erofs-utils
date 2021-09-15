@@ -2,7 +2,7 @@
 
 ACLOCAL_AMFLAGS = -I m4
 
-SUBDIRS = man lib mkfs
+SUBDIRS = man lib mkfs dump
 if ENABLE_FUSE
 SUBDIRS += fuse
 endif
