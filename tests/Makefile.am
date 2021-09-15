@@ -79,6 +79,9 @@ TESTS += erofs/015
 # 016 - verify the uncompressed image with 2-level random files
 TESTS += erofs/016
 
+# 017 - check the compress-hints functionality
+TESTS += erofs/017
+
 EXTRA_DIST = common/rc erofs
 
 clean-local: clean-local-check
