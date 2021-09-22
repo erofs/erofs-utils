@@ -158,6 +158,7 @@ AC_CHECK_DECL(lseek64,[AC_DEFINE(HAVE_LSEEK64_PROTOTYPE, 1,
 # Checks for library functions.
 AC_CHECK_FUNCS(m4_flatten([
 	backtrace
+	copy_file_range
 	fallocate
 	gettimeofday
 	lgetxattr

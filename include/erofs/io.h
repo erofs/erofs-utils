@@ -7,6 +7,7 @@
 #ifndef __EROFS_IO_H
 #define __EROFS_IO_H
 
+#define _GNU_SOURCE
 #include <unistd.h>
 #include "internal.h"
 
@@ -23,6 +24,10 @@ int dev_fillzero(u64 offset, size_t len, bool padding);
 int dev_fsync(void);
 int dev_resize(erofs_blk_t nblocks);
 u64 dev_length(void);
+
+int erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
+                          int fd_out, erofs_off_t *off_out,
+                          size_t length);
 
 static inline int blk_write(const void *buf, erofs_blk_t blkaddr,
 			    u32 nblocks)

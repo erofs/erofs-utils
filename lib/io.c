@@ -258,3 +258,98 @@ int dev_read(void *buf, u64 offset, size_t len)
 	}
 	return 0;
 }
+
+static int __erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
+				   int fd_out, erofs_off_t *off_out,
+				   size_t length)
+{
+	size_t copied = 0;
+	char buf[8192];
+
+	/*
+	 * Main copying loop.  The buffer size is arbitrary and is a
+	 * trade-off between stack size consumption, cache usage, and
+	 * amortization of system call overhead.
+	 */
+	while (length > 0) {
+		size_t to_read;
+		ssize_t read_count;
+		char *end, *p;
+
+		to_read = min_t(size_t, length, sizeof(buf));
+#ifdef HAVE_PREAD64
+		read_count = pread64(fd_in, buf, to_read, *off_in);
+#else
+		read_count = pread(fd_in, buf, to_read, *off_in);
+#endif
+		if (read_count == 0)
+			/* End of file reached prematurely. */
+			return copied;
+		if (read_count < 0) {
+			/* Report the number of bytes copied so far. */
+			if (copied > 0)
+				return copied;
+			return -1;
+		}
+		*off_in += read_count;
+
+		/* Write the buffer part which was read to the destination. */
+		end = buf + read_count;
+		for (p = buf; p < end; ) {
+			ssize_t write_count;
+
+#ifdef HAVE_PWRITE64
+			write_count = pwrite64(fd_out, p, end - p, *off_out);
+#else
+			write_count = pwrite(fd_out, p, end - p, *off_out);
+#endif
+			if (write_count < 0) {
+				/*
+				 * Adjust the input read position to match what
+				 * we have written, so that the caller can pick
+				 * up after the error.
+				 */
+				size_t written = p - buf;
+				/*
+				 * NB: This needs to be signed so that we can
+				 * form the negative value below.
+				 */
+				ssize_t overread = read_count - written;
+
+				*off_in -= overread;
+				/* Report the number of bytes copied so far. */
+				if (copied + written > 0)
+					return copied + written;
+				return -1;
+			}
+			p += write_count;
+			*off_out += write_count;
+		} /* Write loop.  */
+		copied += read_count;
+		length -= read_count;
+	}
+	return copied;
+}
+
+int erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
+			  int fd_out, erofs_off_t *off_out,
+			  size_t length)
+{
+#ifdef HAVE_COPY_FILE_RANGE
+	off64_t off64_in = *off_in, off64_out = *off_out;
+	ssize_t ret;
+
+	ret = copy_file_range(fd_in, &off64_in, fd_out, &off64_out,
+                              length, 0);
+	if (ret >= 0)
+		goto out;
+	if (errno != ENOSYS) {
+		ret = -errno;
+out:
+		*off_in = off64_in;
+		*off_out = off64_out;
+		return ret;
+	}
+#endif
+	return __erofs_copy_file_range(fd_in, off_in, fd_out, off_out, length);
+}
