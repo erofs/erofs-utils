@@ -24,7 +24,7 @@
 #include "erofs/print.h"
 
 static const char *erofs_devname;
-static int erofs_devfd = -1;
+int erofs_devfd = -1;
 static u64 erofs_devsz;
 
 int dev_get_blkdev_size(int fd, u64 *bytes)

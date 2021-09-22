@@ -165,6 +165,7 @@ struct erofs_inode {
 
 	union {
 		void *compressmeta;
+		void *chunkindexes;
 		struct {
 			uint16_t z_advise;
 			uint8_t  z_algorithmtype[2];

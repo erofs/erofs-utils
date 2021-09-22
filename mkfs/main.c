@@ -22,6 +22,7 @@
 #include "erofs/exclude.h"
 #include "erofs/block_list.h"
 #include "erofs/compress_hints.h"
+#include "erofs/blobchunk.h"
 
 #ifdef HAVE_LIBUUID
 #include <uuid.h>
@@ -44,6 +45,7 @@ static struct option long_options[] = {
 #endif
 	{"max-extent-bytes", required_argument, NULL, 9},
 	{"compress-hints", required_argument, NULL, 10},
+	{"chunksize", required_argument, NULL, 11},
 #ifdef WITH_ANDROID
 	{"mount-point", required_argument, NULL, 512},
 	{"product-out", required_argument, NULL, 513},
@@ -79,6 +81,7 @@ static void usage(void)
 #ifdef HAVE_LIBUUID
 	      " -UX                   use a given filesystem UUID\n"
 #endif
+	      " --chunksize=X         generate chunk-based files with X-byte chunks\n"
 	      " --exclude-path=X      avoid including file X (X = exact literal path)\n"
 	      " --exclude-regex=X     avoid including files that match X (X = regular expression)\n"
 #ifdef HAVE_LIBSELINUX
@@ -321,6 +324,26 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			cfg.c_pclusterblks_max = i / EROFS_BLKSIZ;
 			cfg.c_pclusterblks_def = cfg.c_pclusterblks_max;
 			break;
+		case 11:
+			i = strtol(optarg, &endptr, 0);
+			if (*endptr != '\0') {
+				erofs_err("invalid chunksize %s", optarg);
+				return -EINVAL;
+			}
+			cfg.c_chunkbits = ilog2(i);
+			if ((1 << cfg.c_chunkbits) != i) {
+				erofs_err("chunksize %s must be a power of two",
+					  optarg);
+				return -EINVAL;
+			}
+			if (i < EROFS_BLKSIZ) {
+				erofs_err("chunksize %s must be larger than block size",
+					  optarg);
+				return -EINVAL;
+			}
+			erofs_sb_set_chunked_file();
+			erofs_warn("EXPERIMENTAL chunked file feature in use. Use at your own risk!");
+			break;
 
 		case 1:
 			usage();
@@ -528,6 +551,12 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	if (cfg.c_chunkbits) {
+		err = erofs_blob_init();
+		if (err)
+			return 1;
+	}
+
 	err = lstat64(cfg.c_src_path, &st);
 	if (err)
 		return 1;
@@ -622,6 +651,13 @@ int main(int argc, char **argv)
 	root_nid = erofs_lookupnid(root_inode);
 	erofs_iput(root_inode);
 
+	if (cfg.c_chunkbits) {
+		erofs_info("total metadata: %u blocks", erofs_mapbh(NULL));
+		err = erofs_blob_remap();
+		if (err)
+			goto exit;
+	}
+
 	err = erofs_mkfs_update_super_block(sb_bh, root_nid, &nblocks);
 	if (err)
 		goto exit;
@@ -642,6 +678,8 @@ exit:
 	dev_close();
 	erofs_cleanup_compress_hints();
 	erofs_cleanup_exclude_rules();
+	if (cfg.c_chunkbits)
+		erofs_blob_exit();
 	erofs_exit_configure();
 
 	if (err) {

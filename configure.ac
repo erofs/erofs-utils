@@ -170,7 +170,8 @@ AC_CHECK_FUNCS(m4_flatten([
 	strdup
 	strerror
 	strrchr
-	strtoull]))
+	strtoull
+	tmpfile64]))
 
 # Configure debug mode
 AS_IF([test "x$enable_debug" != "xno"], [], [

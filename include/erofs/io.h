@@ -25,6 +25,8 @@ int dev_fsync(void);
 int dev_resize(erofs_blk_t nblocks);
 u64 dev_length(void);
 
+extern int erofs_devfd;
+
 int erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
                           int fd_out, erofs_off_t *off_out,
                           size_t length);

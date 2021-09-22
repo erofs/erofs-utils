@@ -42,6 +42,7 @@ struct erofs_configure {
 	bool c_random_pclusterblks;
 #endif
 	char c_timeinherit;
+	char c_chunkbits;
 	bool c_noinline_data;
 
 #ifdef HAVE_LIBSELINUX

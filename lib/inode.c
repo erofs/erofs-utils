@@ -24,6 +24,7 @@
 #include "erofs/exclude.h"
 #include "erofs/block_list.h"
 #include "erofs/compress_hints.h"
+#include "erofs/blobchunk.h"
 
 #define S_SHIFT                 12
 static unsigned char erofs_ftype_by_mode[S_IFMT >> S_SHIFT] = {
@@ -387,6 +388,12 @@ int erofs_write_file(struct erofs_inode *inode)
 		return 0;
 	}
 
+	if (cfg.c_chunkbits) {
+		inode->u.chunkbits = cfg.c_chunkbits;
+		inode->u.chunkformat = EROFS_CHUNK_FORMAT_INDEXES;
+		return erofs_blob_write_chunked_file(inode);
+	}
+
 	if (cfg.c_compr_alg_master && erofs_file_is_compressible(inode)) {
 		ret = erofs_write_compressed_file(inode);
 
@@ -440,6 +447,10 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 			if (is_inode_layout_compression(inode))
 				u.dic.i_u.compressed_blocks =
 					cpu_to_le32(inode->u.i_blocks);
+			else if (inode->datalayout ==
+					EROFS_INODE_CHUNK_BASED)
+				u.dic.i_u.c.format =
+					cpu_to_le16(inode->u.chunkformat);
 			else
 				u.dic.i_u.raw_blkaddr =
 					cpu_to_le32(inode->u.i_blkaddr);
@@ -473,6 +484,10 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 			if (is_inode_layout_compression(inode))
 				u.die.i_u.compressed_blocks =
 					cpu_to_le32(inode->u.i_blocks);
+			else if (inode->datalayout ==
+					EROFS_INODE_CHUNK_BASED)
+				u.die.i_u.c.format =
+					cpu_to_le16(inode->u.chunkformat);
 			else
 				u.die.i_u.raw_blkaddr =
 					cpu_to_le32(inode->u.i_blkaddr);
@@ -505,12 +520,19 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 	}
 
 	if (inode->extent_isize) {
-		/* write compression metadata */
-		off = Z_EROFS_VLE_EXTENT_ALIGN(off);
-		ret = dev_write(inode->compressmeta, off, inode->extent_isize);
-		if (ret)
-			return false;
-		free(inode->compressmeta);
+		if (inode->datalayout == EROFS_INODE_CHUNK_BASED) {
+			ret = erofs_blob_write_chunk_indexes(inode, off);
+			if (ret)
+				return false;
+		} else {
+			/* write compression metadata */
+			off = Z_EROFS_VLE_EXTENT_ALIGN(off);
+			ret = dev_write(inode->compressmeta, off,
+					inode->extent_isize);
+			if (ret)
+				return false;
+			free(inode->compressmeta);
+		}
 	}
 
 	inode->bh = NULL;
@@ -564,6 +586,8 @@ static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 			    inode->extent_isize;
 
 	if (is_inode_layout_compression(inode))
+		goto noinline;
+	if (inode->datalayout == EROFS_INODE_CHUNK_BASED)
 		goto noinline;
 
 	if (cfg.c_noinline_data && S_ISREG(inode->i_mode)) {
