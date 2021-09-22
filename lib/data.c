@@ -25,13 +25,6 @@ static int erofs_map_blocks_flatmode(struct erofs_inode *inode,
 	nblocks = DIV_ROUND_UP(inode->i_size, PAGE_SIZE);
 	lastblk = nblocks - tailendpacking;
 
-	if (offset >= inode->i_size) {
-		/* leave out-of-bound access unmapped */
-		map->m_flags = 0;
-		map->m_plen = 0;
-		goto out;
-	}
-
 	/* there is no hole in flatmode */
 	map->m_flags = EROFS_MAP_MAPPED;
 
@@ -62,11 +55,83 @@ static int erofs_map_blocks_flatmode(struct erofs_inode *inode,
 		goto err_out;
 	}
 
-out:
 	map->m_llen = map->m_plen;
-
 err_out:
 	trace_erofs_map_blocks_flatmode_exit(inode, map, flags, 0);
+	return err;
+}
+
+static int erofs_map_blocks(struct erofs_inode *inode,
+			    struct erofs_map_blocks *map, int flags)
+{
+	struct erofs_inode *vi = inode;
+	struct erofs_inode_chunk_index *idx;
+	u8 buf[EROFS_BLKSIZ];
+	u64 chunknr;
+	unsigned int unit;
+	erofs_off_t pos;
+	int err = 0;
+
+	if (map->m_la >= inode->i_size) {
+		/* leave out-of-bound access unmapped */
+		map->m_flags = 0;
+		map->m_plen = 0;
+		goto out;
+	}
+
+	if (vi->datalayout != EROFS_INODE_CHUNK_BASED)
+		return erofs_map_blocks_flatmode(inode, map, flags);
+
+	if (vi->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES)
+		unit = sizeof(*idx);			/* chunk index */
+	else
+		unit = EROFS_BLOCK_MAP_ENTRY_SIZE;	/* block map */
+
+	chunknr = map->m_la >> vi->u.chunkbits;
+	pos = roundup(iloc(vi->nid) + vi->inode_isize +
+		      vi->xattr_isize, unit) + unit * chunknr;
+
+	err = blk_read(buf, erofs_blknr(pos), 1);
+	if (err < 0)
+		return -EIO;
+
+	map->m_la = chunknr << vi->u.chunkbits;
+	map->m_plen = min_t(erofs_off_t, 1UL << vi->u.chunkbits,
+			    roundup(inode->i_size - map->m_la, EROFS_BLKSIZ));
+
+	/* handle block map */
+	if (!(vi->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES)) {
+		__le32 *blkaddr = (void *)buf + erofs_blkoff(pos);
+
+		if (le32_to_cpu(*blkaddr) == EROFS_NULL_ADDR) {
+			map->m_flags = 0;
+		} else {
+			map->m_pa = blknr_to_addr(le32_to_cpu(*blkaddr));
+			map->m_flags = EROFS_MAP_MAPPED;
+		}
+		goto out;
+	}
+	/* parse chunk indexes */
+	idx = (void *)buf + erofs_blkoff(pos);
+	switch (le32_to_cpu(idx->blkaddr)) {
+	case EROFS_NULL_ADDR:
+		map->m_flags = 0;
+		break;
+	default:
+		/* only one device is supported for now */
+		if (idx->device_id) {
+			erofs_err("invalid device id %u @ %" PRIu64 " for nid %llu",
+				  le16_to_cpu(idx->device_id),
+				  chunknr, vi->nid | 0ULL);
+			err = -EFSCORRUPTED;
+			goto out;
+		}
+		map->m_pa = blknr_to_addr(le32_to_cpu(idx->blkaddr));
+		map->m_flags = EROFS_MAP_MAPPED;
+		break;
+	}
+out:
+	map->m_llen = map->m_plen;
 	return err;
 }
 
@@ -84,7 +149,7 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 		erofs_off_t eend;
 
 		map.m_la = ptr;
-		ret = erofs_map_blocks_flatmode(inode, &map, 0);
+		ret = erofs_map_blocks(inode, &map, 0);
 		if (ret)
 			return ret;
 
@@ -206,6 +271,7 @@ int erofs_pread(struct erofs_inode *inode, char *buf,
 	switch (inode->datalayout) {
 	case EROFS_INODE_FLAT_PLAIN:
 	case EROFS_INODE_FLAT_INLINE:
+	case EROFS_INODE_CHUNK_BASED:
 		return erofs_read_raw_data(inode, buf, count, offset);
 	case EROFS_INODE_FLAT_COMPRESSION_LEGACY:
 	case EROFS_INODE_FLAT_COMPRESSION:

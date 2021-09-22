@@ -109,6 +109,7 @@ static inline void erofs_sb_clear_##name(void) \
 EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_LZ4_0PADDING)
 EROFS_FEATURE_FUNCS(compr_cfgs, incompat, INCOMPAT_COMPR_CFGS)
 EROFS_FEATURE_FUNCS(big_pcluster, incompat, INCOMPAT_BIG_PCLUSTER)
+EROFS_FEATURE_FUNCS(chunked_file, incompat, INCOMPAT_CHUNKED_FILE)
 EROFS_FEATURE_FUNCS(sb_chksum, compat, COMPAT_SB_CHKSUM)
 
 #define EROFS_I_EA_INITED	(1 << 0)
@@ -140,6 +141,10 @@ struct erofs_inode {
 		u32 i_blkaddr;
 		u32 i_blocks;
 		u32 i_rdev;
+		struct {
+			unsigned short	chunkformat;
+			unsigned char	chunkbits;
+		};
 	} u;
 
 	char i_srcpath[PATH_MAX + 1];
