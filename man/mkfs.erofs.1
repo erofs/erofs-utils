@@ -63,6 +63,23 @@ Set the universally unique identifier (UUID) of the filesystem to
 The format of the UUID is a series of hex digits separated by hyphens,
 like this: "c1b9d5a2-f162-11cf-9ece-0020afc76f16".
 .TP
+.B \-\-all-root
+Make all files owned by root.
+.TP
+.BI "\-\-chunksize " #
+Generate chunk-based files with #-byte chunks.
+.TP
+.BI "\-\-compress-hints " file
+If the optional
+.BI "\-\-compress-hints " file
+argument is given,
+.B mkfs.erofs
+uses it to apply the per-file compression strategy. Each line is defined by
+tokens separated by spaces in the following form:
+.RS 1.2i
+<pcluster-in-bytes> <match-pattern>
+.RE
+.TP
 .BI "\-\-exclude-path=" path
 Ignore file that matches the exact literal path.
 You may give multiple `--exclude-path' options.
@@ -80,28 +97,11 @@ Set all file uids to \fIUID\fR.
 .BI "\-\-force-gid=" GID
 Set all file gids to \fIGID\fR.
 .TP
-.B \-\-all-root
-Make all files owned by root.
-.TP
-.BI "\-\-chunksize " #
-Generate chunk-based files with #-byte chunks.
-.TP
 .B \-\-help
 Display this help and exit.
 .TP
-.B \-\-max-extent-bytes #
+.BI "\-\-max-extent-bytes " #
 Specify maximum decompressed extent size # in bytes.
-.TP
-.BI "\-\-compress-hints " file
-If the optional
-.BI "\-\-compress-hints " file
-argument is given,
-.B mkfs.erofs
-uses it to apply the per-file compression strategy. Each line is defined by
-tokens separated by spaces in the following form:
-.RS 1.2i
-<pcluster-in-bytes> <match-pattern>
-.RE
 .SH AUTHOR
 This version of \fBmkfs.erofs\fR is written by Li Guifu <blucerlee@gmail.com>,
 Miao Xie <miaoxie@huawei.com> and Gao Xiang <xiang@kernel.org> with
