@@ -193,7 +193,7 @@ int erofs_blob_remap(void)
 	remapped_base = erofs_blknr(pos_out);
 	ret = erofs_copy_file_range(fileno(blobfile), &pos_in,
 				    erofs_devfd, &pos_out, length);
-	bh->op = &erofs_skip_write_bhops;
+	bh->op = &erofs_drop_directly_bhops;
 	erofs_bdrop(bh, false);
 	return ret < length ? -EIO : 0;
 }
