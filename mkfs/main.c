@@ -387,7 +387,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	struct erofs_super_block sb = {
 		.magic     = cpu_to_le32(EROFS_SUPER_MAGIC_V1),
 		.blkszbits = LOG_BLOCK_SIZE,
-		.inos   = 0,
+		.inos   = cpu_to_le64(sbi.inos),
 		.build_time = cpu_to_le64(sbi.build_time),
 		.build_time_nsec = cpu_to_le32(sbi.build_time_nsec),
 		.blocks = 0,

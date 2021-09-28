@@ -855,14 +855,13 @@ static int erofs_fill_inode(struct erofs_inode *inode,
 
 static struct erofs_inode *erofs_new_inode(void)
 {
-	static unsigned int counter;
 	struct erofs_inode *inode;
 
 	inode = calloc(1, sizeof(struct erofs_inode));
 	if (!inode)
 		return ERR_PTR(-ENOMEM);
 
-	inode->i_ino[0] = counter++;	/* inode serial number */
+	inode->i_ino[0] = sbi.inos++;	/* inode serial number */
 	inode->i_count = 1;
 
 	init_list_head(&inode->i_subdirs);
