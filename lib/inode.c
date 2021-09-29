@@ -466,8 +466,8 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 
 		u.die.i_ino = cpu_to_le32(inode->i_ino[0]);
 
-		u.die.i_uid = cpu_to_le16(inode->i_uid);
-		u.die.i_gid = cpu_to_le16(inode->i_gid);
+		u.die.i_uid = cpu_to_le32(inode->i_uid);
+		u.die.i_gid = cpu_to_le32(inode->i_gid);
 
 		u.die.i_ctime = cpu_to_le64(inode->i_ctime);
 		u.die.i_ctime_nsec = cpu_to_le32(inode->i_ctime_nsec);
