@@ -10,6 +10,7 @@
 #include "erofs/defs.h"
 
 struct erofs_compress;
+struct erofsdict_item;
 
 struct erofs_compressor {
 	const char *name;
@@ -23,7 +24,8 @@ struct erofs_compressor {
 
 	int (*compress_destsize)(struct erofs_compress *c,
 				 void *src, unsigned int *srcsize,
-				 void *dst, unsigned int dstsize);
+				 void *dst, unsigned int dstsize,
+				 struct erofsdict_item *dict);
 };
 
 struct erofs_compress {
@@ -46,7 +48,8 @@ extern struct erofs_compressor erofs_compressor_lz4hc;
 
 int erofs_compress_destsize(struct erofs_compress *c,
 			    void *src, unsigned int *srcsize,
-			    void *dst, unsigned int dstsize);
+			    void *dst, unsigned int dstsize,
+			    struct erofsdict_item *dict);
 
 int erofs_compressor_setlevel(struct erofs_compress *c, int compression_level);
 int erofs_compressor_init(struct erofs_compress *c, char *alg_name);

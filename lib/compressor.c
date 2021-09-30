@@ -21,7 +21,8 @@ static struct erofs_compressor *compressors[] = {
 
 int erofs_compress_destsize(struct erofs_compress *c,
 			    void *src, unsigned int *srcsize,
-			    void *dst, unsigned int dstsize)
+			    void *dst, unsigned int dstsize,
+			    struct erofsdict_item *dict)
 {
 	unsigned int uncompressed_size;
 	int ret;
@@ -30,7 +31,7 @@ int erofs_compress_destsize(struct erofs_compress *c,
 	if (!c->alg->compress_destsize)
 		return -ENOTSUP;
 
-	ret = c->alg->compress_destsize(c, src, srcsize, dst, dstsize);
+	ret = c->alg->compress_destsize(c, src, srcsize, dst, dstsize, dict);
 	if (ret < 0)
 		return ret;
 

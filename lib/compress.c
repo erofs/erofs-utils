@@ -18,14 +18,17 @@
 #include "compressor.h"
 #include "erofs/block_list.h"
 #include "erofs/compress_hints.h"
+#include "erofs/dict.h"
 
 static struct erofs_compress compresshandle;
 static unsigned int algorithmtype[2];
 
 struct z_erofs_vle_compress_ctx {
+	struct erofsdict_item *dict;
 	u8 *metacur;
 
 	u8 queue[EROFS_CONFIG_COMPR_MAX_SZ * 2];
+	erofs_off_t pos;
 	unsigned int head, tail;
 	unsigned int compressedblks;
 	erofs_blk_t blkaddr;		/* pointing to the next blkaddr */
@@ -167,6 +170,8 @@ static int vle_compress_one(struct erofs_inode *inode,
 			    bool final)
 {
 	struct erofs_compress *const h = &compresshandle;
+	const unsigned int dictseglog = inode->z_dictseglog;
+	bool has_dicts = inode->z_advise & Z_EROFS_ADVISE_WITH_RNGDICTS;
 	unsigned int len = ctx->tail - ctx->head;
 	unsigned int count;
 	int ret;
@@ -188,8 +193,24 @@ static int vle_compress_one(struct erofs_inode *inode,
 		}
 
 		count = min(len, cfg.c_max_decompressed_extent_bytes);
-		ret = erofs_compress_destsize(h, ctx->queue + ctx->head,
-					      &count, dst, pclustersize);
+
+		if (has_dicts) {
+			/* 1-byte for DICTIONARY ID */
+			ret = erofs_compress_destsize(h,
+					ctx->queue + ctx->head, &count, dst + 1,
+					pclustersize - 1,
+					&ctx->dict[ctx->pos >> dictseglog]);
+			if (ret > 0) {
+				DBG_BUGON(ret > pclustersize - 1);
+				*dst = 1;
+				++ret;
+			}
+		} else {
+			ret = erofs_compress_destsize(h,
+					ctx->queue + ctx->head, &count, dst,
+					pclustersize, NULL);
+		}
+
 		if (ret <= 0) {
 			if (ret != -EAGAIN) {
 				erofs_err("failed to compress %s: %s",
@@ -218,8 +239,9 @@ nocompression:
 				       roundup(ret, EROFS_BLKSIZ) - ret);
 
 			/* write compressed data */
-			erofs_dbg("Writing %u compressed data to %u of %u blocks",
-				  count, ctx->blkaddr, ctx->compressedblks);
+			erofs_dbg("Writing %u compressed data to %u of %u blocks @ pos %llu",
+				  count, ctx->blkaddr, ctx->compressedblks,
+				  ctx->pos | 0ULL);
 
 			ret = blk_write(dst - padding, ctx->blkaddr,
 					ctx->compressedblks);
@@ -229,6 +251,8 @@ nocompression:
 		}
 
 		ctx->head += count;
+		ctx->pos += count;
+
 		/* write compression indexes for this pcluster */
 		vle_write_indexes(ctx, count, raw);
 
@@ -462,12 +486,14 @@ static void z_erofs_write_mapheader(struct erofs_inode *inode,
 
 int erofs_write_compressed_file(struct erofs_inode *inode)
 {
-	struct erofs_buffer_head *bh;
+	struct erofs_buffer_head *bh, *bhdic;
 	struct z_erofs_vle_compress_ctx ctx;
 	erofs_off_t remaining;
 	erofs_blk_t blkaddr, compressed_blocks;
 	unsigned int legacymetasize;
 	int ret, fd;
+	unsigned int dictsegs = 0, dictblks = 0;
+
 	u8 *compressmeta = malloc(vle_compressmeta_capacity(inode->i_size));
 
 	if (!compressmeta)
@@ -479,15 +505,9 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 		goto err_free;
 	}
 
-	/* allocate main data buffer */
-	bh = erofs_balloc(DATA, 0, 0, 0);
-	if (IS_ERR(bh)) {
-		ret = PTR_ERR(bh);
-		goto err_close;
-	}
-
 	/* initialize per-file compression setting */
 	inode->z_advise = 0;
+
 	if (!cfg.c_legacy_compress) {
 		inode->z_advise |= Z_EROFS_ADVISE_COMPACTED_2B;
 		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION;
@@ -500,15 +520,41 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 		if (inode->datalayout == EROFS_INODE_FLAT_COMPRESSION)
 			inode->z_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_2;
 	}
+
 	inode->z_algorithmtype[0] = algorithmtype[0];
 	inode->z_algorithmtype[1] = algorithmtype[1];
 	inode->z_logical_clusterbits = LOG_BLOCK_SIZE;
+
+	/* prepare per-file range dictionary if needed */
+	if (cfg.c_dictcapacity && cfg.c_dictsegblks) {
+		inode->z_dictseglog = ilog2(blknr_to_addr(cfg.c_dictsegblks));
+
+		dictsegs = erofsdict_generate(inode, &ctx.dict,
+				cfg.c_dictcapacity, fd,
+				erofs_blknr(1 << inode->z_dictseglog), &bhdic);
+
+		if (dictsegs) {
+			inode->z_advise |= Z_EROFS_ADVISE_WITH_RNGDICTS;
+			
+			dictblks = erofs_blknr(erofs_btell(bhdic, true) -
+				   	       erofs_btell(bhdic, false));
+		}
+	}
+
+restart:
+	/* allocate main data buffer */
+	bh = erofs_balloc(DATA, 0, 0, 0);
+	if (IS_ERR(bh)) {
+		ret = PTR_ERR(bh);
+		goto err_close;
+	}
 
 	z_erofs_write_mapheader(inode, compressmeta);
 
 	blkaddr = erofs_mapbh(bh->block);	/* start_blkaddr */
 	ctx.blkaddr = blkaddr;
 	ctx.metacur = compressmeta + Z_EROFS_LEGACY_MAP_HEADER_SIZE;
+	ctx.pos = 0;
 	ctx.head = ctx.tail = 0;
 	ctx.clusterofs = 0;
 	remaining = inode->i_size;
@@ -536,8 +582,19 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 	if (ret)
 		goto err_bdrop;
 
-	/* fall back to no compression mode */
 	compressed_blocks = ctx.blkaddr - blkaddr;
+
+	if (compressed_blocks + dictblks >= BLK_ROUND_UP(inode->i_size)) {
+		erofsdict_free(ctx.dict, dictsegs);
+		inode->z_advise &= ~Z_EROFS_ADVISE_WITH_RNGDICTS;
+		erofs_bdrop(bh, true);		/* revoke buffer */
+		erofs_bdrop(bhdic, true);	/* revoke dictionary buffer */
+		lseek(fd, 0, SEEK_SET);
+		dictsegs = 0;
+		goto restart;
+	}
+
+	/* fall back to no compression mode */
 	if (compressed_blocks >= BLK_ROUND_UP(inode->i_size)) {
 		ret = -ENOSPC;
 		goto err_bdrop;
@@ -546,19 +603,24 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 	vle_write_indexes_final(&ctx);
 
 	close(fd);
+
+	if (dictsegs)
+		erofsdict_free(ctx.dict, dictsegs);
+
 	DBG_BUGON(!compressed_blocks);
 	ret = erofs_bh_balloon(bh, blknr_to_addr(compressed_blocks));
 	DBG_BUGON(ret != EROFS_BLKSIZ);
 
-	erofs_info("compressed %s (%llu bytes) into %u blocks",
+	erofs_info("compressed %s (%llu bytes) into %u blocks (+ %u dict blocks)",
 		   inode->i_srcpath, (unsigned long long)inode->i_size,
-		   compressed_blocks);
+		   compressed_blocks, dictsegs ? dictblks : 0);
 
 	/*
 	 * TODO: need to move erofs_bdrop to erofs_write_tail_end
 	 *       when both mkfs & kernel support compression inline.
 	 */
 	erofs_bdrop(bh, false);
+	erofs_bdrop(bhdic, false);	/* revoke dictionary buffer */
 	inode->idata_size = 0;
 	inode->u.i_blocks = compressed_blocks;
 

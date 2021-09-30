@@ -6,7 +6,7 @@
  */
 #define LZ4_HC_STATIC_LINKING_ONLY (1)
 #include <lz4hc.h>
-#include "erofs/internal.h"
+#include "erofs/dict.h"
 #include "compressor.h"
 
 #ifndef LZ4_DISTANCE_MAX	/* history window size */
@@ -15,12 +15,17 @@
 
 static int lz4hc_compress_destsize(struct erofs_compress *c,
 				   void *src, unsigned int *srcsize,
-				   void *dst, unsigned int dstsize)
+				   void *dst, unsigned int dstsize,
+				   struct erofsdict_item *dict)
 {
 	int srcSize = (int)*srcsize;
-	int rc = LZ4_compress_HC_destSize(c->private_data, src, dst,
-					  &srcSize, (int)dstsize,
-					  c->compression_level);
+	int rc;
+
+	LZ4_resetStreamHC_fast(c->private_data, c->compression_level);
+	if (dict)
+		LZ4_loadDictHC(c->private_data, dict->buffer, dict->dictsize);
+	rc = LZ4_compress_HC_continue_destSize(c->private_data, src, dst,
+			&srcSize, (int)dstsize);
 	if (!rc)
 		return -EFAULT;
 	*srcsize = srcSize;

@@ -28,6 +28,9 @@ void erofs_init_configure(void)
 	cfg.c_pclusterblks_max = 1;
 	cfg.c_pclusterblks_def = 1;
 	cfg.c_max_decompressed_extent_bytes = -1;
+
+	cfg.c_dictsegblks = 1024;
+	cfg.c_dictcapacity = 32768;
 }
 
 void erofs_show_config(void)

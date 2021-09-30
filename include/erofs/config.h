@@ -45,6 +45,9 @@ struct erofs_configure {
 	char c_chunkbits;
 	bool c_noinline_data;
 
+	unsigned int c_dictsegblks;
+	unsigned int c_dictcapacity;
+
 #ifdef HAVE_LIBSELINUX
 	struct selabel_handle *sehnd;
 #endif

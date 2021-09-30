@@ -171,6 +171,8 @@ struct erofs_inode {
 			uint8_t  z_algorithmtype[2];
 			uint8_t  z_logical_clusterbits;
 			uint8_t  z_physical_clusterblks;
+			/* log2 of the per-file dictonary segment size */
+			uint8_t	 z_dictseglog;
 		};
 	};
 #ifdef WITH_ANDROID

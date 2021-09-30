@@ -14,7 +14,8 @@
 
 static int lz4_compress_destsize(struct erofs_compress *c,
 				 void *src, unsigned int *srcsize,
-				 void *dst, unsigned int dstsize)
+				 void *dst, unsigned int dstsize,
+				 struct erofsdict_item *dict)
 {
 	int srcSize = (int)*srcsize;
 	int rc = LZ4_compress_destSize(src, dst, &srcSize, (int)dstsize);
