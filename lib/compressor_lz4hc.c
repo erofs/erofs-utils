@@ -14,16 +14,13 @@
 #endif
 
 static int lz4hc_compress_destsize(struct erofs_compress *c,
-				   int compression_level,
-				   void *src,
-				   unsigned int *srcsize,
-				   void *dst,
-				   unsigned int dstsize)
+				   void *src, unsigned int *srcsize,
+				   void *dst, unsigned int dstsize)
 {
 	int srcSize = (int)*srcsize;
 	int rc = LZ4_compress_HC_destSize(c->private_data, src, dst,
 					  &srcSize, (int)dstsize,
-					  compression_level);
+					  c->compression_level);
 	if (!rc)
 		return -EFAULT;
 	*srcsize = srcSize;
@@ -51,11 +48,23 @@ static int compressor_lz4hc_init(struct erofs_compress *c)
 	return 0;
 }
 
+static int compressor_lz4hc_setlevel(struct erofs_compress *c,
+				     int compression_level)
+{
+	if (compression_level > LZ4HC_CLEVEL_MAX)
+		return -EINVAL;
+
+	c->compression_level = compression_level < 0 ?
+		LZ4HC_CLEVEL_DEFAULT : compression_level;
+	return 0;
+}
+
 struct erofs_compressor erofs_compressor_lz4hc = {
 	.name = "lz4hc",
 	.default_level = LZ4HC_CLEVEL_DEFAULT,
 	.best_level = LZ4HC_CLEVEL_MAX,
 	.init = compressor_lz4hc_init,
 	.exit = compressor_lz4hc_exit,
+	.setlevel = compressor_lz4hc_setlevel,
 	.compress_destsize = lz4hc_compress_destsize,
 };

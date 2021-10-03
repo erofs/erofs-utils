@@ -20,11 +20,8 @@ static struct erofs_compressor *compressors[] = {
 };
 
 int erofs_compress_destsize(struct erofs_compress *c,
-			    int compression_level,
-			    void *src,
-			    unsigned int *srcsize,
-			    void *dst,
-			    unsigned int dstsize)
+			    void *src, unsigned int *srcsize,
+			    void *dst, unsigned int dstsize)
 {
 	unsigned int uncompressed_size;
 	int ret;
@@ -33,8 +30,7 @@ int erofs_compress_destsize(struct erofs_compress *c,
 	if (!c->alg->compress_destsize)
 		return -ENOTSUP;
 
-	ret = c->alg->compress_destsize(c, compression_level,
-					src, srcsize, dst, dstsize);
+	ret = c->alg->compress_destsize(c, src, srcsize, dst, dstsize);
 	if (ret < 0)
 		return ret;
 
@@ -49,6 +45,18 @@ int erofs_compress_destsize(struct erofs_compress *c,
 const char *z_erofs_list_available_compressors(unsigned int i)
 {
 	return i >= ARRAY_SIZE(compressors) ? NULL : compressors[i]->name;
+}
+
+int erofs_compressor_setlevel(struct erofs_compress *c, int compression_level)
+{
+	DBG_BUGON(!c->alg);
+	if (c->alg->setlevel)
+		return c->alg->setlevel(c, compression_level);
+
+	if (compression_level >= 0)
+		return -EINVAL;
+	c->compression_level = 0;
+	return 0;
 }
 
 int erofs_compressor_init(struct erofs_compress *c, char *alg_name)
