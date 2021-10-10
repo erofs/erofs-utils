@@ -30,6 +30,9 @@ endif
 if ENABLE_LZ4HC
 TESTS_ENVIRONMENT += export lz4hc_on=1;
 endif
+if ENABLE_LIBLZMA
+TESTS_ENVIRONMENT += export lzma_on=1;
+endif
 
 # 001 - test if unknown algorithm is specificed
 TESTS += erofs/001
@@ -81,6 +84,9 @@ TESTS += erofs/016
 
 # 017 - check the compress-hints functionality
 TESTS += erofs/017
+
+# 018 - verify microlzma compressed image
+TESTS += erofs/018
 
 EXTRA_DIST = common/rc erofs
 
