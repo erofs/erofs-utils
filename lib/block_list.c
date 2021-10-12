@@ -8,7 +8,7 @@
 #include <sys/stat.h>
 #include "erofs/block_list.h"
 
-#define pr_fmt(fmt) "EROFS block_list: " FUNC_LINE_FMT fmt "\n"
+#define EROFS_MODNAME	"erofs block_list"
 #include "erofs/print.h"
 
 static FILE *block_list_fp;

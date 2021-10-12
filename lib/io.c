@@ -20,7 +20,7 @@
 #include <linux/falloc.h>
 #endif
 
-#define pr_fmt(fmt) "EROFS IO: " FUNC_LINE_FMT fmt "\n"
+#define EROFS_MODNAME	"erofs_io"
 #include "erofs/print.h"
 
 static const char *erofs_devname;
