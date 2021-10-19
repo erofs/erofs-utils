@@ -46,6 +46,7 @@ static struct option long_options[] = {
 	{"max-extent-bytes", required_argument, NULL, 9},
 	{"compress-hints", required_argument, NULL, 10},
 	{"chunksize", required_argument, NULL, 11},
+	{"quiet", no_argument, 0, 12},
 #ifdef WITH_ANDROID
 	{"mount-point", required_argument, NULL, 512},
 	{"product-out", required_argument, NULL, 513},
@@ -93,6 +94,7 @@ static void usage(void)
 	      " --force-gid=#         set all file gids to # (# = GID)\n"
 	      " --help                display this help and exit\n"
 	      " --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
+	      " --quiet               quiet execution (do not write anything to standard output.)\n"
 #ifndef NDEBUG
 	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
 #endif
@@ -179,6 +181,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 {
 	char *endptr;
 	int opt, i;
+	bool quiet = false;
 
 	while ((opt = getopt_long(argc, argv, "C:E:T:U:d:x:z:",
 				 long_options, NULL)) != -1) {
@@ -342,9 +345,10 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				return -EINVAL;
 			}
 			erofs_sb_set_chunked_file();
-			erofs_warn("EXPERIMENTAL chunked file feature in use. Use at your own risk!");
 			break;
-
+		case 12:
+			quiet = true;
+			break;
 		case 1:
 			usage();
 			exit(0);
@@ -377,6 +381,8 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		erofs_err("Unexpected argument: %s\n", argv[optind]);
 		return -EINVAL;
 	}
+	if (quiet)
+		cfg.c_dbg_lvl = EROFS_ERR;
 	return 0;
 }
 
@@ -522,6 +528,12 @@ int parse_source_date_epoch(void)
 	return 0;
 }
 
+void erofs_show_progs(int argc, char *argv[])
+{
+	if (cfg.c_dbg_lvl >= EROFS_WARN)
+		fprintf(stderr, "%s %s\n", basename(argv[0]), cfg.c_version);
+}
+
 int main(int argc, char **argv)
 {
 	int err = 0;
@@ -534,11 +546,10 @@ int main(int argc, char **argv)
 	char uuid_str[37] = "not available";
 
 	erofs_init_configure();
-	fprintf(stderr, "%s %s\n", basename(argv[0]), cfg.c_version);
-
 	erofs_mkfs_default_options();
 
 	err = mkfs_parse_options_cfg(argc, argv);
+	erofs_show_progs(argc, argv);
 	if (err) {
 		if (err == -EINVAL)
 			usage();
@@ -593,8 +604,9 @@ int main(int argc, char **argv)
 		return 1;
 	}
 #endif
-
 	erofs_show_config();
+	if (erofs_sb_has_chunked_file())
+		erofs_warn("EXPERIMENTAL chunked file feature in use. Use at your own risk!");
 	erofs_set_fs_root(cfg.c_src_path);
 #ifndef NDEBUG
 	if (cfg.c_random_pclusterblks)

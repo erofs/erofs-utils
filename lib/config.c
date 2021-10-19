@@ -16,7 +16,7 @@ void erofs_init_configure(void)
 {
 	memset(&cfg, 0, sizeof(cfg));
 
-	cfg.c_dbg_lvl  = 2;
+	cfg.c_dbg_lvl  = EROFS_WARN;
 	cfg.c_version  = PACKAGE_VERSION;
 	cfg.c_dry_run  = false;
 	cfg.c_compr_level_master = -1;
@@ -34,6 +34,8 @@ void erofs_show_config(void)
 {
 	const struct erofs_configure *c = &cfg;
 
+	if (c->c_dbg_lvl < EROFS_WARN)
+		return;
 	erofs_dump("\tc_version:           [%8s]\n", c->c_version);
 	erofs_dump("\tc_dbg_lvl:           [%8d]\n", c->c_dbg_lvl);
 	erofs_dump("\tc_dry_run:           [%8d]\n", c->c_dry_run);
