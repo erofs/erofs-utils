@@ -165,17 +165,8 @@ Contribution
 ------------
 
 erofs-utils is under GPLv2+ as a part of EROFS filesystem project,
-feel free to send patches or feedback to us.
-
-To:
+feel free to send patches or feedback to:
   linux-erofs mailing list   <linux-erofs@lists.ozlabs.org>
-  Li Guifu                   <bluce.liguifu@huawei.com>
-  Miao Xie                   <miaoxie@huawei.com>
-  Fang Wei                   <fangwei1@huawei.com>
-
-Cc:
-  Gao Xiang                  <xiang@kernel.org>
-  Chao Yu                    <yuchao0@huawei.com>
 
 Comments
 --------
