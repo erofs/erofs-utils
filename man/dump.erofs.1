@@ -1,0 +1,58 @@
+.\" Copyright (c) 2021 Guo Xuenan <guoxuenan@huawei.com>
+.\"
+.TH DUMP.EROFS 1
+.SH NAME
+dump.erofs \- retrieve directory and file entries, show specific file
+or overall disk statistics information from an EROFS-formatted image.
+.SH SYNOPSIS
+.B dump.erofs
+[
+.B \--nid
+.I inode NID
+]
+[
+.B \-e
+]
+[
+.B \-s
+]
+[
+.B \-S
+]
+[
+.B \-V
+]
+.I IMAGE
+.SH DESCRIPTION
+.B dump.erofs
+is used to retrieve erofs metadata from \fIIMAGE\fP and demonstrate
+1) overall disk statistics,
+2) superblock information,
+3) file information of the given inode NID,
+4) file extent information of the given inode NID.
+.SH OPTIONS
+.TP
+.BI \--nid " inode NID"
+Specify an inode NID in order to print its file information.
+.TP
+.BI \-e
+Show the file extent information. The option depends on option --nid to specify NID.
+.TP
+.BI \-V
+Print the version number and exit.
+.TP
+.BI \-s
+Show superblock information of the an EROFS-formatted image.
+.TP
+.BI \-S
+Show EROFS disk statistics, including file type/size distribution, number of (un)compressed files, compression ratio of the whole image, etc.
+.SH AUTHOR
+Initial code was written by Wang Qi <mpiglet@outlook.com>, Guo Xuenan <guoxuenan@huawei.com>.
+.PP
+This manual page was written by Guo Xuenan <guoxuenan@huawei.com>
+.SH AVAILABILITY
+.B dump.erofs
+is part of erofs-utils package and is available from git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git.
+.SH SEE ALSO
+.BR mkfs.erofs(1),
+.BR fsck.erofs(1)
