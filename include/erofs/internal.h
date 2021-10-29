@@ -259,6 +259,12 @@ struct erofs_map_blocks {
 	erofs_blk_t index;
 };
 
+/*
+ * Used to get the exact decompressed length, e.g. fiemap (consider lookback
+ * approach instead if possible since it's more metadata lightweight.)
+ */
+#define EROFS_GET_BLOCKS_FIEMAP	0x0002
+
 /* super.c */
 int erofs_read_superblock(void);
 
@@ -271,7 +277,7 @@ int erofs_pread(struct erofs_inode *inode, char *buf,
 /* zmap.c */
 int z_erofs_fill_inode(struct erofs_inode *vi);
 int z_erofs_map_blocks_iter(struct erofs_inode *vi,
-			    struct erofs_map_blocks *map);
+			    struct erofs_map_blocks *map, int flags);
 
 #ifdef EUCLEAN
 #define EFSCORRUPTED	EUCLEAN		/* Filesystem is corrupted */
