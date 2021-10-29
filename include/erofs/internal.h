@@ -269,6 +269,7 @@ struct erofs_map_blocks {
 int erofs_read_superblock(void);
 
 /* namei.c */
+int erofs_read_inode_from_disk(struct erofs_inode *vi);
 int erofs_ilookup(const char *path, struct erofs_inode *vi);
 
 /* data.c */
