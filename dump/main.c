@@ -18,6 +18,7 @@
 struct erofsdump_cfg {
 	unsigned int totalshow;
 	bool show_inode;
+	bool show_extent;
 	bool show_superblock;
 	bool show_statistics;
 	erofs_nid_t nid;
@@ -95,6 +96,7 @@ static void usage(void)
 	      "Dump erofs layout from IMAGE, and [options] are:\n"
 	      " -S      show statistic information of the image\n"
 	      " -V      print the version number of dump.erofs and exit.\n"
+	      " -e      show extent info (--nid is required)\n"
 	      " -s      show information about superblock\n"
 	      " --nid=# show the target inode info of nid #\n"
 	      " --help  display this help and exit.\n",
@@ -110,9 +112,13 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 {
 	int opt;
 
-	while ((opt = getopt_long(argc, argv, "SVs",
+	while ((opt = getopt_long(argc, argv, "SVes",
 				  long_options, NULL)) != -1) {
 		switch (opt) {
+		case 'e':
+			dumpcfg.show_extent = true;
+			++dumpcfg.totalshow;
+			break;
 		case 's':
 			dumpcfg.show_superblock = true;
 			++dumpcfg.totalshow;
@@ -406,7 +412,15 @@ static int erofs_get_pathname(erofs_nid_t nid, erofs_nid_t parent_nid,
 	return -1;
 }
 
-static void erofsdump_show_fileinfo(void)
+static int erofsdump_map_blocks(struct erofs_inode *inode,
+		struct erofs_map_blocks *map, int flags)
+{
+	if (erofs_inode_is_data_compressed(inode->datalayout))
+		return z_erofs_map_blocks_iter(inode, map, flags);
+	return erofs_map_blocks(inode, map, flags);
+}
+
+static void erofsdump_show_fileinfo(bool show_extent)
 {
 	int err, i;
 	erofs_off_t size;
@@ -415,6 +429,11 @@ static void erofsdump_show_fileinfo(void)
 	char path[PATH_MAX + 1] = {0};
 	char access_mode_str[] = "rwxrwxrwx";
 	char timebuf[128] = {0};
+	unsigned int extent_count = 0;
+	struct erofs_map_blocks map = {
+		.index = UINT_MAX,
+		.m_la = 0,
+	};
 
 	err = erofs_read_inode_from_disk(&inode);
 	if (err) {
@@ -455,6 +474,25 @@ static void erofsdump_show_fileinfo(void)
 	fprintf(stdout, "Uid: %u   Gid: %u  ", inode.i_uid, inode.i_gid);
 	fprintf(stdout, "Access: %04o/%s\n", access_mode, access_mode_str);
 	fprintf(stdout, "Timestamp: %s.%09d\n", timebuf, inode.i_ctime_nsec);
+
+	if (!dumpcfg.show_extent)
+		return;
+
+	fprintf(stdout, "\n Ext:   logical offset   |  length :     physical offset    |  length \n");
+	while (map.m_la < inode.i_size) {
+		err = erofsdump_map_blocks(&inode, &map,
+				EROFS_GET_BLOCKS_FIEMAP);
+		if (err) {
+			erofs_err("get file blocks range failed");
+			return;
+		}
+
+		fprintf(stdout, "%4d: %8" PRIu64 "..%8" PRIu64 " | %7" PRIu64 " : %10" PRIu64 "..%10" PRIu64 " | %7" PRIu64 "\n",
+			extent_count++, map.m_la, map.m_la + map.m_llen, map.m_llen,
+			map.m_pa, map.m_pa + map.m_plen, map.m_plen);
+		map.m_la += map.m_llen;
+	}
+	fprintf(stdout, "%s: %d extents found\n", path, extent_count);
 }
 
 static void erofsdump_filesize_distribution(const char *title,
@@ -631,8 +669,13 @@ int main(int argc, char **argv)
 	if (dumpcfg.show_statistics)
 		erofsdump_print_statistic();
 
+	if (dumpcfg.show_extent && !dumpcfg.show_inode) {
+		usage();
+		goto exit;
+	}
+
 	if (dumpcfg.show_inode)
-		erofsdump_show_fileinfo();
+		erofsdump_show_fileinfo(dumpcfg.show_extent);
 
 exit:
 	erofs_exit_configure();
