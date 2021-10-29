@@ -17,8 +17,10 @@
 
 struct erofsdump_cfg {
 	unsigned int totalshow;
+	bool show_inode;
 	bool show_superblock;
 	bool show_statistics;
+	erofs_nid_t nid;
 };
 static struct erofsdump_cfg dumpcfg;
 
@@ -64,7 +66,8 @@ struct erofs_statistics {
 static struct erofs_statistics stats;
 
 static struct option long_options[] = {
-	{"help", no_argument, 0, 1},
+	{"help", no_argument, NULL, 1},
+	{"nid", required_argument, NULL, 2},
 	{0, 0, 0, 0},
 };
 
@@ -82,6 +85,9 @@ static struct erofsdump_feature feature_lists[] = {
 };
 
 static int erofs_read_dir(erofs_nid_t nid, erofs_nid_t parent_nid);
+static inline int erofs_checkdirent(struct erofs_dirent *de,
+		struct erofs_dirent *last_de,
+		u32 maxsize, const char *dname);
 
 static void usage(void)
 {
@@ -90,6 +96,7 @@ static void usage(void)
 	      " -S      show statistic information of the image\n"
 	      " -V      print the version number of dump.erofs and exit.\n"
 	      " -s      show information about superblock\n"
+	      " --nid=# show the target inode info of nid #\n"
 	      " --help  display this help and exit.\n",
 	      stderr);
 }
@@ -117,6 +124,11 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 		case 'V':
 			erofsdump_print_version();
 			exit(0);
+		case 2:
+			dumpcfg.show_inode = true;
+			dumpcfg.nid = (erofs_nid_t)atoll(optarg);
+			++dumpcfg.totalshow;
+			break;
 		case 1:
 			usage();
 			exit(0);
@@ -329,6 +341,122 @@ static int erofs_read_dir(erofs_nid_t nid, erofs_nid_t parent_nid)
 	return 0;
 }
 
+static int erofs_get_pathname(erofs_nid_t nid, erofs_nid_t parent_nid,
+		erofs_nid_t target, char *path, unsigned int pos)
+{
+	int err;
+	erofs_off_t offset;
+	char buf[EROFS_BLKSIZ];
+	struct erofs_inode inode = { .nid = nid };
+
+	path[pos++] = '/';
+	if (target == sbi.root_nid)
+		return 0;
+
+	err = erofs_read_inode_from_disk(&inode);
+	if (err) {
+		erofs_err("read inode failed @ nid %llu", nid | 0ULL);
+		return err;
+	}
+
+	offset = 0;
+	while (offset < inode.i_size) {
+		erofs_off_t maxsize = min_t(erofs_off_t,
+					inode.i_size - offset, EROFS_BLKSIZ);
+		struct erofs_dirent *de = (void *)buf;
+		struct erofs_dirent *end;
+		unsigned int nameoff;
+
+		err = erofs_pread(&inode, buf, maxsize, offset);
+		if (err)
+			return err;
+
+		nameoff = le16_to_cpu(de->nameoff);
+		end = (void *)buf + nameoff;
+		while (de < end) {
+			const char *dname;
+			int len;
+
+			nameoff = le16_to_cpu(de->nameoff);
+			dname = (char *)buf + nameoff;
+			len = erofs_checkdirent(de, end, maxsize, dname);
+			if (len < 0)
+				return len;
+
+			if (de->nid == target) {
+				memcpy(path + pos, dname, len);
+				path[pos + len] = '\0';
+				return 0;
+			}
+
+			if (de->file_type == EROFS_FT_DIR &&
+					de->nid != parent_nid &&
+					de->nid != nid) {
+				memcpy(path + pos, dname, len);
+				err = erofs_get_pathname(de->nid, nid,
+						target, path, pos + len);
+				if (!err)
+					return 0;
+				memset(path + pos, 0, len);
+			}
+			++de;
+		}
+		offset += maxsize;
+	}
+	return -1;
+}
+
+static void erofsdump_show_fileinfo(void)
+{
+	int err, i;
+	erofs_off_t size;
+	u16 access_mode;
+	struct erofs_inode inode = { .nid = dumpcfg.nid };
+	char path[PATH_MAX + 1] = {0};
+	char access_mode_str[] = "rwxrwxrwx";
+	char timebuf[128] = {0};
+
+	err = erofs_read_inode_from_disk(&inode);
+	if (err) {
+		erofs_err("read inode failed @ nid %llu", inode.nid | 0ULL);
+		return;
+	}
+
+	err = erofs_get_occupied_size(&inode, &size);
+	if (err) {
+		erofs_err("get file size failed @ nid %llu", inode.nid | 0ULL);
+		return;
+	}
+
+	err = erofs_get_pathname(sbi.root_nid, sbi.root_nid,
+				 inode.nid, path, 0);
+	if (err < 0) {
+		erofs_err("file path not found @ nid %llu", inode.nid | 0ULL);
+		return;
+	}
+
+	strftime(timebuf, sizeof(timebuf),
+		 "%Y-%m-%d %H:%M:%S", localtime((time_t *)&inode.i_ctime));
+	access_mode = inode.i_mode & 0777;
+	for (i = 8; i >= 0; i--)
+		if (((access_mode >> i) & 1) == 0)
+			access_mode_str[8 - i] = '-';
+	fprintf(stdout, "File : %s\n", path);
+	fprintf(stdout, "NID: %" PRIu64 "  ", inode.nid);
+	fprintf(stdout, "Links: %u  ", inode.i_nlink);
+	fprintf(stdout, "Layout: %d\n", inode.datalayout);
+	fprintf(stdout, "Inode size: %d   ", inode.inode_isize);
+	fprintf(stdout, "Extent size: %u   ", inode.extent_isize);
+	fprintf(stdout,	"Xattr size: %u\n", inode.xattr_isize);
+	fprintf(stdout, "File size: %" PRIu64"  ", inode.i_size);
+	fprintf(stdout,	"On-disk size: %" PRIu64 "  ", size);
+	fprintf(stdout, "Compression ratio: %.2f%%\n",
+			(double)(100 * size) / (double)(inode.i_size));
+	fprintf(stdout, "Uid: %u   Gid: %u  ", inode.i_uid, inode.i_gid);
+	fprintf(stdout, "Access: %04o/%s\n", access_mode, access_mode_str);
+	fprintf(stdout, "Timestamp: %s.%09d\n", timebuf, inode.i_ctime_nsec);
+}
+
 static void erofsdump_filesize_distribution(const char *title,
 		unsigned int *file_counts, unsigned int len)
 {
@@ -502,6 +630,9 @@ int main(int argc, char **argv)
 
 	if (dumpcfg.show_statistics)
 		erofsdump_print_statistic();
+
+	if (dumpcfg.show_inode)
+		erofsdump_show_fileinfo();
 
 exit:
 	erofs_exit_configure();
