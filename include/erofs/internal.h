@@ -82,6 +82,8 @@ struct erofs_sb_info {
 
 	u16 available_compr_algs;
 	u16 lz4_max_distance;
+
+	u32 checksum;
 };
 
 /* global sbi */
@@ -271,6 +273,7 @@ int erofs_read_superblock(void);
 /* namei.c */
 int erofs_read_inode_from_disk(struct erofs_inode *vi);
 int erofs_ilookup(const char *path, struct erofs_inode *vi);
+int erofs_read_inode_from_disk(struct erofs_inode *vi);
 
 /* data.c */
 int erofs_pread(struct erofs_inode *inode, char *buf,
@@ -287,4 +290,18 @@ int z_erofs_map_blocks_iter(struct erofs_inode *vi,
 #else
 #define EFSCORRUPTED	EIO
 #endif
+
+#define CRC32C_POLY_LE	0x82F63B78
+static inline u32 erofs_crc32c(u32 crc, const u8 *in, size_t len)
+{
+	int i;
+
+	while (len--) {
+		crc ^= *in++;
+		for (i = 0; i < 8; i++)
+			crc = (crc >> 1) ^ ((crc & 1) ? CRC32C_POLY_LE : 0);
+	}
+	return crc;
+}
+
 #endif

@@ -429,19 +429,6 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	return 0;
 }
 
-#define CRC32C_POLY_LE	0x82F63B78
-static inline u32 crc32c(u32 crc, const u8 *in, size_t len)
-{
-	int i;
-
-	while (len--) {
-		crc ^= *in++;
-		for (i = 0; i < 8; i++)
-			crc = (crc >> 1) ^ ((crc & 1) ? CRC32C_POLY_LE : 0);
-	}
-	return crc;
-}
-
 static int erofs_mkfs_superblock_csum_set(void)
 {
 	int ret;
@@ -470,7 +457,7 @@ static int erofs_mkfs_superblock_csum_set(void)
 	/* turn on checksum feature */
 	sb->feature_compat = cpu_to_le32(le32_to_cpu(sb->feature_compat) |
 					 EROFS_FEATURE_COMPAT_SB_CHKSUM);
-	crc = crc32c(~0, (u8 *)sb, EROFS_BLKSIZ - EROFS_SUPER_OFFSET);
+	crc = erofs_crc32c(~0, (u8 *)sb, EROFS_BLKSIZ - EROFS_SUPER_OFFSET);
 
 	/* set up checksum field to erofs_super_block */
 	sb->checksum = cpu_to_le32(crc);

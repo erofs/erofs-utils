@@ -62,6 +62,7 @@ int erofs_read_superblock(void)
 	sbi.islotbits = EROFS_ISLOTBITS;
 	sbi.root_nid = le16_to_cpu(dsb->root_nid);
 	sbi.inos = le64_to_cpu(dsb->inos);
+	sbi.checksum = le32_to_cpu(dsb->checksum);
 
 	sbi.build_time = le64_to_cpu(dsb->build_time);
 	sbi.build_time_nsec = le32_to_cpu(dsb->build_time_nsec);

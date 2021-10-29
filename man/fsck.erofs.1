@@ -1,0 +1,38 @@
+.\" Copyright (c) 2021 Daeho Jeong <daehojeong@google.com>
+.\"
+.TH FSCK.EROFS 1
+.SH NAME
+fsck.erofs \- tool to check the EROFS filesystem's integrity
+.SH SYNOPSIS
+\fBfsck.erofs\fR [\fIOPTIONS\fR] \fIIMAGE\fR
+.SH DESCRIPTION
+fsck.erofs is used to scan an EROFS filesystem \fIIMAGE\fR and check the
+integrity of it.
+.SH OPTIONS
+.TP
+.BI "\-V "
+Print the version number of fsck.erofs and exit.
+.TP
+.BI "\-d " #
+Specify the level of debugging messages. The default is 2, which shows basic
+warning messages.
+.TP
+.BI "\-p "
+Print total compression ratio of all files including compressed and
+non-compressed files.
+.TP
+.BI "\-c "
+Check if all the compressed files are well decompressed. This will induce more
+I/Os to read compressed file data, so it might take too much time depending on
+the image.
+.TP
+.B \-\-help
+Display this help and exit.
+.SH AUTHOR
+This version of \fBfsck.erofs\fR is written by
+Daeho Jeong <daehojeong@google.com>.
+.SH AVAILABILITY
+\fBfsck.erofs\fR is part of erofs-utils package and is available from
+git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git.
+.SH SEE ALSO
+.BR fsck (8).
