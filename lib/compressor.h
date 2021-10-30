@@ -43,6 +43,7 @@ struct erofs_compress {
 /* list of compression algorithms */
 extern struct erofs_compressor erofs_compressor_lz4;
 extern struct erofs_compressor erofs_compressor_lz4hc;
+extern struct erofs_compressor erofs_compressor_lzma;
 
 int erofs_compress_destsize(struct erofs_compress *c,
 			    void *src, unsigned int *srcsize,

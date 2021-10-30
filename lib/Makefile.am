@@ -31,4 +31,7 @@ if ENABLE_LZ4HC
 liberofs_la_SOURCES += compressor_lz4hc.c
 endif
 endif
+if ENABLE_LIBLZMA
 liberofs_la_CFLAGS += ${liblzma_CFLAGS}
+liberofs_la_SOURCES += compressor_liblzma.c
+endif

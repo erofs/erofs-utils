@@ -147,7 +147,6 @@ static int parse_extended_opts(const char *opts)
 				return -EINVAL;
 			/* disable compacted indexes and 0padding */
 			cfg.c_legacy_compress = true;
-			erofs_sb_clear_lz4_0padding();
 		}
 
 		if (MATCH_EXTENTED_OPT("force-inode-compact", token, keylen)) {

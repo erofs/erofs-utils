@@ -60,6 +60,7 @@ struct erofs_configure {
 
 	u32 c_pclusterblks_max, c_pclusterblks_def;
 	u32 c_max_decompressed_extent_bytes;
+	u32 c_dict_size;
 	u64 c_unix_timestamp;
 	u32 c_uid, c_gid;
 #ifdef WITH_ANDROID

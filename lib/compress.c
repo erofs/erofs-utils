@@ -588,6 +588,8 @@ static int erofs_get_compress_algorithm_id(const char *name)
 {
 	if (!strcmp(name, "lz4") || !strcmp(name, "lz4hc"))
 		return Z_EROFS_COMPRESSION_LZ4;
+	if (!strcmp(name, "lzma"))
+		return Z_EROFS_COMPRESSION_LZMA;
 	return -ENOTSUP;
 }
 
@@ -619,6 +621,29 @@ int z_erofs_build_compr_cfgs(struct erofs_buffer_head *sb_bh)
 				sizeof(lz4alg));
 		bh->op = &erofs_drop_directly_bhops;
 	}
+#ifdef HAVE_LIBLZMA
+	if (sbi.available_compr_algs & (1 << Z_EROFS_COMPRESSION_LZMA)) {
+		struct {
+			__le16 size;
+			struct z_erofs_lzma_cfgs lzma;
+		} __packed lzmaalg = {
+			.size = cpu_to_le16(sizeof(struct z_erofs_lzma_cfgs)),
+			.lzma = {
+				.dict_size = cpu_to_le32(cfg.c_dict_size),
+			}
+		};
+
+		bh = erofs_battach(bh, META, sizeof(lzmaalg));
+		if (IS_ERR(bh)) {
+			DBG_BUGON(1);
+			return PTR_ERR(bh);
+		}
+		erofs_mapbh(bh->block);
+		ret = dev_write(&lzmaalg, erofs_btell(bh, false),
+				sizeof(lzmaalg));
+		bh->op = &erofs_drop_directly_bhops;
+	}
+#endif
 	return ret;
 }
 
@@ -632,17 +657,18 @@ int z_erofs_compress_init(struct erofs_buffer_head *sb_bh)
 		return ret;
 
 	/*
-	 * if primary algorithm is not lz4* (e.g. compression off),
-	 * clear LZ4_0PADDING feature for old kernel compatibility.
+	 * if primary algorithm is empty (e.g. compression off),
+	 * clear 0PADDING feature for old kernel compatibility.
 	 */
 	if (!cfg.c_compr_alg_master ||
-	    strncmp(cfg.c_compr_alg_master, "lz4", 3))
+	    (cfg.c_legacy_compress && !strcmp(cfg.c_compr_alg_master, "lz4")))
 		erofs_sb_clear_lz4_0padding();
 
 	if (!cfg.c_compr_alg_master)
 		return 0;
 
-	ret = erofs_compressor_setlevel(&compresshandle, cfg.c_compr_level_master);
+	ret = erofs_compressor_setlevel(&compresshandle,
+					cfg.c_compr_level_master);
 	if (ret)
 		return ret;
 
@@ -667,6 +693,9 @@ int z_erofs_compress_init(struct erofs_buffer_head *sb_bh)
 		erofs_sb_set_big_pcluster();
 		erofs_warn("EXPERIMENTAL big pcluster feature in use. Use at your own risk!");
 	}
+
+	if (ret != Z_EROFS_COMPRESSION_LZ4)
+		erofs_sb_set_compr_cfgs();
 
 	if (erofs_sb_has_compr_cfgs()) {
 		sbi.available_compr_algs |= 1 << ret;
