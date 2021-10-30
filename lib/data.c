@@ -244,9 +244,10 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 		if (ret < 0)
 			break;
 
-		algorithmformat = map.m_flags & EROFS_MAP_ZIPPED ?
-						Z_EROFS_COMPRESSION_LZ4 :
-						Z_EROFS_COMPRESSION_SHIFTED;
+		if (map.m_flags & EROFS_MAP_ZIPPED)
+			algorithmformat = inode->z_algorithmtype[0];
+		else
+			algorithmformat = Z_EROFS_COMPRESSION_SHIFTED;
 
 		ret = z_erofs_decompress(&(struct z_erofs_decompress_req) {
 					.in = raw,
