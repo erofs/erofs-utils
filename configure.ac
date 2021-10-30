@@ -69,6 +69,10 @@ AC_ARG_ENABLE(lz4,
    [AS_HELP_STRING([--disable-lz4], [disable LZ4 compression support @<:@default=enabled@:>@])],
    [enable_lz4="$enableval"], [enable_lz4="yes"])
 
+AC_ARG_ENABLE(lzma,
+   [AS_HELP_STRING([--enable-lzma], [enable LZMA compression support @<:@default=no@:>@])],
+   [enable_lzma="$enableval"], [enable_lzma="no"])
+
 AC_ARG_ENABLE(fuse,
    [AS_HELP_STRING([--enable-fuse], [enable erofsfuse @<:@default=no@:>@])],
    [enable_fuse="$enableval"], [enable_fuse="no"])
@@ -98,6 +102,14 @@ AC_ARG_WITH(lz4-libdir,
 
 AC_ARG_VAR([LZ4_CFLAGS], [C compiler flags for lz4])
 AC_ARG_VAR([LZ4_LIBS], [linker flags for lz4])
+
+AC_ARG_WITH(liblzma-incdir,
+   [AS_HELP_STRING([--with-liblzma-incdir=DIR], [liblzma include directory])], [
+   EROFS_UTILS_PARSE_DIRECTORY(["$withval"],[withval])])
+
+AC_ARG_WITH(liblzma-libdir,
+   [AS_HELP_STRING([--with-liblzma-libdir=DIR], [liblzma lib directory])], [
+   EROFS_UTILS_PARSE_DIRECTORY(["$withval"],[withval])])
 
 # Checks for header files.
 AC_CHECK_HEADERS(m4_flatten([
@@ -263,10 +275,36 @@ if test "x$enable_lz4" = "xyes"; then
   CPPFLAGS=${saved_CPPFLAGS}
 fi
 
+if test "x$enable_lzma" = "xyes"; then
+  saved_CPPFLAGS=${CPPFLAGS}
+  test -z "${with_liblzma_incdir}" ||
+    CPPFLAGS="-I$with_liblzma_incdir $CPPFLAGS"
+  AC_CHECK_HEADERS([lzma.h],[have_lzmah="yes"], [])
+
+  if test "x${have_lzmah}" = "xyes" ; then
+    saved_LIBS="$LIBS"
+    saved_LDFLAGS="$LDFLAGS"
+
+    test -z "${with_liblzma_libdir}" ||
+      LDFLAGS="-L$with_liblzma_libdir ${LDFLAGS}"
+    AC_CHECK_LIB(lzma, lzma_microlzma_encoder, [],
+      [AC_MSG_ERROR([Cannot find proper liblzma])])
+
+    AC_CHECK_DECL(lzma_microlzma_encoder, [have_liblzma="yes"],
+      [AC_MSG_ERROR([Cannot find proper liblzma])], [[
+#include <lzma.h>
+    ]])
+    LDFLAGS="${saved_LDFLAGS}"
+    LIBS="${saved_LIBS}"
+  fi
+  CPPFLAGS="${saved_CPPFLAGS}"
+fi
+
 # Set up needed symbols, conditionals and compiler/linker flags
 AM_CONDITIONAL([ENABLE_LZ4], [test "x${have_lz4}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LZ4HC], [test "x${have_lz4hc}" = "xyes"])
 AM_CONDITIONAL([ENABLE_FUSE], [test "x${have_fuse}" = "xyes"])
+AM_CONDITIONAL([ENABLE_LIBLZMA], [test "x${have_liblzma}" = "xyes"])
 
 if test "x$have_uuid" = "xyes"; then
   AC_DEFINE([HAVE_LIBUUID], 1, [Define to 1 if libuuid is found])
@@ -292,6 +330,17 @@ if test "x${have_lz4}" = "xyes"; then
   liblz4_LIBS="${LZ4_LIBS}"
 fi
 AC_SUBST([liblz4_LIBS])
+
+if test "x${have_liblzma}" = "xyes"; then
+  AC_DEFINE([HAVE_LIBLZMA], [1], [Define to 1 if liblzma is enabled.])
+  liblzma_LIBS="-llzma"
+  test -z "${with_liblzma_libdir}" ||
+    liblzma_LIBS="-L${with_liblzma_libdir} $liblzma_LIBS"
+  test -z "${with_liblzma_incdir}" ||
+    liblzma_CFLAGS="-I${with_liblzma_incdir}"
+  AC_SUBST([liblzma_LIBS])
+  AC_SUBST([liblzma_CFLAGS])
+fi
 
 AC_CONFIG_FILES([Makefile
 		 man/Makefile
