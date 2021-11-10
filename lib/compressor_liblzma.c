@@ -5,6 +5,8 @@
  * Copyright (C) 2021 Gao Xiang <xiang@kernel.org>
  */
 #include <stdlib.h>
+#include "config.h"
+#ifdef HAVE_LIBLZMA
 #include <lzma.h>
 #include "erofs/config.h"
 #include "erofs/print.h"
@@ -103,3 +105,4 @@ struct erofs_compressor erofs_compressor_lzma = {
 	.setlevel = erofs_compressor_liblzma_setlevel,
 	.compress_destsize = erofs_liblzma_compress_destsize,
 };
+#endif
