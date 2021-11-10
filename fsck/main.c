@@ -23,6 +23,7 @@ static struct erofsfsck_cfg fsckcfg;
 
 static struct option long_options[] = {
 	{"help", no_argument, 0, 1},
+	{"extract", no_argument, 0, 2},
 	{0, 0, 0, 0},
 };
 
@@ -30,11 +31,11 @@ static void usage(void)
 {
 	fputs("usage: [options] IMAGE\n\n"
 	      "Check erofs filesystem integrity of IMAGE, and [options] are:\n"
-	      " -V      print the version number of fsck.erofs and exit.\n"
-	      " -d#     set output message level to # (maximum 9)\n"
-	      " -p      print total compression ratio of all files\n"
-	      " -c      check if all compressed files are well decompressed\n"
-	      " --help  display this help and exit.\n",
+	      " -V              print the version number of fsck.erofs and exit.\n"
+	      " -d#             set output message level to # (maximum 9)\n"
+	      " -p              print total compression ratio of all files\n"
+	      " --extract       check if all files are well encoded\n"
+	      " --help          display this help and exit.\n",
 	      stderr);
 }
 
@@ -47,7 +48,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 {
 	int opt, i;
 
-	while ((opt = getopt_long(argc, argv, "Vd:pc",
+	while ((opt = getopt_long(argc, argv, "Vd:p",
 				  long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'V':
@@ -64,12 +65,12 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 		case 'p':
 			fsckcfg.print_comp_ratio = true;
 			break;
-		case 'c':
-			fsckcfg.check_decomp = true;
-			break;
 		case 1:
 			usage();
 			exit(0);
+		case 2:
+			fsckcfg.check_decomp = true;
+			break;
 		default:
 			return -EINVAL;
 		}
