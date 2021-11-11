@@ -27,9 +27,9 @@ u64 dev_length(void);
 
 extern int erofs_devfd;
 
-int erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
-                          int fd_out, erofs_off_t *off_out,
-                          size_t length);
+ssize_t erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
+			      int fd_out, erofs_off_t *off_out,
+			      size_t length);
 
 static inline int blk_write(const void *buf, erofs_blk_t blkaddr,
 			    u32 nblocks)

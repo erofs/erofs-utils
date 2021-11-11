@@ -259,9 +259,9 @@ int dev_read(void *buf, u64 offset, size_t len)
 	return 0;
 }
 
-static int __erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
-				   int fd_out, erofs_off_t *off_out,
-				   size_t length)
+static ssize_t __erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
+				       int fd_out, erofs_off_t *off_out,
+				       size_t length)
 {
 	size_t copied = 0;
 	char buf[8192];
@@ -331,9 +331,9 @@ static int __erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
 	return copied;
 }
 
-int erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
-			  int fd_out, erofs_off_t *off_out,
-			  size_t length)
+ssize_t erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
+			      int fd_out, erofs_off_t *off_out,
+			      size_t length)
 {
 #ifdef HAVE_COPY_FILE_RANGE
 	off64_t off64_in = *off_in, off64_out = *off_out;

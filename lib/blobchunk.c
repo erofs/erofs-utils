@@ -179,7 +179,7 @@ int erofs_blob_remap(void)
 	struct erofs_buffer_head *bh;
 	ssize_t length;
 	erofs_off_t pos_in, pos_out;
-	int ret;
+	ssize_t ret;
 
 	fflush(blobfile);
 	length = ftell(blobfile);
