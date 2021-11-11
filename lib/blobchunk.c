@@ -7,6 +7,7 @@
 #define _GNU_SOURCE
 #include "erofs/hashmap.h"
 #include "erofs/blobchunk.h"
+#include "erofs/block_list.h"
 #include "erofs/cache.h"
 #include "erofs/io.h"
 #include <unistd.h>
@@ -101,7 +102,10 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 				   erofs_off_t off)
 {
 	struct erofs_inode_chunk_index idx = {0};
-	unsigned int dst, src, unit;
+	erofs_blk_t extent_start = EROFS_NULL_ADDR;
+	erofs_blk_t extent_end = EROFS_NULL_ADDR;
+	unsigned int dst, src, unit, num_extents;
+	bool first_extent = true;
 
 	if (inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES)
 		unit = sizeof(struct erofs_inode_chunk_index);
@@ -115,12 +119,33 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 		chunk = *(void **)(inode->chunkindexes + src);
 
 		idx.blkaddr = chunk->blkaddr + remapped_base;
+		if (extent_start != EROFS_NULL_ADDR &&
+		    idx.blkaddr == extent_end + 1) {
+			extent_end = idx.blkaddr;
+		} else {
+			if (extent_start != EROFS_NULL_ADDR) {
+				erofs_droid_blocklist_write_extent(inode,
+					extent_start,
+					(extent_end - extent_start) + 1,
+					first_extent, false);
+				first_extent = false;
+			}
+			extent_start = idx.blkaddr;
+			extent_end = idx.blkaddr;
+		}
 		if (unit == EROFS_BLOCK_MAP_ENTRY_SIZE)
 			memcpy(inode->chunkindexes + dst, &idx.blkaddr, unit);
 		else
 			memcpy(inode->chunkindexes + dst, &idx, sizeof(idx));
 	}
 	off = roundup(off, unit);
+
+	if (extent_start == EROFS_NULL_ADDR)
+		num_extents = 0;
+	else
+		num_extents = (extent_end - extent_start) + 1;
+	erofs_droid_blocklist_write_extent(inode, extent_start, num_extents,
+		first_extent, true);
 
 	return dev_write(inode->chunkindexes, off, inode->extent_isize);
 }

@@ -32,23 +32,46 @@ void erofs_droid_blocklist_fclose(void)
 }
 
 static void blocklist_write(const char *path, erofs_blk_t blk_start,
-			    erofs_blk_t nblocks, bool has_tail)
+			    erofs_blk_t nblocks, bool first_extent,
+			    bool last_extent)
 {
 	const char *fspath = erofs_fspath(path);
 
-	fprintf(block_list_fp, "/%s", cfg.mount_point);
+	if (first_extent) {
+		fprintf(block_list_fp, "/%s", cfg.mount_point);
 
-	if (fspath[0] != '/')
-		fprintf(block_list_fp, "/");
+		if (fspath[0] != '/')
+			fprintf(block_list_fp, "/");
+
+		fprintf(block_list_fp, "%s", fspath);
+	}
 
 	if (nblocks == 1)
-		fprintf(block_list_fp, "%s %u", fspath, blk_start);
+		fprintf(block_list_fp, " %u", blk_start);
 	else
-		fprintf(block_list_fp, "%s %u-%u", fspath, blk_start,
+		fprintf(block_list_fp, " %u-%u", blk_start,
 			blk_start + nblocks - 1);
 
-	if (!has_tail)
+	if (last_extent)
 		fprintf(block_list_fp, "\n");
+}
+
+void erofs_droid_blocklist_write_extent(struct erofs_inode *inode,
+					erofs_blk_t blk_start,
+					erofs_blk_t nblocks, bool first_extent,
+					bool last_extent)
+{
+	if (!block_list_fp || !cfg.mount_point)
+		return;
+
+	if (!nblocks) {
+		if (last_extent)
+			fprintf(block_list_fp, "\n");
+		return;
+	}
+
+	blocklist_write(inode->i_srcpath, blk_start, nblocks, first_extent,
+			last_extent);
 }
 
 void erofs_droid_blocklist_write(struct erofs_inode *inode,
@@ -58,7 +81,7 @@ void erofs_droid_blocklist_write(struct erofs_inode *inode,
 		return;
 
 	blocklist_write(inode->i_srcpath, blk_start, nblocks,
-			!!inode->idata_size);
+			true, !inode->idata_size);
 }
 
 void erofs_droid_blocklist_write_tail_end(struct erofs_inode *inode,
@@ -80,6 +103,6 @@ void erofs_droid_blocklist_write_tail_end(struct erofs_inode *inode,
 		return;
 	}
 	if (blkaddr != NULL_ADDR)
-		blocklist_write(inode->i_srcpath, blkaddr, 1, false);
+		blocklist_write(inode->i_srcpath, blkaddr, 1, true, true);
 }
 #endif
