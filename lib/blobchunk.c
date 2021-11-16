@@ -25,6 +25,8 @@ struct erofs_blobchunk {
 static struct hashmap blob_hashmap;
 static FILE *blobfile;
 static erofs_blk_t remapped_base;
+static bool multidev;
+static struct erofs_buffer_head *bh_devt;
 
 static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
 		unsigned int chunksize)
@@ -103,14 +105,20 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 {
 	struct erofs_inode_chunk_index idx = {0};
 	erofs_blk_t extent_start = EROFS_NULL_ADDR;
-	erofs_blk_t extent_end = EROFS_NULL_ADDR;
-	unsigned int dst, src, unit, num_extents;
+	erofs_blk_t extent_end, extents_blks;
+	unsigned int dst, src, unit;
 	bool first_extent = true;
+	erofs_blk_t base_blkaddr = 0;
 
 	if (inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES)
 		unit = sizeof(struct erofs_inode_chunk_index);
 	else
 		unit = EROFS_BLOCK_MAP_ENTRY_SIZE;
+
+	if (multidev)
+		idx.device_id = 1;
+	else
+		base_blkaddr = remapped_base;
 
 	for (dst = src = 0; dst < inode->extent_isize;
 	     src += sizeof(void *), dst += unit) {
@@ -118,7 +126,7 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 
 		chunk = *(void **)(inode->chunkindexes + src);
 
-		idx.blkaddr = chunk->blkaddr + remapped_base;
+		idx.blkaddr = base_blkaddr + chunk->blkaddr;
 		if (extent_start != EROFS_NULL_ADDR &&
 		    idx.blkaddr == extent_end + 1) {
 			extent_end = idx.blkaddr;
@@ -141,11 +149,11 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 	off = roundup(off, unit);
 
 	if (extent_start == EROFS_NULL_ADDR)
-		num_extents = 0;
+		extents_blks = 0;
 	else
-		num_extents = (extent_end - extent_start) + 1;
-	erofs_droid_blocklist_write_extent(inode, extent_start, num_extents,
-		first_extent, true);
+		extents_blks = (extent_end - extent_start) + 1;
+	erofs_droid_blocklist_write_extent(inode, extent_start, extents_blks,
+					   first_extent, true);
 
 	return dev_write(inode->chunkindexes, off, inode->extent_isize);
 }
@@ -208,6 +216,20 @@ int erofs_blob_remap(void)
 
 	fflush(blobfile);
 	length = ftell(blobfile);
+	if (multidev) {
+		struct erofs_deviceslot dis = {
+			.blocks = erofs_blknr(length),
+		};
+
+		pos_out = erofs_btell(bh_devt, false);
+		ret = dev_write(&dis, pos_out, sizeof(dis));
+		if (ret)
+			return ret;
+
+		bh_devt->op = &erofs_drop_directly_bhops;
+		erofs_bdrop(bh_devt, false);
+		return 0;
+	}
 	bh = erofs_balloc(DATA, length, 0, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
@@ -231,16 +253,42 @@ void erofs_blob_exit(void)
 	hashmap_free(&blob_hashmap, 1);
 }
 
-int erofs_blob_init(void)
+int erofs_blob_init(const char *blobfile_path)
 {
+	if (!blobfile_path) {
 #ifdef HAVE_TMPFILE64
-	blobfile = tmpfile64();
+		blobfile = tmpfile64();
 #else
-	blobfile = tmpfile();
+		blobfile = tmpfile();
 #endif
+		multidev = false;
+	} else {
+		blobfile = fopen(blobfile_path, "wb");
+		multidev = true;
+	}
 	if (!blobfile)
-		return -ENOMEM;
+		return -EACCES;
 
 	hashmap_init(&blob_hashmap, erofs_blob_hashmap_cmp, 0);
+	return 0;
+}
+
+int erofs_generate_devtable(void)
+{
+	struct erofs_deviceslot dis;
+
+	if (!multidev)
+		return 0;
+
+	bh_devt = erofs_balloc(DEVT, sizeof(dis), 0, 0);
+	if (IS_ERR(bh_devt))
+		return PTR_ERR(bh_devt);
+
+	dis = (struct erofs_deviceslot) {};
+	erofs_mapbh(bh_devt->block);
+	bh_devt->op = &erofs_skip_write_bhops;
+	sbi.devt_slotoff = erofs_btell(bh_devt, false) / EROFS_DEVT_SLOT_SIZE;
+	sbi.extra_devices = 1;
+	erofs_sb_set_device_table();
 	return 0;
 }

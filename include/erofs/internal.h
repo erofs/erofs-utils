@@ -93,7 +93,10 @@ struct erofs_sb_info {
 
 	u32 checksum;
 	u16 extra_devices;
-	u16 device_id_mask;
+	union {
+		u16 devt_slotoff;		/* used for mkfs */
+		u16 device_id_mask;		/* used for others */
+	};
 };
 
 /* global sbi */
