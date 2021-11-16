@@ -5,24 +5,7 @@
 dump.erofs \- retrieve directory and file entries, show specific file
 or overall disk statistics information from an EROFS-formatted image.
 .SH SYNOPSIS
-.B dump.erofs
-[
-.B \--nid
-.I inode NID
-]
-[
-.B \-e
-]
-[
-.B \-s
-]
-[
-.B \-S
-]
-[
-.B \-V
-]
-.I IMAGE
+\fBdump.erofs\fR [\fIOPTIONS\fR] \fIIMAGE\fR
 .SH DESCRIPTION
 .B dump.erofs
 is used to retrieve erofs metadata from \fIIMAGE\fP and demonstrate
@@ -32,7 +15,11 @@ is used to retrieve erofs metadata from \fIIMAGE\fP and demonstrate
 4) file extent information of the given inode NID.
 .SH OPTIONS
 .TP
-.BI \--nid " inode NID"
+.BI "\-\-device=" path
+Specify an extra device to be used together.
+You may give multiple `--device' options in the correct order.
+.TP
+.BI "\-\-nid=" NID
 Specify an inode NID in order to print its file information.
 .TP
 .BI \-e
