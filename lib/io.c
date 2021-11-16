@@ -26,6 +26,7 @@
 static const char *erofs_devname;
 int erofs_devfd = -1;
 static u64 erofs_devsz;
+static unsigned int erofs_nblobs, erofs_blobfd[256];
 
 int dev_get_blkdev_size(int fd, u64 *bytes)
 {
@@ -103,6 +104,30 @@ int dev_open(const char *dev)
 	erofs_devfd = fd;
 
 	erofs_info("successfully to open %s", dev);
+	return 0;
+}
+
+void blob_closeall(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < erofs_nblobs; ++i)
+		close(erofs_blobfd[i]);
+	erofs_nblobs = 0;
+}
+
+int blob_open_ro(const char *dev)
+{
+	int fd = open(dev, O_RDONLY | O_BINARY);
+
+	if (fd < 0) {
+		erofs_err("failed to open(%s).", dev);
+		return -errno;
+	}
+
+	erofs_blobfd[erofs_nblobs] = fd;
+	erofs_info("successfully to open blob%u %s", erofs_nblobs, dev);
+	++erofs_nblobs;
 	return 0;
 }
 
@@ -229,9 +254,9 @@ int dev_resize(unsigned int blocks)
 	return dev_fillzero(st.st_size, length, true);
 }
 
-int dev_read(void *buf, u64 offset, size_t len)
+int dev_read(int device_id, void *buf, u64 offset, size_t len)
 {
-	int ret;
+	int ret, fd;
 
 	if (cfg.c_dry_run)
 		return 0;
@@ -240,16 +265,21 @@ int dev_read(void *buf, u64 offset, size_t len)
 		erofs_err("buf is NULL");
 		return -EINVAL;
 	}
-	if (offset >= erofs_devsz || len > erofs_devsz ||
-	    offset > erofs_devsz - len) {
-		erofs_err("read posion[%" PRIu64 ", %zd] is too large beyond the end of device(%" PRIu64 ").",
-			  offset, len, erofs_devsz);
-		return -EINVAL;
+
+	if (!device_id) {
+		fd = erofs_devfd;
+	} else {
+		if (device_id > erofs_nblobs) {
+			erofs_err("invalid device id %d", device_id);
+			return -ENODEV;
+		}
+		fd = erofs_blobfd[device_id - 1];
 	}
+
 #ifdef HAVE_PREAD64
-	ret = pread64(erofs_devfd, buf, len, (off64_t)offset);
+	ret = pread64(fd, buf, len, (off64_t)offset);
 #else
-	ret = pread(erofs_devfd, buf, len, (off_t)offset);
+	ret = pread(fd, buf, len, (off_t)offset);
 #endif
 	if (ret != (int)len) {
 		erofs_err("Failed to read data from device - %s:[%" PRIu64 ", %zd].",

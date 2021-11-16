@@ -15,11 +15,13 @@
 #define O_BINARY	0
 #endif
 
+void blob_closeall(void);
+int blob_open_ro(const char *dev);
 int dev_open(const char *devname);
 int dev_open_ro(const char *dev);
 void dev_close(void);
 int dev_write(const void *buf, u64 offset, size_t len);
-int dev_read(void *buf, u64 offset, size_t len);
+int dev_read(int device_id, void *buf, u64 offset, size_t len);
 int dev_fillzero(u64 offset, size_t len, bool padding);
 int dev_fsync(void);
 int dev_resize(erofs_blk_t nblocks);
@@ -38,10 +40,10 @@ static inline int blk_write(const void *buf, erofs_blk_t blkaddr,
 			 blknr_to_addr(nblocks));
 }
 
-static inline int blk_read(void *buf, erofs_blk_t start,
-			    u32 nblocks)
+static inline int blk_read(int device_id, void *buf,
+			   erofs_blk_t start, u32 nblocks)
 {
-	return dev_read(buf, blknr_to_addr(start),
+	return dev_read(device_id, buf, blknr_to_addr(start),
 			 blknr_to_addr(nblocks));
 }
 

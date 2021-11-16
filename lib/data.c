@@ -91,7 +91,7 @@ int erofs_map_blocks(struct erofs_inode *inode,
 	pos = roundup(iloc(vi->nid) + vi->inode_isize +
 		      vi->xattr_isize, unit) + unit * chunknr;
 
-	err = blk_read(buf, erofs_blknr(pos), 1);
+	err = blk_read(0, buf, erofs_blknr(pos), 1);
 	if (err < 0)
 		return -EIO;
 
@@ -176,7 +176,7 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 			map.m_la = ptr;
 		}
 
-		ret = dev_read(estart, map.m_pa, eend - map.m_la);
+		ret = dev_read(0, estart, map.m_pa, eend - map.m_la);
 		if (ret < 0)
 			return -EIO;
 		ptr = eend;
@@ -240,7 +240,7 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 				break;
 			}
 		}
-		ret = dev_read(raw, map.m_pa, map.m_plen);
+		ret = dev_read(0, raw, map.m_pa, map.m_plen);
 		if (ret < 0)
 			break;
 

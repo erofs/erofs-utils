@@ -97,7 +97,7 @@ static int erofs_check_sb_chksum(void)
 	u32 crc;
 	struct erofs_super_block *sb;
 
-	ret = blk_read(buf, 0, 1);
+	ret = blk_read(0, buf, 0, 1);
 	if (ret) {
 		erofs_err("failed to read superblock to check checksum: %d",
 			  ret);
@@ -317,7 +317,7 @@ static int verify_compressed_inode(struct erofs_inode *inode)
 			BUG_ON(!buffer);
 		}
 
-		ret = dev_read(raw, map.m_pa, map.m_plen);
+		ret = dev_read(0, raw, map.m_pa, map.m_plen);
 		if (ret < 0) {
 			erofs_err("failed to read compressed data of m_pa %" PRIu64 ", m_plen %" PRIu64 " @ nid %llu: %d",
 				  map.m_pa, map.m_plen, inode->nid | 0ULL, ret);
@@ -381,7 +381,7 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	}
 
 	addr = iloc(inode->nid) + inode->inode_isize;
-	ret = dev_read(buf, addr, xattr_hdr_size);
+	ret = dev_read(0, buf, addr, xattr_hdr_size);
 	if (ret < 0) {
 		erofs_err("failed to read xattr header @ nid %llu: %d",
 			  inode->nid | 0ULL, ret);
@@ -411,7 +411,7 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	while (remaining > 0) {
 		unsigned int entry_sz;
 
-		ret = dev_read(buf, addr, xattr_entry_size);
+		ret = dev_read(0, buf, addr, xattr_entry_size);
 		if (ret) {
 			erofs_err("failed to read xattr entry @ nid %llu: %d",
 				  inode->nid | 0ULL, ret);

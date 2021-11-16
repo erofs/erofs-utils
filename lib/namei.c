@@ -30,7 +30,7 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 	struct erofs_inode_extended *die;
 	const erofs_off_t inode_loc = iloc(vi->nid);
 
-	ret = dev_read(buf, inode_loc, sizeof(*dic));
+	ret = dev_read(0, buf, inode_loc, sizeof(*dic));
 	if (ret < 0)
 		return -EIO;
 
@@ -47,7 +47,7 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 	case EROFS_INODE_LAYOUT_EXTENDED:
 		vi->inode_isize = sizeof(struct erofs_inode_extended);
 
-		ret = dev_read(buf + sizeof(*dic), inode_loc + sizeof(*dic),
+		ret = dev_read(0, buf + sizeof(*dic), inode_loc + sizeof(*dic),
 			       sizeof(*die) - sizeof(*dic));
 		if (ret < 0)
 			return -EIO;

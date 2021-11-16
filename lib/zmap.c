@@ -38,7 +38,7 @@ static int z_erofs_fill_inode_lazy(struct erofs_inode *vi)
 		  vi->datalayout == EROFS_INODE_FLAT_COMPRESSION_LEGACY);
 	pos = round_up(iloc(vi->nid) + vi->inode_isize + vi->xattr_isize, 8);
 
-	ret = dev_read(buf, pos, sizeof(buf));
+	ret = dev_read(0, buf, pos, sizeof(buf));
 	if (ret < 0)
 		return -EIO;
 
@@ -88,7 +88,7 @@ static int z_erofs_reload_indexes(struct z_erofs_maprecorder *m,
 	if (map->index == eblk)
 		return 0;
 
-	ret = blk_read(mpage, eblk, 1);
+	ret = blk_read(0, mpage, eblk, 1);
 	if (ret < 0)
 		return -EIO;
 

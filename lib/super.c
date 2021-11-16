@@ -30,7 +30,7 @@ int erofs_read_superblock(void)
 	unsigned int blkszbits;
 	int ret;
 
-	ret = blk_read(data, 0, 1);
+	ret = blk_read(0, data, 0, 1);
 	if (ret < 0) {
 		erofs_err("cannot read erofs superblock: %d", ret);
 		return -EIO;
