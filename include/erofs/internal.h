@@ -60,8 +60,16 @@ typedef u32 erofs_blk_t;
 
 struct erofs_buffer_head;
 
+struct erofs_device_info {
+	u32 blocks;
+	u32 mapped_blkaddr;
+};
+
 struct erofs_sb_info {
-	u64 blocks;
+	struct erofs_device_info *devs;
+
+	u64 total_blocks;
+	u64 primarydevice_blocks;
 
 	erofs_blk_t meta_blkaddr;
 	erofs_blk_t xattr_blkaddr;
@@ -84,6 +92,8 @@ struct erofs_sb_info {
 	u16 lz4_max_distance;
 
 	u32 checksum;
+	u16 extra_devices;
+	u16 device_id_mask;
 };
 
 /* global sbi */
@@ -112,6 +122,7 @@ EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_LZ4_0PADDING)
 EROFS_FEATURE_FUNCS(compr_cfgs, incompat, INCOMPAT_COMPR_CFGS)
 EROFS_FEATURE_FUNCS(big_pcluster, incompat, INCOMPAT_BIG_PCLUSTER)
 EROFS_FEATURE_FUNCS(chunked_file, incompat, INCOMPAT_CHUNKED_FILE)
+EROFS_FEATURE_FUNCS(device_table, incompat, INCOMPAT_DEVICE_TABLE)
 EROFS_FEATURE_FUNCS(sb_chksum, compat, COMPAT_SB_CHKSUM)
 
 #define EROFS_I_EA_INITED	(1 << 0)
@@ -257,6 +268,7 @@ struct erofs_map_blocks {
 	erofs_off_t m_pa, m_la;
 	u64 m_plen, m_llen;
 
+	unsigned short m_deviceid;
 	unsigned int m_flags;
 	erofs_blk_t index;
 };
@@ -266,6 +278,11 @@ struct erofs_map_blocks {
  * approach instead if possible since it's more metadata lightweight.)
  */
 #define EROFS_GET_BLOCKS_FIEMAP	0x0002
+
+struct erofs_map_dev {
+	erofs_off_t m_pa;
+	unsigned int m_deviceid;
+};
 
 /* super.c */
 int erofs_read_superblock(void);

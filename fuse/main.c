@@ -113,6 +113,7 @@ static struct options {
 static const struct fuse_opt option_spec[] = {
 	OPTION("--dbglevel=%u", debug_lvl),
 	OPTION("--help", show_help),
+	FUSE_OPT_KEY("--device=", 1),
 	FUSE_OPT_END
 };
 
@@ -123,6 +124,7 @@ static void usage(void)
 	fputs("usage: [options] IMAGE MOUNTPOINT\n\n"
 	      "Options:\n"
 	      "    --dbglevel=#           set output message level to # (maximum 9)\n"
+	      "    --device=#             specify an extra device to be used together\n"
 #if FUSE_MAJOR_VERSION < 3
 	      "    --help                 display this help and exit\n"
 #endif
@@ -148,7 +150,15 @@ static void erofsfuse_dumpcfg(void)
 static int optional_opt_func(void *data, const char *arg, int key,
 			     struct fuse_args *outargs)
 {
+	int ret;
+
 	switch (key) {
+	case 1:
+		ret = blob_open_ro(arg);
+		if (ret)
+			return -1;
+		++sbi.extra_devices;
+		return 0;
 	case FUSE_OPT_KEY_NONOPT:
 		if (fusecfg.mountpoint)
 			return -1; /* Too many args */
@@ -237,6 +247,7 @@ int main(int argc, char *argv[])
 
 	ret = fuse_main(args.argc, args.argv, &erofs_ops, NULL);
 err_dev_close:
+	blob_closeall();
 	dev_close();
 err_fuse_free_args:
 	fuse_opt_free_args(&args);

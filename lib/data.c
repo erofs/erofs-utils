@@ -72,6 +72,7 @@ int erofs_map_blocks(struct erofs_inode *inode,
 	erofs_off_t pos;
 	int err = 0;
 
+	map->m_deviceid = 0;
 	if (map->m_la >= inode->i_size) {
 		/* leave out-of-bound access unmapped */
 		map->m_flags = 0;
@@ -118,14 +119,8 @@ int erofs_map_blocks(struct erofs_inode *inode,
 		map->m_flags = 0;
 		break;
 	default:
-		/* only one device is supported for now */
-		if (idx->device_id) {
-			erofs_err("invalid device id %u @ %" PRIu64 " for nid %llu",
-				  le16_to_cpu(idx->device_id),
-				  chunknr, vi->nid | 0ULL);
-			err = -EFSCORRUPTED;
-			goto out;
-		}
+		map->m_deviceid = le16_to_cpu(idx->device_id) &
+			sbi.device_id_mask;
 		map->m_pa = blknr_to_addr(le32_to_cpu(idx->blkaddr));
 		map->m_flags = EROFS_MAP_MAPPED;
 		break;
@@ -135,12 +130,41 @@ out:
 	return err;
 }
 
+int erofs_map_dev(struct erofs_sb_info *sbi, struct erofs_map_dev *map)
+{
+	struct erofs_device_info *dif;
+	int id;
+
+	if (map->m_deviceid) {
+		if (sbi->extra_devices < map->m_deviceid)
+			return -ENODEV;
+	} else if (sbi->extra_devices) {
+		for (id = 0; id < sbi->extra_devices; ++id) {
+			erofs_off_t startoff, length;
+
+			dif = sbi->devs + id;
+			if (!dif->mapped_blkaddr)
+				continue;
+			startoff = blknr_to_addr(dif->mapped_blkaddr);
+			length = blknr_to_addr(dif->blocks);
+
+			if (map->m_pa >= startoff &&
+			    map->m_pa < startoff + length) {
+				map->m_pa -= startoff;
+				break;
+			}
+		}
+	}
+	return 0;
+}
+
 static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 			       erofs_off_t size, erofs_off_t offset)
 {
 	struct erofs_map_blocks map = {
 		.index = UINT_MAX,
 	};
+	struct erofs_map_dev mdev;
 	int ret;
 	erofs_off_t ptr = offset;
 
@@ -154,6 +178,14 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 			return ret;
 
 		DBG_BUGON(map.m_plen != map.m_llen);
+
+		mdev = (struct erofs_map_dev) {
+			.m_deviceid = map.m_deviceid,
+			.m_pa = map.m_pa,
+		};
+		ret = erofs_map_dev(&sbi, &mdev);
+		if (ret)
+			return ret;
 
 		/* trim extent */
 		eend = min(offset + size, map.m_la + map.m_llen);
@@ -172,11 +204,12 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 		}
 
 		if (ptr > map.m_la) {
-			map.m_pa += ptr - map.m_la;
+			mdev.m_pa += ptr - map.m_la;
 			map.m_la = ptr;
 		}
 
-		ret = dev_read(0, estart, map.m_pa, eend - map.m_la);
+		ret = dev_read(mdev.m_deviceid, estart, mdev.m_pa,
+			       eend - map.m_la);
 		if (ret < 0)
 			return -EIO;
 		ptr = eend;
@@ -191,6 +224,7 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 	struct erofs_map_blocks map = {
 		.index = UINT_MAX,
 	};
+	struct erofs_map_dev mdev;
 	bool partial;
 	unsigned int algorithmformat, bufsize;
 	char *raw = NULL;
@@ -204,6 +238,16 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 		ret = z_erofs_map_blocks_iter(inode, &map, 0);
 		if (ret)
 			break;
+
+		/* no device id here, thus it will always succeed */
+		mdev = (struct erofs_map_dev) {
+			.m_pa = map.m_pa,
+		};
+		ret = erofs_map_dev(&sbi, &mdev);
+		if (ret) {
+			DBG_BUGON(1);
+			break;
+		}
 
 		/*
 		 * trim to the needed size if the returned extent is quite
@@ -240,7 +284,7 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 				break;
 			}
 		}
-		ret = dev_read(0, raw, map.m_pa, map.m_plen);
+		ret = dev_read(mdev.m_deviceid, raw, mdev.m_pa, map.m_plen);
 		if (ret < 0)
 			break;
 

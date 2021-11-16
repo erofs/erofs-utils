@@ -611,7 +611,7 @@ static void erofsdump_show_superblock(void)
 	fprintf(stdout, "Filesystem magic number:                      0x%04X\n",
 			EROFS_SUPER_MAGIC_V1);
 	fprintf(stdout, "Filesystem blocks:                            %llu\n",
-			sbi.blocks | 0ULL);
+			sbi.total_blocks | 0ULL);
 	fprintf(stdout, "Filesystem inode metadata start block:        %u\n",
 			sbi.meta_blkaddr);
 	fprintf(stdout, "Filesystem shared xattr metadata start block: %u\n",
