@@ -9,6 +9,7 @@
 #include <getopt.h>
 #include <time.h>
 #include "erofs/print.h"
+#include "erofs/inode.h"
 #include "erofs/io.h"
 
 #ifdef HAVE_LIBUUID
@@ -461,16 +462,17 @@ static void erofsdump_show_fileinfo(bool show_extent)
 		if (((access_mode >> i) & 1) == 0)
 			access_mode_str[8 - i] = '-';
 	fprintf(stdout, "File : %s\n", path);
-	fprintf(stdout, "NID: %" PRIu64 "  ", inode.nid);
-	fprintf(stdout, "Links: %u  ", inode.i_nlink);
-	fprintf(stdout, "Layout: %d\n", inode.datalayout);
+	fprintf(stdout, "Size: %" PRIu64"  On-disk size: %" PRIu64 "  %s\n",
+		inode.i_size, size,
+		file_category_types[erofs_mode_to_ftype(inode.i_mode)]);
+	fprintf(stdout, "NID: %" PRIu64 "   ", inode.nid);
+	fprintf(stdout, "Links: %u   ", inode.i_nlink);
+	fprintf(stdout, "Layout: %d   Compression ratio: %.2f%%\n",
+		inode.datalayout,
+		(double)(100 * size) / (double)(inode.i_size));
 	fprintf(stdout, "Inode size: %d   ", inode.inode_isize);
 	fprintf(stdout, "Extent size: %u   ", inode.extent_isize);
 	fprintf(stdout,	"Xattr size: %u\n", inode.xattr_isize);
-	fprintf(stdout, "File size: %" PRIu64"  ", inode.i_size);
-	fprintf(stdout,	"On-disk size: %" PRIu64 "  ", size);
-	fprintf(stdout, "Compression ratio: %.2f%%\n",
-			(double)(100 * size) / (double)(inode.i_size));
 	fprintf(stdout, "Uid: %u   Gid: %u  ", inode.i_uid, inode.i_gid);
 	fprintf(stdout, "Access: %04o/%s\n", access_mode, access_mode_str);
 	fprintf(stdout, "Timestamp: %s.%09d\n", timebuf, inode.i_ctime_nsec);

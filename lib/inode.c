@@ -37,7 +37,7 @@ static unsigned char erofs_ftype_by_mode[S_IFMT >> S_SHIFT] = {
 	[S_IFLNK >> S_SHIFT]  = EROFS_FT_SYMLINK,
 };
 
-static unsigned char erofs_mode_to_ftype(umode_t mode)
+unsigned char erofs_mode_to_ftype(umode_t mode)
 {
 	return erofs_ftype_by_mode[(mode & S_IFMT) >> S_SHIFT];
 }
