@@ -287,7 +287,7 @@ static int verify_compressed_inode(struct erofs_inode *inode)
 	int ret = 0;
 	u64 pchunk_len = 0;
 	erofs_off_t end = inode->i_size;
-	unsigned int algorithmformat, raw_size = 0, buffer_size = 0;
+	unsigned int raw_size = 0, buffer_size = 0;
 	char *raw = NULL, *buffer = NULL;
 
 	while (end > 0) {
@@ -309,10 +309,6 @@ static int verify_compressed_inode(struct erofs_inode *inode)
 
 		if (!fsckcfg.check_decomp || !(map.m_flags & EROFS_MAP_MAPPED))
 			continue;
-
-		algorithmformat = map.m_flags & EROFS_MAP_ZIPPED ?
-						Z_EROFS_COMPRESSION_LZ4 :
-						Z_EROFS_COMPRESSION_SHIFTED;
 
 		if (map.m_plen > raw_size) {
 			raw_size = map.m_plen;
@@ -350,7 +346,7 @@ static int verify_compressed_inode(struct erofs_inode *inode)
 					.decodedskip = 0,
 					.inputsize = map.m_plen,
 					.decodedlength = map.m_llen,
-					.alg = algorithmformat,
+					.alg = map.m_algorithmformat,
 					.partial_decoding = 0
 					 });
 
