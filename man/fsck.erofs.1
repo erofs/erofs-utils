@@ -10,16 +10,20 @@ fsck.erofs is used to scan an EROFS filesystem \fIIMAGE\fR and check the
 integrity of it.
 .SH OPTIONS
 .TP
-.BI "\-V "
+.B \-V
 Print the version number of fsck.erofs and exit.
 .TP
 .BI "\-d " #
 Specify the level of debugging messages. The default is 2, which shows basic
 warning messages.
 .TP
-.BI "\-p "
+.B \-p
 Print total compression ratio of all files including compressed and
 non-compressed files.
+.TP
+.BI "\-\-device=" path
+Specify an extra device to be used together.
+You may give multiple `--device' options in the correct order.
 .TP
 .B \-\-extract
 Check if all files are well encoded. This will induce more I/Os to read
