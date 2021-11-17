@@ -110,15 +110,17 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 	bool first_extent = true;
 	erofs_blk_t base_blkaddr = 0;
 
+	if (multidev) {
+		idx.device_id = 1;
+		inode->u.chunkformat |= EROFS_CHUNK_FORMAT_INDEXES;
+	} else {
+		base_blkaddr = remapped_base;
+	}
+
 	if (inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES)
 		unit = sizeof(struct erofs_inode_chunk_index);
 	else
 		unit = EROFS_BLOCK_MAP_ENTRY_SIZE;
-
-	if (multidev)
-		idx.device_id = 1;
-	else
-		base_blkaddr = remapped_base;
 
 	for (dst = src = 0; dst < inode->extent_isize;
 	     src += sizeof(void *), dst += unit) {

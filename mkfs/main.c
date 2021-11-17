@@ -174,6 +174,18 @@ static int parse_extended_opts(const char *opts)
 				return -EINVAL;
 			cfg.c_noinline_data = true;
 		}
+
+		if (MATCH_EXTENTED_OPT("force-inode-blockmap", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			cfg.c_force_chunkformat = FORCE_INODE_BLOCK_MAP;
+		}
+
+		if (MATCH_EXTENTED_OPT("force-chunk-indexes", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			cfg.c_force_chunkformat = FORCE_INODE_CHUNK_INDEXES;
+		}
 	}
 	return 0;
 }
@@ -369,6 +381,14 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		erofs_err("--blobdev must be used together with --chunksize");
 		return -EINVAL;
 	}
+
+	/* TODO: can be implemented with (deviceslot) mapped_blkaddr */
+	if (cfg.c_blobdev_path &&
+	    cfg.c_force_chunkformat == FORCE_INODE_BLOCK_MAP) {
+		erofs_err("--blobdev cannot work with block map currently");
+		return -EINVAL;
+	}
+
 	cfg.c_img_path = strdup(argv[optind++]);
 	if (!cfg.c_img_path)
 		return -ENOMEM;

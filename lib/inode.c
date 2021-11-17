@@ -390,7 +390,10 @@ int erofs_write_file(struct erofs_inode *inode)
 
 	if (cfg.c_chunkbits) {
 		inode->u.chunkbits = cfg.c_chunkbits;
-		inode->u.chunkformat = EROFS_CHUNK_FORMAT_INDEXES;
+		/* chunk indexes when explicitly specified */
+		inode->u.chunkformat = 0;
+		if (cfg.c_force_chunkformat == FORCE_INODE_CHUNK_INDEXES)
+			inode->u.chunkformat = EROFS_CHUNK_FORMAT_INDEXES;
 		return erofs_blob_write_chunked_file(inode);
 	}
 
