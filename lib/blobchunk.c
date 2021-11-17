@@ -78,6 +78,7 @@ static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
 
 		hashmap_entry_init(&key, hash);
 		hashmap_remove(&blob_hashmap, &key, sha256);
+		free(chunk);
 		chunk = ERR_PTR(-ENOSPC);
 		goto out;
 	}
