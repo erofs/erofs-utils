@@ -2,7 +2,8 @@ erofs-utils
 ===========
 
 erofs-utils includes user-space tools for EROFS filesystem.
-Currently mkfs.erofs and erofsfuse (experimental) are available.
+Currently mkfs.erofs, (experimental) erofsfuse, dump.erofs, fsck.erofs
+are available.
 
 Dependencies & build
 --------------------
@@ -12,8 +13,8 @@ Dependencies & build
 
  libfuse 2.6+ for erofsfuse enabled as a plus.
 
-How to build for lz4-1.9.0 or above
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+How to build with lz4-1.9.0 or above
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To build, you can run the following commands in order:
 
@@ -32,8 +33,8 @@ mkfs.erofs binary will be generated under mkfs folder.
    LZ4_decompress_safe_partial() [5], which impacts erofsfuse
    functionality for legacy images (without 0PADDING).
 
-How to build for lz4-1.8.0~1.8.3
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+How to build with lz4-1.8.0~1.8.3
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For these old lz4 versions, lz4hc algorithm cannot be supported
 without lz4-static installed due to LZ4_compress_HC_destSize()
@@ -48,6 +49,16 @@ However, it's still not recommended using those versions directly
 since there are serious bugs in these compressors, see [2] [3] [4]
 as well.
 
+How to build with liblzma
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In order to enable LZMA support, build with the following commands:
+	$ ./configure --enable-lzma
+	$ make
+
+Additionally, you could specify liblzma build paths with:
+	--with-liblzma-incdir and --with-liblzma-libdir
+
 mkfs.erofs
 ----------
 
@@ -57,15 +68,15 @@ two main kinds of EROFS images can be generated: (un)compressed.
    files in these images. However, it can decide whether the tail
    block of a file should be inlined or not properly [1].
 
- - For compressed images, it will try to use lz4(hc) algorithm
+ - For compressed images, it'll try to use specific algorithms
    first for each regular file and see if storage space can be
    saved with compression. If not, fallback to an uncompressed
    file.
 
-How to generate EROFS images (Linux 5.3+)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+How to generate EROFS images (lz4 for Linux 5.3+, lzma for Linux 5.16+)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Currently lz4 and lz4hc are available for compression, e.g.
+Currently lz4(hc) and lzma are available for compression, e.g.
  $ mkfs.erofs -zlz4hc foo.erofs.img foo/
 
 Or leave all files uncompressed as an option:
@@ -74,6 +85,10 @@ Or leave all files uncompressed as an option:
 In addition, you could specify a higher compression level to get a
 (slightly) better compression ratio than the default level, e.g.
  $ mkfs.erofs -zlz4hc,12 foo.erofs.img foo/
+
+Note that all compressors are still single-threaded for now, thus it
+could take more time on the multiprocessor platform. Multi-threaded
+approach is already in our TODO list.
 
 How to generate EROFS big pcluster images (Linux 5.13+)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -97,7 +112,8 @@ How to generate legacy EROFS images (Linux 4.19+)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Decompression inplace and compacted indexes have been introduced in
-linux-5.3, which are not forward-compatible with older kernels.
+Linux upstream v5.3, which are not forward-compatible with older
+kernels.
 
 In order to generate _legacy_ EROFS images for old kernels,
 consider adding "-E legacy-compress" to the command line, e.g.
@@ -117,8 +133,8 @@ git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b obsoleted
 
 PLEASE NOTE: This version is highly _NOT recommended_ now.
 
-erofsfuse (experimental, unstable)
-----------------------------------
+erofsfuse (experimental)
+------------------------
 
 erofsfuse is introduced to support EROFS format for various platforms
 (including older linux kernels) and new on-disk features iteration.
@@ -138,8 +154,8 @@ as always, welcome.
 How to build erofsfuse
 ~~~~~~~~~~~~~~~~~~~~~~
 
-It's disabled by default as an experimental feature for now, to enable
-and build it manually:
+It's disabled by default as an experimental feature for now due to
+the extra libfuse dependency, to enable and build it manually:
 
 	$ ./configure --enable-fuse
 	$ make
@@ -161,6 +177,17 @@ To debug erofsfuse (also automatically run in foreground):
 
 To unmount an erofsfuse mountpoint as a non-root user:
  $ fusermount -u foo/
+
+dump.erofs and fsck.erofs (experimental)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+dump.erofs and fsck.erofs are two new experimental tools to analyse
+and check EROFS file systems.
+
+They are still incomplete and actively under development by the
+community. But you could check them out if needed in advance.
+
+Report, feedback and/or contribution are welcomed.
 
 Contribution
 ------------
