@@ -10,7 +10,7 @@
 
 #define EROFS_CONFIG_COMPR_DEF_BOUNDARY		(128)
 
-static struct erofs_compressor *compressors[] = {
+static const struct erofs_compressor *compressors[] = {
 #if LZ4_ENABLED
 #if LZ4HC_ENABLED
 		&erofs_compressor_lz4hc,

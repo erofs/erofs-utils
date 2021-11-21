@@ -37,7 +37,7 @@ static int compressor_lz4_init(struct erofs_compress *c)
 	return 0;
 }
 
-struct erofs_compressor erofs_compressor_lz4 = {
+const struct erofs_compressor erofs_compressor_lz4 = {
 	.name = "lz4",
 	.default_level = 0,
 	.best_level = 0,

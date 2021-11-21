@@ -26,7 +26,7 @@ static bool erofs_bh_flush_drop_directly(struct erofs_buffer_head *bh)
 	return erofs_bh_flush_generic_end(bh);
 }
 
-struct erofs_bhops erofs_drop_directly_bhops = {
+const struct erofs_bhops erofs_drop_directly_bhops = {
 	.flush = erofs_bh_flush_drop_directly,
 };
 
@@ -35,7 +35,7 @@ static bool erofs_bh_flush_skip_write(struct erofs_buffer_head *bh)
 	return false;
 }
 
-struct erofs_bhops erofs_skip_write_bhops = {
+const struct erofs_bhops erofs_skip_write_bhops = {
 	.flush = erofs_bh_flush_skip_write,
 };
 
@@ -58,7 +58,7 @@ static bool erofs_bh_flush_buf_write(struct erofs_buffer_head *bh)
 	return erofs_bh_flush_generic_end(bh);
 }
 
-struct erofs_bhops erofs_buf_write_bhops = {
+const struct erofs_bhops erofs_buf_write_bhops = {
 	.flush = erofs_bh_flush_buf_write,
 };
 

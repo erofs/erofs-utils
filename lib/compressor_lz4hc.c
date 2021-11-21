@@ -59,7 +59,7 @@ static int compressor_lz4hc_setlevel(struct erofs_compress *c,
 	return 0;
 }
 
-struct erofs_compressor erofs_compressor_lz4hc = {
+const struct erofs_compressor erofs_compressor_lz4hc = {
 	.name = "lz4hc",
 	.default_level = LZ4HC_CLEVEL_DEFAULT,
 	.best_level = LZ4HC_CLEVEL_MAX,

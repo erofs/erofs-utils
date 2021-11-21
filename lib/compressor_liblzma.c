@@ -96,7 +96,7 @@ static int erofs_compressor_liblzma_init(struct erofs_compress *c)
 	return 0;
 }
 
-struct erofs_compressor erofs_compressor_lzma = {
+const struct erofs_compressor erofs_compressor_lzma = {
 	.name = "lzma",
 	.default_level = LZMA_PRESET_DEFAULT,
 	.best_level = LZMA_PRESET_EXTREME,
