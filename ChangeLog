@@ -1,3 +1,20 @@
+erofs-utils 1.4
+
+ * This release includes the following updates:
+   - (experimental) introduce preliminary dump.erofs (Wang Qi, Guo Xuenan);
+   - (experimental) introduce preliminary fsck.erofs (Daeho Jeong);
+   - introduce MicroLZMA compression support (thanks to Lasse Collin);
+   - support chunk-based uncompressed files for deduplication;
+   - support multiple devices for multi-blob CAS container images;
+   - (mkfs.erofs, AOSP) add block list support (Yue Hu, David Anderson);
+   - (mkfs.erofs) support per-inode compress pcluster hints (Huang Jianan);
+   - (mkfs.erofs) add "noinline_data" extended option for DAX;
+   - (mkfs.erofs) introduce --quiet option (suggested by nl6720);
+   - complete MacOS build & functionality;
+   - various bugfixes and cleanups;
+
+ -- Gao Xiang <xiang@kernel.org>  Mon, 22 Nov 2021 00:00:00 +0800
+
 erofs-utils 1.3
 
  * This release includes the following updates:

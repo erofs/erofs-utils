@@ -2,6 +2,8 @@
 
 noinst_LTLIBRARIES = liberofs.la
 noinst_HEADERS = $(top_srcdir)/include/erofs_fs.h \
+      $(top_srcdir)/include/erofs/blobchunk.h \
+      $(top_srcdir)/include/erofs/block_list.h \
       $(top_srcdir)/include/erofs/cache.h \
       $(top_srcdir)/include/erofs/compress.h \
       $(top_srcdir)/include/erofs/config.h \
@@ -9,6 +11,8 @@ noinst_HEADERS = $(top_srcdir)/include/erofs_fs.h \
       $(top_srcdir)/include/erofs/defs.h \
       $(top_srcdir)/include/erofs/err.h \
       $(top_srcdir)/include/erofs/exclude.h \
+      $(top_srcdir)/include/erofs/flex-array.h \
+      $(top_srcdir)/include/erofs/hashmap.h \
       $(top_srcdir)/include/erofs/hashtable.h \
       $(top_srcdir)/include/erofs/inode.h \
       $(top_srcdir)/include/erofs/internal.h \
