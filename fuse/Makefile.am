@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0+
 
 AUTOMAKE_OPTIONS = foreign
+noinst_HEADERS = $(top_srcdir)/fuse/macosx.h
 bin_PROGRAMS     = erofsfuse
 erofsfuse_SOURCES = dir.c main.c
 erofsfuse_CFLAGS = -Wall -Werror -I$(top_srcdir)/include
