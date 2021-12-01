@@ -8,6 +8,11 @@
 #ifndef __EROFS_CACHE_H
 #define __EROFS_CACHE_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "internal.h"
 
 struct erofs_buffer_head;
@@ -103,5 +108,9 @@ erofs_blk_t erofs_mapbh(struct erofs_buffer_block *bb);
 bool erofs_bflush(struct erofs_buffer_block *bb);
 
 void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

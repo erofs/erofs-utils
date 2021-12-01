@@ -6,6 +6,11 @@
 #ifndef __EROFS_COMPRESS_HINTS_H
 #define __EROFS_COMPRESS_HINTS_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "erofs/internal.h"
 #include <sys/types.h>
 #include <regex.h>
@@ -20,4 +25,9 @@ struct erofs_compress_hints {
 bool z_erofs_apply_compress_hints(struct erofs_inode *inode);
 void erofs_cleanup_compress_hints(void);
 int erofs_load_compress_hints(void);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

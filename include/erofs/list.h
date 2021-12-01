@@ -7,6 +7,11 @@
 #ifndef __EROFS_LIST_HEAD_H
 #define __EROFS_LIST_HEAD_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "defs.h"
 
 struct list_head {
@@ -104,5 +109,10 @@ static inline int list_empty(struct list_head *head)
 	    n    = list_next_entry(pos, member);                               \
 	     &pos->member != (head);                                           \
 	     pos = n, n = list_next_entry(n, member))
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -7,6 +7,11 @@
 #ifndef __EROFS_XATTR_H
 #define __EROFS_XATTR_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "internal.h"
 
 #define EROFS_INODE_XATTR_ICOUNT(_size)	({\
@@ -43,5 +48,9 @@
 int erofs_prepare_xattr_ibody(struct erofs_inode *inode);
 char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size);
 int erofs_build_shared_xattrs_from_path(const char *path);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

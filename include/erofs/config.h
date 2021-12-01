@@ -7,20 +7,14 @@
 #ifndef __EROFS_CONFIG_H
 #define __EROFS_CONFIG_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "defs.h"
 #include "err.h"
 
-#ifdef HAVE_LIBSELINUX
-#include <selinux/selinux.h>
-#include <selinux/label.h>
-#endif
-
-#ifdef WITH_ANDROID
-#include <selinux/android.h>
-#include <private/android_filesystem_config.h>
-#include <private/canned_fs_config.h>
-#include <private/fs_config.h>
-#endif
 
 enum {
 	FORCE_INODE_COMPACT = 1,
@@ -93,6 +87,10 @@ int erofs_selabel_open(const char *file_contexts);
 static inline int erofs_selabel_open(const char *file_contexts)
 {
 	return -EINVAL;
+}
+#endif
+
+#ifdef __cplusplus
 }
 #endif
 

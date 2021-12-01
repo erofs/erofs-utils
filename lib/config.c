@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include "erofs/print.h"
 #include "erofs/internal.h"
+#include "liberofs_private.h"
 
 struct erofs_configure cfg;
 struct erofs_sb_info sbi;

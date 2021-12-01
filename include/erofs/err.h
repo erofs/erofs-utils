@@ -7,6 +7,11 @@
 #ifndef __EROFS_ERR_H
 #define __EROFS_ERR_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include <errno.h>
 
 #define MAX_ERRNO (4095)
@@ -27,5 +32,9 @@ static inline long PTR_ERR(const void *ptr)
 {
 	return (long) ptr;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

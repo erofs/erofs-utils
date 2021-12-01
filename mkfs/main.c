@@ -23,6 +23,7 @@
 #include "erofs/block_list.h"
 #include "erofs/compress_hints.h"
 #include "erofs/blobchunk.h"
+#include "../lib/liberofs_private.h"
 
 #ifdef HAVE_LIBUUID
 #include <uuid.h>

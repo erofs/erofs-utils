@@ -7,6 +7,11 @@
 #ifndef __EROFS_INTERNAL_H
 #define __EROFS_INTERNAL_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "list.h"
 #include "err.h"
 
@@ -330,5 +335,9 @@ static inline u32 erofs_crc32c(u32 crc, const u8 *in, size_t len)
 	}
 	return crc;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

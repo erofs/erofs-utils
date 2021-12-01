@@ -7,6 +7,11 @@
 #ifndef __EROFS_COMPRESS_H
 #define __EROFS_COMPRESS_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "internal.h"
 
 /* workaround for an upstream lz4 compression issue, which can crash us */
@@ -20,5 +25,9 @@ int z_erofs_compress_init(struct erofs_buffer_head *bh);
 int z_erofs_compress_exit(void);
 
 const char *z_erofs_list_available_compressors(unsigned int i);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

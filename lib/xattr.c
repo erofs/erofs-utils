@@ -17,6 +17,7 @@
 #include "erofs/xattr.h"
 #include "erofs/cache.h"
 #include "erofs/io.h"
+#include "liberofs_private.h"
 
 #define EA_HASHTABLE_BITS 16
 

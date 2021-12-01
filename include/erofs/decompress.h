@@ -6,6 +6,11 @@
 #ifndef __EROFS_DECOMPRESS_H
 #define __EROFS_DECOMPRESS_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "internal.h"
 
 struct z_erofs_decompress_req {
@@ -24,5 +29,9 @@ struct z_erofs_decompress_req {
 };
 
 int z_erofs_decompress(struct z_erofs_decompress_req *rq);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

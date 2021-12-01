@@ -7,6 +7,11 @@
 #ifndef __EROFS_PRINT_H
 #define __EROFS_PRINT_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "config.h"
 #include <stdio.h>
 
@@ -71,5 +76,9 @@ enum {
 } while (0)
 
 #define erofs_dump(fmt, ...) fprintf(stderr, fmt, ##__VA_ARGS__)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

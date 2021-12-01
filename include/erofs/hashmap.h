@@ -2,6 +2,11 @@
 #ifndef __EROFS_HASHMAP_H
 #define __EROFS_HASHMAP_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 /* Copied from https://github.com/git/git.git */
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,5 +104,9 @@ static inline const char *strintern(const char *string)
 {
 	return memintern(string, strlen(string));
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -7,7 +7,14 @@
 #ifndef __EROFS_IO_H
 #define __EROFS_IO_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <unistd.h>
 #include "internal.h"
 
@@ -47,4 +54,8 @@ static inline int blk_read(int device_id, void *buf,
 			 blknr_to_addr(nblocks));
 }
 
+#ifdef __cplusplus
+}
 #endif
+
+#endif // EROFS_IO_H_

@@ -5,6 +5,11 @@
 #ifndef __EROFS_HASHTABLE_H
 #define __EROFS_HASHTABLE_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 /*
  * Fast hashing routine for ints,  longs and pointers.
  * (C) 2002 Nadia Yvette Chambers, IBM
@@ -379,5 +384,9 @@ static inline void hash_del(struct hlist_node *node)
  */
 #define hash_for_each_possible(name, obj, member, key)			\
 	hlist_for_each_entry(obj, &name[hash_min(key, HASH_BITS(name))], member)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

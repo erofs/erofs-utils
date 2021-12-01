@@ -6,6 +6,11 @@
 #ifndef __EROFS_BLOCK_LIST_H
 #define __EROFS_BLOCK_LIST_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "internal.h"
 
 #ifdef WITH_ANDROID
@@ -29,4 +34,9 @@ erofs_droid_blocklist_write_extent(struct erofs_inode *inode,
 				   erofs_blk_t blk_start, erofs_blk_t nblocks,
 				   bool first_extent, bool last_extent) {}
 #endif
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

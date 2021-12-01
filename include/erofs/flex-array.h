@@ -2,6 +2,11 @@
 #ifndef __EROFS_FLEX_ARRAY_H
 #define __EROFS_FLEX_ARRAY_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -143,5 +148,9 @@ static inline size_t st_add(size_t a, size_t b)
 	FLEX_ALLOC_MEM((x), flexname, (str), strlen(str))
 #define FLEXPTR_ALLOC_STR(x, ptrname, str) \
 	FLEXPTR_ALLOC_MEM((x), ptrname, (str), strlen(str))
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

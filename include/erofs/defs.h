@@ -8,6 +8,11 @@
 #ifndef __EROFS_DEFS_H
 #define __EROFS_DEFS_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
@@ -82,7 +87,9 @@ typedef int64_t         s64;
 #endif
 #endif
 
-#ifndef __OPTIMIZE__
+#ifdef __cplusplus
+#define BUILD_BUG_ON(condition) static_assert(!(condition))
+#elif !defined(__OPTIMIZE__)
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2 * !!(condition)]))
 #else
 #define BUILD_BUG_ON(condition) assert(!(condition))
@@ -110,6 +117,8 @@ typedef int64_t         s64;
 }							\
 )
 
+/* Can easily conflict with C++'s std::min */
+#ifndef __cplusplus
 #define min(x, y) ({				\
 	typeof(x) _min1 = (x);			\
 	typeof(y) _min2 = (y);			\
@@ -121,6 +130,7 @@ typedef int64_t         s64;
 	typeof(y) _max2 = (y);			\
 	(void) (&_max1 == &_max2);		\
 	_max1 > _max2 ? _max1 : _max2; })
+#endif
 
 /*
  * ..and if you can't take the strict types, you can specify one yourself.
@@ -308,4 +318,9 @@ unsigned long __roundup_pow_of_two(unsigned long n)
 #define stat64		stat
 #define lstat64		lstat
 #endif
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif
