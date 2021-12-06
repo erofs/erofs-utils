@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <time.h>
+#include <sys/stat.h>
 #include "erofs/print.h"
 #include "erofs/io.h"
 #include "erofs/decompress.h"
