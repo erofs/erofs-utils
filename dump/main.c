@@ -23,6 +23,7 @@ struct erofsdump_cfg {
 	bool show_superblock;
 	bool show_statistics;
 	erofs_nid_t nid;
+	const char *inode_path;
 };
 static struct erofsdump_cfg dumpcfg;
 
@@ -71,6 +72,7 @@ static struct option long_options[] = {
 	{"help", no_argument, NULL, 1},
 	{"nid", required_argument, NULL, 2},
 	{"device", required_argument, NULL, 3},
+	{"path", required_argument, NULL, 4},
 	{0, 0, 0, 0},
 };
 
@@ -103,6 +105,7 @@ static void usage(void)
 	      " -s              show information about superblock\n"
 	      " --device=X      specify an extra device to be used together\n"
 	      " --nid=#         show the target inode info of nid #\n"
+	      " --path=X        show the target inode info of path X\n"
 	      " --help          display this help and exit.\n",
 	      stderr);
 }
@@ -147,6 +150,11 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 			if (err)
 				return err;
 			++sbi.extra_devices;
+			break;
+		case 4:
+			dumpcfg.inode_path = optarg;
+			dumpcfg.show_inode = true;
+			++dumpcfg.totalshow;
 			break;
 		default:
 			return -EINVAL;
@@ -450,10 +458,19 @@ static void erofsdump_show_fileinfo(bool show_extent)
 		.m_la = 0,
 	};
 
-	err = erofs_read_inode_from_disk(&inode);
-	if (err) {
-		erofs_err("read inode failed @ nid %llu", inode.nid | 0ULL);
-		return;
+	if (dumpcfg.inode_path) {
+		err = erofs_ilookup(dumpcfg.inode_path, &inode);
+		if (err) {
+			erofs_err("read inode failed @ %s", dumpcfg.inode_path);
+			return;
+		}
+	} else {
+		err = erofs_read_inode_from_disk(&inode);
+		if (err) {
+			erofs_err("read inode failed @ nid %llu",
+				  inode.nid | 0ULL);
+			return;
+		}
 	}
 
 	err = erofs_get_occupied_size(&inode, &size);
