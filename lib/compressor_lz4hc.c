@@ -13,8 +13,8 @@
 #define LZ4_DISTANCE_MAX 65535	/* set to maximum value by default */
 #endif
 
-static int lz4hc_compress_destsize(struct erofs_compress *c,
-				   void *src, unsigned int *srcsize,
+static int lz4hc_compress_destsize(const struct erofs_compress *c,
+				   const void *src, unsigned int *srcsize,
 				   void *dst, unsigned int dstsize)
 {
 	int srcSize = (int)*srcsize;

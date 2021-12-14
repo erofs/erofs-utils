@@ -18,8 +18,8 @@ struct erofs_liblzma_context {
 	lzma_stream strm;
 };
 
-static int erofs_liblzma_compress_destsize(struct erofs_compress *c,
-					   void *src, unsigned int *srcsize,
+static int erofs_liblzma_compress_destsize(const struct erofs_compress *c,
+					   const void *src, unsigned int *srcsize,
 					   void *dst, unsigned int dstsize)
 {
 	struct erofs_liblzma_context *ctx = c->private_data;

@@ -21,8 +21,8 @@ struct erofs_compressor {
 	int (*exit)(struct erofs_compress *c);
 	int (*setlevel)(struct erofs_compress *c, int compression_level);
 
-	int (*compress_destsize)(struct erofs_compress *c,
-				 void *src, unsigned int *srcsize,
+	int (*compress_destsize)(const struct erofs_compress *c,
+				 const void *src, unsigned int *srcsize,
 				 void *dst, unsigned int dstsize);
 };
 
@@ -45,8 +45,8 @@ extern const struct erofs_compressor erofs_compressor_lz4;
 extern const struct erofs_compressor erofs_compressor_lz4hc;
 extern const struct erofs_compressor erofs_compressor_lzma;
 
-int erofs_compress_destsize(struct erofs_compress *c,
-			    void *src, unsigned int *srcsize,
+int erofs_compress_destsize(const struct erofs_compress *c,
+			    const void *src, unsigned int *srcsize,
 			    void *dst, unsigned int dstsize);
 
 int erofs_compressor_setlevel(struct erofs_compress *c, int compression_level);

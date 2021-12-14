@@ -22,8 +22,8 @@ static const struct erofs_compressor *compressors[] = {
 #endif
 };
 
-int erofs_compress_destsize(struct erofs_compress *c,
-			    void *src, unsigned int *srcsize,
+int erofs_compress_destsize(const struct erofs_compress *c,
+			    const void *src, unsigned int *srcsize,
 			    void *dst, unsigned int dstsize)
 {
 	unsigned int uncompressed_size;
