@@ -563,13 +563,31 @@ static struct erofs_bhops erofs_write_shared_xattrs_bhops = {
 	.flush = erofs_bh_flush_write_shared_xattrs,
 };
 
+static int comp_xattr_item(const void *a, const void *b)
+{
+	const struct xattr_item *ia, *ib;
+	unsigned int la, lb;
+	int ret;
+
+	ia = (*((const struct inode_xattr_node **)a))->item;
+	ib = (*((const struct inode_xattr_node **)b))->item;
+	la = ia->len[0] + ia->len[1];
+	lb = ib->len[0] + ib->len[1];
+
+	ret = strncmp(ia->kvbuf, ib->kvbuf, min(la, lb));
+	if (ret != 0)
+		return ret;
+
+	return la > lb;
+}
+
 int erofs_build_shared_xattrs_from_path(const char *path)
 {
 	int ret;
 	struct erofs_buffer_head *bh;
-	struct inode_xattr_node *node, *n;
+	struct inode_xattr_node *node, *n, **sorted_n;
 	char *buf;
-	unsigned int p;
+	unsigned int p, i;
 	erofs_off_t off;
 
 	/* check if xattr or shared xattr is disabled */
@@ -607,15 +625,25 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 	off %= EROFS_BLKSIZ;
 	p = 0;
 
+	sorted_n = malloc(shared_xattrs_count * sizeof(n));
+	if (!sorted_n)
+		return -ENOMEM;
+	i = 0;
 	list_for_each_entry_safe(node, n, &shared_xattrs_list, list) {
-		struct xattr_item *const item = node->item;
+		list_del(&node->list);
+		sorted_n[i++] = node;
+	}
+	DBG_BUGON(i != shared_xattrs_count);
+	qsort(sorted_n, shared_xattrs_count, sizeof(n), comp_xattr_item);
+
+	for (i = 0; i < shared_xattrs_count; i++) {
+		struct inode_xattr_node *const tnode = sorted_n[i];
+		struct xattr_item *const item = tnode->item;
 		const struct erofs_xattr_entry entry = {
 			.e_name_index = item->prefix,
 			.e_name_len = item->len[0],
 			.e_value_size = cpu_to_le16(item->len[1])
 		};
-
-		list_del(&node->list);
 
 		item->shared_xattr_id = (off + p) /
 			sizeof(struct erofs_xattr_entry);
@@ -624,8 +652,10 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 		p += sizeof(struct erofs_xattr_entry);
 		memcpy(buf + p, item->kvbuf, item->len[0] + item->len[1]);
 		p = EROFS_XATTR_ALIGN(p + item->len[0] + item->len[1]);
-		free(node);
+		free(tnode);
 	}
+
+	free(sorted_n);
 	bh->fsprivate = buf;
 	bh->op = &erofs_write_shared_xattrs_bhops;
 out:
