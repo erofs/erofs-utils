@@ -10,8 +10,9 @@
 #include "erofs/print.h"
 #include "erofs/io.h"
 #include "erofs/decompress.h"
+#include "erofs/dir.h"
 
-static void erofs_check_inode(erofs_nid_t pnid, erofs_nid_t nid);
+static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid);
 
 struct erofsfsck_cfg {
 	bool corrupted;
@@ -124,121 +125,6 @@ static int erofs_check_sb_chksum(void)
 		return -1;
 	}
 	return 0;
-}
-
-static bool check_special_dentry(struct erofs_dirent *de,
-				 unsigned int de_namelen, erofs_nid_t nid,
-				 erofs_nid_t pnid)
-{
-	if (de_namelen == 2 && de->nid != pnid) {
-		erofs_err("wrong parent dir nid(%llu): pnid(%llu) @ nid(%llu)",
-			  de->nid | 0ULL, pnid | 0ULL, nid | 0ULL);
-		return false;
-	}
-
-	if (de_namelen == 1 && de->nid != nid) {
-		erofs_err("wrong current dir nid(%llu) @ nid(%llu)",
-			  de->nid | 0ULL, nid | 0ULL);
-		return false;
-	}
-	return true;
-}
-
-static int traverse_dirents(erofs_nid_t pnid, erofs_nid_t nid,
-			    void *dentry_blk, erofs_blk_t block,
-			    unsigned int next_nameoff, unsigned int maxsize)
-{
-	struct erofs_dirent *de = dentry_blk;
-	const struct erofs_dirent *end = dentry_blk + next_nameoff;
-	unsigned int idx = 0;
-	char *prev_name = NULL, *cur_name = NULL;
-	int ret = 0;
-
-	erofs_dbg("traversing pnid(%llu), nid(%llu)", pnid | 0ULL, nid | 0ULL);
-
-	if (!block && (next_nameoff < 2 * sizeof(struct erofs_dirent))) {
-		erofs_err("too small dirents of size(%d) in nid(%llu)",
-			  next_nameoff, nid | 0ULL);
-		return -EFSCORRUPTED;
-	}
-
-	while (de < end) {
-		const char *de_name;
-		unsigned int de_namelen;
-		unsigned int nameoff;
-
-		nameoff = le16_to_cpu(de->nameoff);
-		de_name = (char *)dentry_blk + nameoff;
-
-		/* the last dirent check */
-		if (de + 1 >= end)
-			de_namelen = strnlen(de_name, maxsize - nameoff);
-		else
-			de_namelen = le16_to_cpu(de[1].nameoff) - nameoff;
-
-		if (prev_name)
-			free(prev_name);
-		prev_name = cur_name;
-		cur_name = strndup(de_name, de_namelen);
-		if (!cur_name) {
-			ret = -ENOMEM;
-			goto out;
-		}
-
-		erofs_dbg("traversed filename(%s)", cur_name);
-
-		/* corrupted entry check */
-		if (nameoff != next_nameoff) {
-			erofs_err("bogus dirent with nameoff(%u): expected(%d) @ nid %llu, block %u, idx %u",
-				  nameoff, next_nameoff, nid | 0ULL,
-				  block, idx);
-			ret = -EFSCORRUPTED;
-			goto out;
-		}
-
-		if (nameoff + de_namelen > maxsize ||
-				de_namelen > EROFS_NAME_LEN) {
-			erofs_err("bogus dirent with namelen(%u) @ nid %llu, block %u, idx %u",
-				  de_namelen, nid | 0ULL, block, idx);
-			ret = -EFSCORRUPTED;
-			goto out;
-		}
-
-		if (prev_name && (strcmp(prev_name, cur_name) >= 0)) {
-			erofs_err("wrong dirent name order @ nid %llu block %u idx %u: prev(%s), cur(%s)",
-				  nid | 0ULL, block, idx,
-				  prev_name, cur_name);
-			ret = -EFSCORRUPTED;
-			goto out;
-		}
-
-		if (is_dot_dotdot(cur_name)) {
-			if (!check_special_dentry(de, de_namelen, nid, pnid)) {
-				ret = -EFSCORRUPTED;
-				goto out;
-			}
-		} else {
-			erofs_check_inode(nid, de->nid);
-		}
-
-		if (fsckcfg.corrupted) {
-			ret = -EFSCORRUPTED;
-			goto out;
-		}
-
-		next_nameoff += de_namelen;
-		++de;
-		++idx;
-	}
-
-out:
-	if (prev_name)
-		free(prev_name);
-	if (cur_name)
-		free(cur_name);
-
-	erofs_dbg("traversing ... done nid(%llu)", nid | 0ULL);
-	return ret;
 }
 
 static int verify_uncompressed_inode(struct erofs_inode *inode)
@@ -479,12 +365,18 @@ static int erofs_verify_inode_data(struct erofs_inode *inode)
 	return ret;
 }
 
-static void erofs_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
+static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
+{
+	if (ctx->dot_dotdot)
+		return 0;
+
+	return erofsfsck_check_inode(ctx->dir->nid, ctx->de_nid);
+}
+
+static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 {
 	int ret;
 	struct erofs_inode inode;
-	char buf[EROFS_BLKSIZ];
-	erofs_off_t offset;
 
 	erofs_dbg("check inode: nid(%llu)", nid | 0ULL);
 
@@ -507,44 +399,21 @@ static void erofs_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 	if (ret)
 		goto out;
 
-	if ((inode.i_mode & S_IFMT) != S_IFDIR)
-		goto out;
+	/* XXXX: the dir depth should be restricted in order to avoid loops */
+	if (S_ISDIR(inode.i_mode)) {
+		struct erofs_dir_context ctx = {
+			.flags = EROFS_READDIR_VALID_PNID,
+			.pnid = pnid,
+			.dir = &inode,
+			.cb = erofsfsck_dirent_iter,
+		};
 
-	offset = 0;
-	while (offset < inode.i_size) {
-		erofs_blk_t block = erofs_blknr(offset);
-		erofs_off_t maxsize = min_t(erofs_off_t,
-					inode.i_size - offset, EROFS_BLKSIZ);
-		struct erofs_dirent *de = (void *)buf;
-
-		unsigned int nameoff;
-
-		ret = erofs_pread(&inode, buf, maxsize, offset);
-		if (ret) {
-			erofs_err("I/O error occurred when reading dirents @ nid %llu, block %u: %d",
-				  nid | 0ULL, block, ret);
-			goto out;
-		}
-
-		nameoff = le16_to_cpu(de->nameoff);
-		if (nameoff < sizeof(struct erofs_dirent) ||
-				nameoff >= PAGE_SIZE) {
-			erofs_err("invalid de[0].nameoff %u @ nid %llu block %u: %d",
-				  nameoff, nid | 0ULL, block, ret);
-			ret = -EFSCORRUPTED;
-			goto out;
-		}
-
-		ret = traverse_dirents(pnid, nid, buf, block,
-				       nameoff, maxsize);
-		if (ret)
-			goto out;
-
-		offset += maxsize;
+		ret = erofs_iterate_dir(&ctx, true);
 	}
 out:
 	if (ret && ret != -EIO)
 		fsckcfg.corrupted = true;
+	return ret;
 }
 
 int main(int argc, char **argv)
@@ -583,12 +452,11 @@ int main(int argc, char **argv)
 		goto exit_dev_close;
 	}
 
-	erofs_check_inode(sbi.root_nid, sbi.root_nid);
-
+	err = erofsfsck_check_inode(sbi.root_nid, sbi.root_nid);
 	if (fsckcfg.corrupted) {
 		erofs_err("Found some filesystem corruption");
 		err = -EFSCORRUPTED;
-	} else {
+	} else if (!err) {
 		erofs_info("No error found");
 		if (fsckcfg.print_comp_ratio) {
 			double comp_ratio =
