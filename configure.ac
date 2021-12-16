@@ -167,6 +167,11 @@ AC_CHECK_DECL(lseek64,[AC_DEFINE(HAVE_LSEEK64_PROTOTYPE, 1,
    #define _LARGEFILE64_SOURCE
    #include <unistd.h>])
 
+AC_CHECK_DECL(memrchr,[AC_DEFINE(HAVE_MEMRCHR, 1,
+  [Define to 1 if memrchr declared in string.h])],,
+  [#define _GNU_SOURCE
+   #include <string.h>])
+
 # Checks for library functions.
 AC_CHECK_FUNCS(m4_flatten([
 	backtrace
