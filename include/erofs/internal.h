@@ -235,6 +235,14 @@ struct erofs_dentry {
 	};
 };
 
+static inline bool is_dot_dotdot_len(const char *name, unsigned int len)
+{
+	if (len >= 1 && name[0] != '.')
+		return false;
+
+	return len == 1 || (len == 2 && name[1] == '.');
+}
+
 static inline bool is_dot_dotdot(const char *name)
 {
 	if (name[0] != '.')
