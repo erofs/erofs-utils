@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0+ OR Apache-2.0
+#include <stdlib.h>
+#include <sys/stat.h>
 #include "erofs/print.h"
 #include "erofs/dir.h"
-#include <stdlib.h>
 
 static int traverse_dirents(struct erofs_dir_context *ctx,
 			    void *dentry_blk, unsigned int lblk,
@@ -126,7 +127,7 @@ int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck)
 	erofs_off_t pos;
 	char buf[EROFS_BLKSIZ];
 
-	if ((dir->i_mode & S_IFMT) != S_IFDIR)
+	if (!S_ISDIR(dir->i_mode))
 		return -ENOTDIR;
 
 	ctx->flags &= ~EROFS_READDIR_ALL_SPECIAL_FOUND;
@@ -165,4 +166,105 @@ int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck)
 		return -EFSCORRUPTED;
 	}
 	return err;
+}
+
+#define EROFS_PATHNAME_FOUND 1
+
+struct erofs_get_pathname_context {
+	struct erofs_dir_context ctx;
+	erofs_nid_t target_nid;
+	char *buf;
+	size_t size;
+	size_t pos;
+};
+
+static int erofs_get_pathname_iter(struct erofs_dir_context *ctx)
+{
+	int ret;
+	struct erofs_get_pathname_context *pathctx = (void *)ctx;
+	const char *dname = ctx->dname;
+	size_t len = ctx->de_namelen;
+	size_t pos = pathctx->pos;
+
+	if (ctx->dot_dotdot)
+		return 0;
+
+	if (ctx->de_nid == pathctx->target_nid) {
+		if (pos + len + 2 > pathctx->size) {
+			erofs_err("get_pathname buffer not large enough: len %zd, size %zd",
+				  pos + len + 2, pathctx->size);
+			return -ERANGE;
+		}
+
+		pathctx->buf[pos++] = '/';
+		strncpy(pathctx->buf + pos, dname, len);
+		pathctx->buf[pos + len] = '\0';
+		return EROFS_PATHNAME_FOUND;
+	}
+
+	if (ctx->de_ftype == EROFS_FT_DIR || ctx->de_ftype == EROFS_FT_UNKNOWN) {
+		struct erofs_inode dir = { .nid = ctx->de_nid };
+
+		ret = erofs_read_inode_from_disk(&dir);
+		if (ret) {
+			erofs_err("read inode failed @ nid %llu", dir.nid | 0ULL);
+			return ret;
+		}
+
+		if (S_ISDIR(dir.i_mode)) {
+			ctx->dir = &dir;
+			pathctx->pos = pos + len + 1;
+			ret = erofs_iterate_dir(ctx, false);
+			pathctx->pos = pos;
+			if (ret == EROFS_PATHNAME_FOUND) {
+				pathctx->buf[pos++] = '/';
+				strncpy(pathctx->buf + pos, dname, len);
+			}
+			return ret;
+		} else if (ctx->de_ftype == EROFS_FT_DIR) {
+			erofs_err("i_mode and file_type are inconsistent @ nid %llu",
+				  dir.nid | 0ULL);
+		}
+	}
+	return 0;
+}
+
+int erofs_get_pathname(erofs_nid_t nid, char *buf, size_t size)
+{
+	int ret;
+	struct erofs_inode root = { .nid = sbi.root_nid };
+	struct erofs_get_pathname_context pathctx = {
+		.ctx.flags = 0,
+		.ctx.dir = &root,
+		.ctx.cb = erofs_get_pathname_iter,
+		.target_nid = nid,
+		.buf = buf,
+		.size = size,
+		.pos = 0,
+	};
+
+	if (nid == root.nid) {
+		if (size < 2) {
+			erofs_err("get_pathname buffer not large enough: len 2, size %zd",
+				  size);
+			return -ERANGE;
+		}
+
+		buf[0] = '/';
+		buf[1] = '\0';
+		return 0;
+	}
+
+	ret = erofs_read_inode_from_disk(&root);
+	if (ret) {
+		erofs_err("read inode failed @ nid %llu", root.nid | 0ULL);
+		return ret;
+	}
+
+	ret = erofs_iterate_dir(&pathctx.ctx, false);
+	if (ret == EROFS_PATHNAME_FOUND)
+		return 0;
+	if (!ret)
+		return -ENOENT;
+	return ret;
 }
