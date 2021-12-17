@@ -297,37 +297,6 @@ static int erofsdump_readdir(struct erofs_dir_context *ctx)
 	return 0;
 }
 
-static inline int erofs_checkdirent(struct erofs_dirent *de,
-		struct erofs_dirent *last_de,
-		u32 maxsize, const char *dname)
-{
-	int dname_len;
-	unsigned int nameoff = le16_to_cpu(de->nameoff);
-	erofs_nid_t nid = le64_to_cpu(de->nid);
-
-	if (nameoff < sizeof(struct erofs_dirent) ||
-			nameoff >= PAGE_SIZE) {
-		erofs_err("invalid de[0].nameoff %u @ nid %llu",
-				nameoff, nid | 0ULL);
-		return -EFSCORRUPTED;
-	}
-
-	dname_len = (de + 1 >= last_de) ? strnlen(dname, maxsize - nameoff) :
-				le16_to_cpu(de[1].nameoff) - nameoff;
-	/* a corrupted entry is found */
-	if (nameoff + dname_len > maxsize ||
-			dname_len > EROFS_NAME_LEN) {
-		erofs_err("bogus dirent @ nid %llu", nid | 0ULL);
-		DBG_BUGON(1);
-		return -EFSCORRUPTED;
-	}
-	if (de->file_type >= EROFS_FT_MAX) {
-		erofs_err("invalid file type %llu", nid | 0ULL);
-		return -EFSCORRUPTED;
-	}
-	return dname_len;
-}
-
 static int erofsdump_map_blocks(struct erofs_inode *inode,
 		struct erofs_map_blocks *map, int flags)
 {
