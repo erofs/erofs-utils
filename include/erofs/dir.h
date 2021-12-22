@@ -39,6 +39,15 @@ typedef int (*erofs_readdir_cb)(struct erofs_dir_context *);
  * the callback context. |de_namelen| is the exact dirent name length.
  */
 struct erofs_dir_context {
+	/*
+	 * During execution of |erofs_iterate_dir|, the function needs to
+	 * read the values inside |erofs_inode* dir|. So it is important
+	 * that the callback function does not modify stuct pointed by
+	 * |dir|. It is OK to repoint |dir| to other objects.
+	 * Unfortunately, it's not possible to enforce this restriction
+	 * with const keyword, as |erofs_iterate_dir| needs to modify
+	 * struct pointed by |dir|.
+	 */
 	struct erofs_inode *dir;
 	erofs_readdir_cb cb;
 	erofs_nid_t pnid;		/* optional */
