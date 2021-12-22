@@ -176,7 +176,7 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 	return 0;
 }
 
-static int erofs_get_occupied_size(struct erofs_inode *inode,
+static int erofsdump_get_occupied_size(struct erofs_inode *inode,
 		erofs_off_t *size)
 {
 	*size = 0;
@@ -194,7 +194,7 @@ static int erofs_get_occupied_size(struct erofs_inode *inode,
 		break;
 	default:
 		erofs_err("unknown datalayout");
-		return -1;
+		return -ENOTSUP;
 	}
 	return 0;
 }
@@ -270,7 +270,7 @@ static int erofsdump_readdir(struct erofs_dir_context *ctx)
 	stats.files++;
 	stats.file_category_stat[erofs_mode_to_ftype(vi.i_mode)]++;
 
-	err = erofs_get_occupied_size(&vi, &occupied_size);
+	err = erofsdump_get_occupied_size(&vi, &occupied_size);
 	if (err) {
 		erofs_err("get file size failed");
 		return err;
