@@ -345,7 +345,7 @@ static void erofsdump_show_fileinfo(bool show_extent)
 		return;
 	}
 
-	err = erofs_get_pathname(dumpcfg.nid, path, sizeof(path));
+	err = erofs_get_pathname(inode.nid, path, sizeof(path));
 	if (err < 0) {
 		erofs_err("file path not found @ nid %llu", inode.nid | 0ULL);
 		return;
