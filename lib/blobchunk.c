@@ -113,7 +113,7 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 
 	if (multidev) {
 		idx.device_id = 1;
-		inode->u.chunkformat |= EROFS_CHUNK_FORMAT_INDEXES;
+		DBG_BUGON(!(inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES));
 	} else {
 		base_blkaddr = remapped_base;
 	}
@@ -171,6 +171,8 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode)
 	int fd, ret;
 
 	inode->u.chunkformat |= inode->u.chunkbits - LOG_BLOCK_SIZE;
+	if (multidev)
+		inode->u.chunkformat |= EROFS_CHUNK_FORMAT_INDEXES;
 
 	if (inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES)
 		unit = sizeof(struct erofs_inode_chunk_index);
