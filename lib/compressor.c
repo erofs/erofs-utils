@@ -24,23 +24,29 @@ static const struct erofs_compressor *compressors[] = {
 
 int erofs_compress_destsize(const struct erofs_compress *c,
 			    const void *src, unsigned int *srcsize,
-			    void *dst, unsigned int dstsize)
+			    void *dst, unsigned int dstsize, bool inblocks)
 {
-	unsigned int uncompressed_size;
+	unsigned int uncompressed_capacity, compressed_size;
 	int ret;
 
 	DBG_BUGON(!c->alg);
 	if (!c->alg->compress_destsize)
 		return -ENOTSUP;
 
+	uncompressed_capacity = *srcsize;
 	ret = c->alg->compress_destsize(c, src, srcsize, dst, dstsize);
 	if (ret < 0)
 		return ret;
 
+	/* XXX: ret >= EROFS_BLKSIZ is a temporary hack for ztailpacking */
+	if (inblocks || ret >= EROFS_BLKSIZ ||
+	    uncompressed_capacity != *srcsize)
+		compressed_size = roundup(ret, EROFS_BLKSIZ);
+	else
+		compressed_size = ret;
+	DBG_BUGON(c->compress_threshold < 100);
 	/* check if there is enough gains to compress */
-	uncompressed_size = *srcsize;
-	if (roundup(ret, EROFS_BLKSIZ) >= uncompressed_size *
-	    c->compress_threshold / 100)
+	if (*srcsize <= compressed_size * c->compress_threshold / 100)
 		return -EAGAIN;
 	return ret;
 }

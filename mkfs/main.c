@@ -187,6 +187,12 @@ static int parse_extended_opts(const char *opts)
 				return -EINVAL;
 			cfg.c_force_chunkformat = FORCE_INODE_CHUNK_INDEXES;
 		}
+
+		if (MATCH_EXTENTED_OPT("ztailpacking", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			cfg.c_ztailpacking = true;
+		}
 	}
 	return 0;
 }
@@ -625,6 +631,8 @@ int main(int argc, char **argv)
 	erofs_show_config();
 	if (erofs_sb_has_chunked_file())
 		erofs_warn("EXPERIMENTAL chunked file feature in use. Use at your own risk!");
+	if (cfg.c_ztailpacking)
+		erofs_warn("EXPERIMENTAL compressed inline data feature in use. Use at your own risk!");
 	erofs_set_fs_root(cfg.c_src_path);
 #ifndef NDEBUG
 	if (cfg.c_random_pclusterblks)

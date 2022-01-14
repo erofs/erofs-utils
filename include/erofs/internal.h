@@ -175,6 +175,7 @@ struct erofs_inode {
 	unsigned char inode_isize;
 	/* inline tail-end packing size */
 	unsigned short idata_size;
+	bool compressed_idata;
 
 	unsigned int xattr_isize;
 	unsigned int extent_isize;
