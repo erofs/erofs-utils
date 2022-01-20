@@ -595,7 +595,7 @@ int main(int argc, char **argv)
 	err = lstat64(cfg.c_src_path, &st);
 	if (err)
 		return 1;
-	if ((st.st_mode & S_IFMT) != S_IFDIR) {
+	if (!S_ISDIR(st.st_mode)) {
 		erofs_err("root of the filesystem is not a directory - %s",
 			  cfg.c_src_path);
 		usage();
