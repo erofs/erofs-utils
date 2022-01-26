@@ -665,7 +665,7 @@ verify:
 		ret = erofs_iterate_dir(&ctx, true);
 	}
 
-	if (!ret)
+	if (!ret && fsckcfg.extract_path)
 		erofsfsck_set_attributes(&inode, fsckcfg.extract_path);
 
 out:
