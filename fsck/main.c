@@ -496,8 +496,8 @@ static inline int erofs_extract_file(struct erofs_inode *inode)
 
 again:
 	fd = open(fsckcfg.extract_path,
-		  O_WRONLY | O_CREAT | (fsckcfg.overwrite ? O_TRUNC : O_EXCL),
-		  0700);
+		  O_WRONLY | O_CREAT | O_NOFOLLOW |
+			(fsckcfg.overwrite ? O_TRUNC : O_EXCL), 0700);
 	if (fd < 0) {
 		if (fsckcfg.overwrite && tryagain) {
 			if (errno == EISDIR) {
