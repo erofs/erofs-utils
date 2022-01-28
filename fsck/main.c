@@ -18,15 +18,19 @@
 static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid);
 
 struct erofsfsck_cfg {
+	u64 physical_blocks;
+	u64 logical_blocks;
+	char *extract_path;
+	size_t extract_pos;
+	mode_t umask;
+	bool superuser;
 	bool corrupted;
 	bool print_comp_ratio;
 	bool check_decomp;
-	char *extract_path;
-	size_t extract_pos;
-	bool overwrite, preserve_owner, preserve_perms;
-	mode_t umask;
-	u64 physical_blocks;
-	u64 logical_blocks;
+	bool force;
+	bool overwrite;
+	bool preserve_owner;
+	bool preserve_perms;
 };
 static struct erofsfsck_cfg fsckcfg;
 
@@ -34,11 +38,14 @@ static struct option long_options[] = {
 	{"help", no_argument, 0, 1},
 	{"extract", optional_argument, 0, 2},
 	{"device", required_argument, 0, 3},
-	{"no-same-owner", no_argument, 0, 4},
-	{"no-same-permissions", no_argument, 0, 5},
-	{"same-owner", no_argument, 0, 6},
-	{"same-permissions", no_argument, 0, 7},
-	{"overwrite", no_argument, 0, 8},
+	{"force", no_argument, 0, 4},
+	{"overwrite", no_argument, 0, 5},
+	{"preserve", no_argument, 0, 6},
+	{"preserve-owner", no_argument, 0, 7},
+	{"preserve-perms", no_argument, 0, 8},
+	{"no-preserve", no_argument, 0, 9},
+	{"no-preserve-owner", no_argument, 0, 10},
+	{"no-preserve-perms", no_argument, 0, 11},
 	{0, 0, 0, 0},
 };
 
@@ -66,11 +73,16 @@ static void usage(void)
 	      " --extract[=X]          check if all files are well encoded, optionally extract to X\n"
 	      " --help                 display this help and exit\n"
 	      "\nExtraction options (--extract=X is required):\n"
-	      " --no-same-owner        extract files as yourself\n"
-	      " --no-same-permissions  apply the user's umask when extracting permission\n"
-	      " --same-permissions     extract information about file permissions\n"
-	      " --same-owner           extract files about the file ownerships\n"
-	      " --overwrite            if file already exists then overwrite\n"
+	      " --force                allow extracting to root\n"
+	      " --overwrite            overwrite files that already exist\n"
+	      " --preserve             extract with the same ownership and permissions as on the filesystem\n"
+	      "                        (default for superuser)\n"
+	      " --preserve-owner       extract with the same ownership as on the filesystem\n"
+	      " --preserve-perms       extract with the same permissions as on the filesystem\n"
+	      " --no-preserve          extract as yourself and apply user's umask on permissions\n"
+	      "                        (default for ordinary users)\n"
+	      " --no-preserve-owner    extract as yourself\n"
+	      " --no-preserve-perms    apply user's umask when extracting permissions\n"
 	      "\nSupported algorithms are: ", stderr);
 	print_available_decompressors(stderr, ", ");
 }
@@ -83,6 +95,7 @@ static void erofsfsck_print_version(void)
 static int erofsfsck_parse_options_cfg(int argc, char **argv)
 {
 	int opt, ret;
+	bool has_opt_preserve = false;
 
 	while ((opt = getopt_long(argc, argv, "Vd:p",
 				  long_options, NULL)) != -1) {
@@ -121,6 +134,9 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 					return -ENOMEM;
 				strncpy(fsckcfg.extract_path, optarg, len);
 				fsckcfg.extract_path[len] = '\0';
+				/* if path is root, start writing from position 0 */
+				if (len == 1 && fsckcfg.extract_path[0] == '/')
+					len = 0;
 				fsckcfg.extract_pos = len;
 			}
 			break;
@@ -131,32 +147,62 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 			++sbi.extra_devices;
 			break;
 		case 4:
-			fsckcfg.preserve_owner = false;
+			fsckcfg.force = true;
 			break;
 		case 5:
-			fsckcfg.preserve_perms = false;
+			fsckcfg.overwrite = true;
 			break;
 		case 6:
-			fsckcfg.preserve_owner = true;
+			fsckcfg.preserve_owner = fsckcfg.preserve_perms = true;
+			has_opt_preserve = true;
 			break;
 		case 7:
-			fsckcfg.preserve_perms = true;
+			fsckcfg.preserve_owner = true;
+			has_opt_preserve = true;
 			break;
 		case 8:
-			fsckcfg.overwrite = true;
+			fsckcfg.preserve_perms = true;
+			has_opt_preserve = true;
+			break;
+		case 9:
+			fsckcfg.preserve_owner = fsckcfg.preserve_perms = false;
+			has_opt_preserve = true;
+			break;
+		case 10:
+			fsckcfg.preserve_owner = false;
+			has_opt_preserve = true;
+			break;
+		case 11:
+			fsckcfg.preserve_perms = false;
+			has_opt_preserve = true;
 			break;
 		default:
 			return -EINVAL;
 		}
 	}
 
+	if (fsckcfg.extract_path) {
+		if (!fsckcfg.extract_pos && !fsckcfg.force) {
+			erofs_err("--extract=/ must be used together with --force");
+			return -EINVAL;
+		}
+	} else {
+		if (fsckcfg.force) {
+			erofs_err("--force must be used together with --extract=X");
+			return -EINVAL;
+		}
+		if (fsckcfg.overwrite) {
+			erofs_err("--overwrite must be used together with --extract=X");
+			return -EINVAL;
+		}
+		if (has_opt_preserve) {
+			erofs_err("--[no-]preserve[-owner/-perms] must be used together with --extract=X");
+			return -EINVAL;
+		}
+	}
+
 	if (optind >= argc)
 		return -EINVAL;
-
-	if (!fsckcfg.extract_path)
-		if (fsckcfg.overwrite || fsckcfg.preserve_owner ||
-		    fsckcfg.preserve_perms)
-			return -EINVAL;
 
 	cfg.c_img_path = strdup(argv[optind++]);
 	if (!cfg.c_img_path)
@@ -682,13 +728,19 @@ int main(int argc, char **argv)
 
 	erofs_init_configure();
 
+	fsckcfg.superuser = geteuid() == 0;
+	fsckcfg.umask = umask(0);
 	fsckcfg.corrupted = false;
+	fsckcfg.logical_blocks = 0;
+	fsckcfg.physical_blocks = 0;
 	fsckcfg.print_comp_ratio = false;
 	fsckcfg.check_decomp = false;
 	fsckcfg.extract_path = NULL;
 	fsckcfg.extract_pos = 0;
-	fsckcfg.logical_blocks = 0;
-	fsckcfg.physical_blocks = 0;
+	fsckcfg.force = false;
+	fsckcfg.overwrite = false;
+	fsckcfg.preserve_owner = fsckcfg.superuser;
+	fsckcfg.preserve_perms = fsckcfg.superuser;
 
 	err = erofsfsck_parse_options_cfg(argc, argv);
 	if (err) {
@@ -696,8 +748,6 @@ int main(int argc, char **argv)
 			usage();
 		goto exit;
 	}
-
-	fsckcfg.umask = umask(0);
 
 	err = dev_open_ro(cfg.c_img_path);
 	if (err) {
