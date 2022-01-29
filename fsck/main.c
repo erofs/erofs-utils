@@ -122,8 +122,10 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 			if (optarg) {
 				size_t len = strlen(optarg);
 
-				if (len == 0)
+				if (len == 0) {
+					erofs_err("empty value given for --extract=X");
 					return -EINVAL;
+				}
 
 				/* remove trailing slashes except root */
 				while (len > 1 && optarg[len - 1] == '/')
@@ -201,8 +203,10 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 		}
 	}
 
-	if (optind >= argc)
+	if (optind >= argc) {
+		erofs_err("missing argument: IMAGE");
 		return -EINVAL;
+	}
 
 	cfg.c_img_path = strdup(argv[optind++]);
 	if (!cfg.c_img_path)
@@ -513,7 +517,7 @@ static inline int erofs_extract_dir(struct erofs_inode *inode)
 		struct stat st;
 
 		if (errno != EEXIST) {
-			erofs_err("failed to create directory %s: %s",
+			erofs_err("failed to create directory: %s (%s)",
 				  fsckcfg.extract_path, strerror(errno));
 			return -errno;
 		}
@@ -529,8 +533,11 @@ static inline int erofs_extract_dir(struct erofs_inode *inode)
 		 * Try to change permissions of existing directory so
 		 * that we can write to it
 		 */
-		if (chmod(fsckcfg.extract_path, 0700) < 0)
+		if (chmod(fsckcfg.extract_path, 0700) < 0) {
+			erofs_err("failed to set permissions: %s (%s)",
+				  fsckcfg.extract_path, strerror(errno));
 			return -errno;
+		}
 	}
 	return 0;
 }
@@ -552,18 +559,20 @@ again:
 				erofs_warn("try to forcely remove directory %s",
 					   fsckcfg.extract_path);
 				if (rmdir(fsckcfg.extract_path) < 0) {
-					erofs_err("failed to remove: %s",
-						  fsckcfg.extract_path);
+					erofs_err("failed to remove: %s (%s)",
+						  fsckcfg.extract_path, strerror(errno));
 					return -EISDIR;
 				}
 			} else if (errno == EACCES &&
 				   chmod(fsckcfg.extract_path, 0700) < 0) {
+				erofs_err("failed to set permissions: %s (%s)",
+					  fsckcfg.extract_path, strerror(errno));
 				return -errno;
 			}
 			tryagain = false;
 			goto again;
 		}
-		erofs_err("failed to open %s: %s", fsckcfg.extract_path,
+		erofs_err("failed to open: %s (%s)", fsckcfg.extract_path,
 			  strerror(errno));
 		return -errno;
 	}
@@ -728,15 +737,15 @@ int main(int argc, char **argv)
 
 	erofs_init_configure();
 
-	fsckcfg.superuser = geteuid() == 0;
-	fsckcfg.umask = umask(0);
-	fsckcfg.corrupted = false;
-	fsckcfg.logical_blocks = 0;
 	fsckcfg.physical_blocks = 0;
-	fsckcfg.print_comp_ratio = false;
-	fsckcfg.check_decomp = false;
+	fsckcfg.logical_blocks = 0;
 	fsckcfg.extract_path = NULL;
 	fsckcfg.extract_pos = 0;
+	fsckcfg.umask = umask(0);
+	fsckcfg.superuser = geteuid() == 0;
+	fsckcfg.corrupted = false;
+	fsckcfg.print_comp_ratio = false;
+	fsckcfg.check_decomp = false;
 	fsckcfg.force = false;
 	fsckcfg.overwrite = false;
 	fsckcfg.preserve_owner = fsckcfg.superuser;
@@ -775,9 +784,9 @@ int main(int argc, char **argv)
 		err = -EFSCORRUPTED;
 	} else if (!err) {
 		if (!fsckcfg.extract_path)
-			erofs_info("No error found");
+			erofs_info("No errors found");
 		else
-			erofs_info("Extract data successfully");
+			erofs_info("Extracted filesystem successfully");
 
 		if (fsckcfg.print_comp_ratio) {
 			double comp_ratio =

@@ -162,8 +162,10 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 		}
 	}
 
-	if (optind >= argc)
+	if (optind >= argc) {
+		erofs_err("missing argument: IMAGE");
 		return -EINVAL;
+	}
 
 	cfg.c_img_path = strdup(argv[optind++]);
 	if (!cfg.c_img_path)

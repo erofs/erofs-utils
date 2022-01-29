@@ -381,9 +381,6 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		}
 	}
 
-	if (optind >= argc)
-		return -EINVAL;
-
 	if (cfg.c_blobdev_path && cfg.c_chunkbits < LOG_BLOCK_SIZE) {
 		erofs_err("--blobdev must be used together with --chunksize");
 		return -EINVAL;
@@ -396,24 +393,29 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		return -EINVAL;
 	}
 
+	if (optind >= argc) {
+		erofs_err("missing argument: FILE");
+		return -EINVAL;
+	}
+
 	cfg.c_img_path = strdup(argv[optind++]);
 	if (!cfg.c_img_path)
 		return -ENOMEM;
 
 	if (optind >= argc) {
-		erofs_err("Source directory is missing");
+		erofs_err("missing argument: DIRECTORY");
 		return -EINVAL;
 	}
 
 	cfg.c_src_path = realpath(argv[optind++], NULL);
 	if (!cfg.c_src_path) {
-		erofs_err("Failed to parse source directory: %s",
+		erofs_err("failed to parse source directory: %s",
 			  erofs_strerror(-errno));
 		return -ENOENT;
 	}
 
 	if (optind < argc) {
-		erofs_err("Unexpected argument: %s\n", argv[optind]);
+		erofs_err("unexpected argument: %s\n", argv[optind]);
 		return -EINVAL;
 	}
 	if (quiet)
@@ -456,7 +458,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 
 	buf = calloc(sb_blksize, 1);
 	if (!buf) {
-		erofs_err("Failed to allocate memory for sb: %s",
+		erofs_err("failed to allocate memory for sb: %s",
 			  erofs_strerror(-errno));
 		return -ENOMEM;
 	}
@@ -538,7 +540,7 @@ int parse_source_date_epoch(void)
 
 	epoch = strtoull(source_date_epoch, &endptr, 10);
 	if (epoch == -1ULL || *endptr != '\0') {
-		erofs_err("Environment variable $SOURCE_DATE_EPOCH %s is invalid",
+		erofs_err("environment variable $SOURCE_DATE_EPOCH %s is invalid",
 			  source_date_epoch);
 		return -EINVAL;
 	}
@@ -641,34 +643,34 @@ int main(int argc, char **argv)
 	sb_bh = erofs_buffer_init();
 	if (IS_ERR(sb_bh)) {
 		err = PTR_ERR(sb_bh);
-		erofs_err("Failed to initialize buffers: %s",
+		erofs_err("failed to initialize buffers: %s",
 			  erofs_strerror(err));
 		goto exit;
 	}
 	err = erofs_bh_balloon(sb_bh, EROFS_SUPER_END);
 	if (err < 0) {
-		erofs_err("Failed to balloon erofs_super_block: %s",
+		erofs_err("failed to balloon erofs_super_block: %s",
 			  erofs_strerror(err));
 		goto exit;
 	}
 
 	err = erofs_load_compress_hints();
 	if (err) {
-		erofs_err("Failed to load compress hints %s",
+		erofs_err("failed to load compress hints %s",
 			  cfg.c_compress_hints_file);
 		goto exit;
 	}
 
 	err = z_erofs_compress_init(sb_bh);
 	if (err) {
-		erofs_err("Failed to initialize compressor: %s",
+		erofs_err("failed to initialize compressor: %s",
 			  erofs_strerror(err));
 		goto exit;
 	}
 
 	err = erofs_generate_devtable();
 	if (err) {
-		erofs_err("Failed to generate device table: %s",
+		erofs_err("failed to generate device table: %s",
 			  erofs_strerror(err));
 		goto exit;
 	}
@@ -681,7 +683,7 @@ int main(int argc, char **argv)
 
 	err = erofs_build_shared_xattrs_from_path(cfg.c_src_path);
 	if (err) {
-		erofs_err("Failed to build shared xattrs: %s",
+		erofs_err("failed to build shared xattrs: %s",
 			  erofs_strerror(err));
 		goto exit;
 	}
