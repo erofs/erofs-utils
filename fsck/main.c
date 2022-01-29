@@ -173,15 +173,17 @@ static void erofsfsck_set_attributes(struct erofs_inode *inode, char *path)
 {
 	int ret;
 
-#ifdef HAVE_UTIMENSAT
-	const struct timespec times[2] = {
-		[0] = { .tv_sec = inode->i_ctime,
-			.tv_nsec = inode->i_ctime_nsec },
-		[1] = { .tv_sec = inode->i_ctime,
-			.tv_nsec = inode->i_ctime_nsec },
-	};
+	/* don't apply attributes when fsck is used without extraction */
+	if (!fsckcfg.extract_path)
+		return;
 
-	if (utimensat(AT_FDCWD, path, times, AT_SYMLINK_NOFOLLOW) < 0)
+#ifdef HAVE_UTIMENSAT
+	if (utimensat(AT_FDCWD, path, (struct timespec []) {
+				[0] = { .tv_sec = inode->i_ctime,
+					.tv_nsec = inode->i_ctime_nsec },
+				[1] = { .tv_sec = inode->i_ctime,
+					.tv_nsec = inode->i_ctime_nsec },
+			}, AT_SYMLINK_NOFOLLOW) < 0)
 #else
 	if (utime(path, &((struct utimbuf){.actime = inode->i_ctime,
 					   .modtime = inode->i_ctime})) < 0)
@@ -665,7 +667,7 @@ verify:
 		ret = erofs_iterate_dir(&ctx, true);
 	}
 
-	if (!ret && fsckcfg.extract_path)
+	if (!ret)
 		erofsfsck_set_attributes(&inode, fsckcfg.extract_path);
 
 out:
