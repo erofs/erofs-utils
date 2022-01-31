@@ -418,7 +418,8 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 							   inode->xattr_isize) +
 				  sizeof(struct z_erofs_map_header);
 	const unsigned int totalidx = (legacymetasize -
-				       Z_EROFS_LEGACY_MAP_HEADER_SIZE) / 8;
+			Z_EROFS_LEGACY_MAP_HEADER_SIZE) /
+				sizeof(struct z_erofs_vle_decompressed_index);
 	const unsigned int logical_clusterbits = inode->z_logical_clusterbits;
 	u8 *out, *in;
 	struct z_erofs_compressindex_vec cv[16];
