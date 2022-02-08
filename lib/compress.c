@@ -100,7 +100,22 @@ static void vle_write_indexes(struct z_erofs_vle_compress_ctx *ctx,
 		} else if (d0) {
 			type = Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD;
 
-			di.di_u.delta[0] = cpu_to_le16(d0);
+			/*
+			 * If the |Z_EROFS_VLE_DI_D0_CBLKCNT| bit is set, parser
+			 * will interpret |delta[0]| as size of pcluster, rather
+			 * than distance to last head cluster. Normally this
+			 * isn't a problem, because uncompressed extent size are
+			 * below Z_EROFS_VLE_DI_D0_CBLKCNT * BLOCK_SIZE = 8MB.
+			 * But with large pcluster it's possible to go over this
+			 * number, resulting in corrupted compressed indices.
+			 * To solve this, we replace d0 with
+			 * Z_EROFS_VLE_DI_D0_CBLKCNT-1.
+			 */
+			if (d0 >= Z_EROFS_VLE_DI_D0_CBLKCNT)
+				di.di_u.delta[0] = cpu_to_le16(
+						Z_EROFS_VLE_DI_D0_CBLKCNT - 1);
+			else
+				di.di_u.delta[0] = cpu_to_le16(d0);
 			di.di_u.delta[1] = cpu_to_le16(d1);
 		} else {
 			type = raw ? Z_EROFS_VLE_CLUSTER_TYPE_PLAIN :
