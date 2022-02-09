@@ -35,7 +35,7 @@ void erofs_show_config(void)
 {
 	const struct erofs_configure *c = &cfg;
 
-	if (c->c_dbg_lvl < EROFS_WARN)
+	if (c->c_dbg_lvl < EROFS_INFO)
 		return;
 	erofs_dump("\tc_version:           [%8s]\n", c->c_version);
 	erofs_dump("\tc_dbg_lvl:           [%8d]\n", c->c_dbg_lvl);
