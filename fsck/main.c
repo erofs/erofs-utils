@@ -89,7 +89,7 @@ static void usage(void)
 
 static void erofsfsck_print_version(void)
 {
-	fprintf(stderr, "fsck.erofs %s\n", cfg.c_version);
+	printf("fsck.erofs %s\n", cfg.c_version);
 }
 
 static int erofsfsck_parse_options_cfg(int argc, char **argv)

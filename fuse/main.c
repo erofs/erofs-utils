@@ -258,7 +258,7 @@ int main(int argc, char *argv[])
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
 	erofs_init_configure();
-	fprintf(stderr, "%s %s\n", basename(argv[0]), cfg.c_version);
+	printf("%s %s\n", basename(argv[0]), cfg.c_version);
 
 #if defined(HAVE_EXECINFO_H) && defined(HAVE_BACKTRACE)
 	if (signal(SIGSEGV, signal_handle_sigsegv) == SIG_ERR) {

@@ -113,7 +113,7 @@ static void usage(void)
 
 static void erofsdump_print_version(void)
 {
-	fprintf(stderr, "dump.erofs %s\n", cfg.c_version);
+	printf("dump.erofs %s\n", cfg.c_version);
 }
 
 static int erofsdump_parse_options_cfg(int argc, char **argv)

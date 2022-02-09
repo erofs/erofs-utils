@@ -557,7 +557,7 @@ int parse_source_date_epoch(void)
 void erofs_show_progs(int argc, char *argv[])
 {
 	if (cfg.c_dbg_lvl >= EROFS_WARN)
-		fprintf(stderr, "%s %s\n", basename(argv[0]), cfg.c_version);
+		printf("%s %s\n", basename(argv[0]), cfg.c_version);
 }
 
 int main(int argc, char **argv)
