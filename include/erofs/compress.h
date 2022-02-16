@@ -19,6 +19,7 @@ extern "C"
 #define EROFS_CONFIG_COMPR_MAX_SZ           (900  * 1024)
 #define EROFS_CONFIG_COMPR_MIN_SZ           (32   * 1024)
 
+void z_erofs_drop_inline_pcluster(struct erofs_inode *inode);
 int erofs_write_compressed_file(struct erofs_inode *inode);
 
 int z_erofs_compress_init(struct erofs_buffer_head *bh);

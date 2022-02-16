@@ -186,6 +186,10 @@ struct erofs_inode {
 
 	void *idata;
 
+	/* (ztailpacking) in order to recover uncompressed EOF data */
+	void *eof_tailraw;
+	unsigned int eof_tailrawsize;
+
 	union {
 		void *compressmeta;
 		void *chunkindexes;

@@ -96,6 +96,8 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 	list_for_each_entry_safe(d, t, &inode->i_subdirs, d_child)
 		free(d);
 
+	if (inode->eof_tailraw)
+		free(inode->eof_tailraw);
 	list_del(&inode->i_hash);
 	free(inode);
 	return 0;
@@ -614,7 +616,9 @@ static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 	if (bh == ERR_PTR(-ENOSPC)) {
 		int ret;
 
-		if (!is_inode_layout_compression(inode))
+		if (is_inode_layout_compression(inode))
+			z_erofs_drop_inline_pcluster(inode);
+		else
 			inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 noinline:
 		/* expend an extra block for tail-end data */
@@ -629,10 +633,7 @@ noinline:
 		return PTR_ERR(bh);
 	} else if (inode->idata_size) {
 		if (is_inode_layout_compression(inode)) {
-			struct z_erofs_map_header *h = inode->compressmeta;
-
 			DBG_BUGON(!cfg.c_ztailpacking);
-			h->h_advise |= Z_EROFS_ADVISE_INLINE_PCLUSTER;
 			erofs_dbg("Inline %scompressed data (%u bytes) to %s",
 				  inode->compressed_idata ? "" : "un",
 				  inode->idata_size, inode->i_srcpath);
