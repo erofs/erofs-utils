@@ -599,16 +599,11 @@ int erofs_write_compressed_file(struct erofs_inode *inode)
 		remaining -= readcount;
 		ctx.tail += readcount;
 
-		/* do one compress round */
-		ret = vle_compress_one(inode, &ctx, false);
+		ret = vle_compress_one(inode, &ctx, !remaining);
 		if (ret)
-			goto err_bdrop;
+			goto err_free_idata;
 	}
-
-	/* do the final round */
-	ret = vle_compress_one(inode, &ctx, true);
-	if (ret)
-		goto err_free_idata;
+	DBG_BUGON(ctx.head != ctx.tail);
 
 	/* fall back to no compression mode */
 	compressed_blocks = ctx.blkaddr - blkaddr;
