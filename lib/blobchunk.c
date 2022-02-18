@@ -221,6 +221,8 @@ int erofs_blob_remap(void)
 
 	fflush(blobfile);
 	length = ftell(blobfile);
+	if (length < 0)
+		return -errno;
 	if (multidev) {
 		struct erofs_deviceslot dis = {
 			.blocks = erofs_blknr(length),
