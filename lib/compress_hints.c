@@ -88,6 +88,7 @@ int erofs_load_compress_hints(void)
 	char buf[PATH_MAX + 100];
 	FILE *f;
 	unsigned int line, max_pclustersize = 0;
+	int ret = 0;
 
 	if (!cfg.c_compress_hints_file)
 		return 0;
@@ -105,7 +106,8 @@ int erofs_load_compress_hints(void)
 		if (!pattern || *pattern == '\0') {
 			erofs_err("cannot find a match pattern at line %u",
 				  line);
-			return -EINVAL;
+			ret = -EINVAL;
+			goto out;
 		}
 		if (pclustersize % EROFS_BLKSIZ) {
 			erofs_warn("invalid physical clustersize %u, "
@@ -119,10 +121,12 @@ int erofs_load_compress_hints(void)
 		if (pclustersize > max_pclustersize)
 			max_pclustersize = pclustersize;
 	}
-	fclose(f);
+
 	if (cfg.c_pclusterblks_max * EROFS_BLKSIZ < max_pclustersize) {
 		cfg.c_pclusterblks_max = max_pclustersize / EROFS_BLKSIZ;
 		erofs_warn("update max pclusterblks to %u", cfg.c_pclusterblks_max);
 	}
-	return 0;
+out:
+	fclose(f);
+	return ret;
 }
