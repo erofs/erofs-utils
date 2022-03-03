@@ -61,7 +61,6 @@ typedef int16_t         s16;
 typedef int32_t         s32;
 typedef int64_t         s64;
 
-
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 /*
  * The host byte order is the same as network byte order,

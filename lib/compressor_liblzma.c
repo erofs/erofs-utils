@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+ OR Apache-2.0
 /*
- * erofs-utils/lib/compressor_liblzma.c
- *
  * Copyright (C) 2021 Gao Xiang <xiang@kernel.org>
  */
 #include <stdlib.h>

@@ -61,7 +61,6 @@ int erofsfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 #else
 	return erofs_iterate_dir(&ctx.ctx, true);
 #endif
-
 }
 
 static void *erofsfuse_init(struct fuse_conn_info *info)

@@ -144,7 +144,6 @@ bogusimode:
 	return -EFSCORRUPTED;
 }
 
-
 struct erofs_dirent *find_target_dirent(erofs_nid_t pnid,
 					void *dentry_blk,
 					const char *name, unsigned int len,

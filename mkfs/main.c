@@ -204,7 +204,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	bool quiet = false;
 
 	while ((opt = getopt_long(argc, argv, "C:E:T:U:d:x:z:",
-				 long_options, NULL)) != -1) {
+				  long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'z':
 			if (!optarg) {

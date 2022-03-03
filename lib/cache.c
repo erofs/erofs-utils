@@ -331,7 +331,6 @@ struct erofs_buffer_head *erofs_battach(struct erofs_buffer_head *bh,
 		return ERR_PTR(ret);
 	}
 	return nbh;
-
 }
 
 static erofs_blk_t __erofs_mapbh(struct erofs_buffer_block *bb)

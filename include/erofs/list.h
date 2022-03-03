@@ -110,7 +110,6 @@ static inline int list_empty(struct list_head *head)
 	     &pos->member != (head);                                           \
 	     pos = n, n = list_next_entry(n, member))
 
-
 #ifdef __cplusplus
 }
 #endif

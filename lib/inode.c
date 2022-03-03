@@ -1108,7 +1108,7 @@ fail:
 		d->type = ftype;
 
 		erofs_d_invalidate(d);
-		erofs_info("add file %s/%s (nid %llu, type %d)",
+		erofs_info("add file %s/%s (nid %llu, type %u)",
 			   dir->i_srcpath, d->name, (unsigned long long)d->nid,
 			   d->type);
 	}

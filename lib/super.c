@@ -15,7 +15,7 @@ static bool check_layout_compatibility(struct erofs_sb_info *sbi,
 	sbi->feature_incompat = feature;
 
 	/* check if current kernel meets all mandatory requirements */
-	if (feature & (~EROFS_ALL_FEATURE_INCOMPAT)) {
+	if (feature & ~EROFS_ALL_FEATURE_INCOMPAT) {
 		erofs_err("unidentified incompatible feature %x, please upgrade kernel version",
 			  feature & ~EROFS_ALL_FEATURE_INCOMPAT);
 		return false;
@@ -87,7 +87,7 @@ int erofs_read_superblock(void)
 	blkszbits = dsb->blkszbits;
 	/* 9(512 bytes) + LOG_SECTORS_PER_BLOCK == LOG_BLOCK_SIZE */
 	if (blkszbits != LOG_BLOCK_SIZE) {
-		erofs_err("blksize %u isn't supported on this platform",
+		erofs_err("blksize %d isn't supported on this platform",
 			  1 << blkszbits);
 		return ret;
 	}
