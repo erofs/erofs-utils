@@ -832,8 +832,8 @@ static int erofs_fill_inode(struct erofs_inode *inode,
 	inode->i_mode = st->st_mode;
 	inode->i_uid = cfg.c_uid == -1 ? st->st_uid : cfg.c_uid;
 	inode->i_gid = cfg.c_gid == -1 ? st->st_gid : cfg.c_gid;
-	inode->i_mtime = st->st_ctime;
-	inode->i_mtime_nsec = ST_CTIM_NSEC(st);
+	inode->i_mtime = st->st_mtime;
+	inode->i_mtime_nsec = ST_MTIM_NSEC(st);
 
 	switch (cfg.c_timeinherit) {
 	case TIMESTAMP_CLAMPING:

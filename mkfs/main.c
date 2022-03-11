@@ -517,7 +517,8 @@ static void erofs_mkfs_default_options(void)
 {
 	cfg.c_legacy_compress = false;
 	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
-	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM;
+	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM |
+			     EROFS_FEATURE_COMPAT_MTIME;
 
 	/* generate a default uuid first */
 #ifdef HAVE_LIBUUID
