@@ -155,8 +155,8 @@ struct erofs_inode {
 	u64 i_ino[2];
 	u32 i_uid;
 	u32 i_gid;
-	u64 i_ctime;
-	u32 i_ctime_nsec;
+	u64 i_mtime;
+	u32 i_mtime_nsec;
 	u32 i_nlink;
 
 	union {

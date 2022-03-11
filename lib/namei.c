@@ -79,8 +79,8 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 		vi->i_gid = le32_to_cpu(die->i_gid);
 		vi->i_nlink = le32_to_cpu(die->i_nlink);
 
-		vi->i_ctime = le64_to_cpu(die->i_ctime);
-		vi->i_ctime_nsec = le64_to_cpu(die->i_ctime_nsec);
+		vi->i_mtime = le64_to_cpu(die->i_mtime);
+		vi->i_mtime_nsec = le64_to_cpu(die->i_mtime_nsec);
 		vi->i_size = le64_to_cpu(die->i_size);
 		if (vi->datalayout == EROFS_INODE_CHUNK_BASED)
 			/* fill chunked inode summary info */
@@ -114,8 +114,8 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 		vi->i_gid = le16_to_cpu(dic->i_gid);
 		vi->i_nlink = le16_to_cpu(dic->i_nlink);
 
-		vi->i_ctime = sbi.build_time;
-		vi->i_ctime_nsec = sbi.build_time_nsec;
+		vi->i_mtime = sbi.build_time;
+		vi->i_mtime_nsec = sbi.build_time_nsec;
 
 		vi->i_size = le32_to_cpu(dic->i_size);
 		if (vi->datalayout == EROFS_INODE_CHUNK_BASED)

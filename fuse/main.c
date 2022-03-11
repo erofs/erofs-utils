@@ -97,7 +97,7 @@ static int erofsfuse_getattr(const char *path, struct stat *stbuf)
 	stbuf->st_gid = vi.i_gid;
 	if (S_ISBLK(vi.i_mode) || S_ISCHR(vi.i_mode))
 		stbuf->st_rdev = vi.u.i_rdev;
-	stbuf->st_ctime = vi.i_ctime;
+	stbuf->st_ctime = vi.i_mtime;
 	stbuf->st_mtime = stbuf->st_ctime;
 	stbuf->st_atime = stbuf->st_ctime;
 	return 0;

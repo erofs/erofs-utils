@@ -354,7 +354,7 @@ static void erofsdump_show_fileinfo(bool show_extent)
 	}
 
 	strftime(timebuf, sizeof(timebuf),
-		 "%Y-%m-%d %H:%M:%S", localtime((time_t *)&inode.i_ctime));
+		 "%Y-%m-%d %H:%M:%S", localtime((time_t *)&inode.i_mtime));
 	access_mode = inode.i_mode & 0777;
 	for (i = 8; i >= 0; i--)
 		if (((access_mode >> i) & 1) == 0)
@@ -373,7 +373,7 @@ static void erofsdump_show_fileinfo(bool show_extent)
 	fprintf(stdout,	"Xattr size: %u\n", inode.xattr_isize);
 	fprintf(stdout, "Uid: %u   Gid: %u  ", inode.i_uid, inode.i_gid);
 	fprintf(stdout, "Access: %04o/%s\n", access_mode, access_mode_str);
-	fprintf(stdout, "Timestamp: %s.%09d\n", timebuf, inode.i_ctime_nsec);
+	fprintf(stdout, "Timestamp: %s.%09d\n", timebuf, inode.i_mtime_nsec);
 
 	if (!dumpcfg.show_extent)
 		return;

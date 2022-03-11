@@ -479,8 +479,8 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		u.die.i_uid = cpu_to_le32(inode->i_uid);
 		u.die.i_gid = cpu_to_le32(inode->i_gid);
 
-		u.die.i_ctime = cpu_to_le64(inode->i_ctime);
-		u.die.i_ctime_nsec = cpu_to_le32(inode->i_ctime_nsec);
+		u.die.i_mtime = cpu_to_le64(inode->i_mtime);
+		u.die.i_mtime_nsec = cpu_to_le32(inode->i_mtime_nsec);
 
 		switch (inode->i_mode & S_IFMT) {
 		case S_IFCHR:
@@ -832,16 +832,16 @@ static int erofs_fill_inode(struct erofs_inode *inode,
 	inode->i_mode = st->st_mode;
 	inode->i_uid = cfg.c_uid == -1 ? st->st_uid : cfg.c_uid;
 	inode->i_gid = cfg.c_gid == -1 ? st->st_gid : cfg.c_gid;
-	inode->i_ctime = st->st_ctime;
-	inode->i_ctime_nsec = ST_CTIM_NSEC(st);
+	inode->i_mtime = st->st_ctime;
+	inode->i_mtime_nsec = ST_CTIM_NSEC(st);
 
 	switch (cfg.c_timeinherit) {
 	case TIMESTAMP_CLAMPING:
-		if (st->st_ctime < sbi.build_time)
+		if (inode->i_mtime < sbi.build_time)
 			break;
 	case TIMESTAMP_FIXED:
-		inode->i_ctime = sbi.build_time;
-		inode->i_ctime_nsec = sbi.build_time_nsec;
+		inode->i_mtime = sbi.build_time;
+		inode->i_mtime_nsec = sbi.build_time_nsec;
 	default:
 		break;
 	}

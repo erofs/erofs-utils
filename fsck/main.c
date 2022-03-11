@@ -229,14 +229,14 @@ static void erofsfsck_set_attributes(struct erofs_inode *inode, char *path)
 
 #ifdef HAVE_UTIMENSAT
 	if (utimensat(AT_FDCWD, path, (struct timespec []) {
-				[0] = { .tv_sec = inode->i_ctime,
-					.tv_nsec = inode->i_ctime_nsec },
-				[1] = { .tv_sec = inode->i_ctime,
-					.tv_nsec = inode->i_ctime_nsec },
+				[0] = { .tv_sec = inode->i_mtime,
+					.tv_nsec = inode->i_mtime_nsec },
+				[1] = { .tv_sec = inode->i_mtime,
+					.tv_nsec = inode->i_mtime_nsec },
 			}, AT_SYMLINK_NOFOLLOW) < 0)
 #else
-	if (utime(path, &((struct utimbuf){.actime = inode->i_ctime,
-					   .modtime = inode->i_ctime})) < 0)
+	if (utime(path, &((struct utimbuf){.actime = inode->i_mtime,
+					   .modtime = inode->i_mtime})) < 0)
 #endif
 		erofs_warn("failed to set times: %s", path);
 
