@@ -217,7 +217,7 @@ static struct xattr_item *erofs_get_selabel_xattr(const char *srcpath,
 		else
 #endif
 			ret = asprintf(&fspath, "/%s", erofs_fspath(srcpath));
-		if (ret <= 0)
+		if (ret < 0)
 			return ERR_PTR(-ENOMEM);
 
 		ret = selabel_lookup(cfg.sehnd, &secontext, fspath, mode);

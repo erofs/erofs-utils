@@ -788,7 +788,7 @@ int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
 		fspath = erofs_fspath(path);
 	} else {
 		if (asprintf(&decorated, "%s/%s", cfg.mount_point,
-			     erofs_fspath(path)) <= 0)
+			     erofs_fspath(path)) < 0)
 			return -ENOMEM;
 		fspath = decorated;
 	}
