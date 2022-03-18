@@ -112,6 +112,11 @@ Set all file gids to \fIGID\fR.
 .B \-\-help
 Display this help and exit.
 .TP
+.B "\-\-ignore-mtime"
+File modification time is ignored whenever it would cause \fBmkfs.erofs\fR to
+use extended inodes over compact inodes. When not using a fixed timestamp, this
+can reduce total metadata size.
+.TP
 .BI "\-\-max-extent-bytes " #
 Specify maximum decompressed extent size # in bytes.
 .SH AUTHOR

@@ -756,6 +756,10 @@ static bool erofs_should_use_inode_extended(struct erofs_inode *inode)
 		return true;
 	if (inode->i_nlink > USHRT_MAX)
 		return true;
+	if ((inode->i_mtime != sbi.build_time ||
+	     inode->i_mtime_nsec != sbi.build_time_nsec) &&
+	    !cfg.c_ignore_mtime)
+		return true;
 	return false;
 }
 

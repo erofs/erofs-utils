@@ -49,6 +49,7 @@ static struct option long_options[] = {
 	{"chunksize", required_argument, NULL, 11},
 	{"quiet", no_argument, 0, 12},
 	{"blobdev", required_argument, NULL, 13},
+	{"ignore-mtime", no_argument, NULL, 14},
 #ifdef WITH_ANDROID
 	{"mount-point", required_argument, NULL, 512},
 	{"product-out", required_argument, NULL, 513},
@@ -96,6 +97,7 @@ static void usage(void)
 	      " --force-uid=#         set all file uids to # (# = UID)\n"
 	      " --force-gid=#         set all file gids to # (# = GID)\n"
 	      " --help                display this help and exit\n"
+	      " --ignore-mtime        use build time instead of strict per-file modification time\n"
 	      " --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
 	      " --quiet               quiet execution (do not write anything to standard output.)\n"
 #ifndef NDEBUG
@@ -371,6 +373,9 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			break;
 		case 13:
 			cfg.c_blobdev_path = optarg;
+			break;
+		case 14:
+			cfg.c_ignore_mtime = true;
 			break;
 		case 1:
 			usage();
