@@ -19,6 +19,9 @@ is used to retrieve erofs metadata from \fIIMAGE\fP and demonstrate
 Specify an extra device to be used together.
 You may give multiple `--device' options in the correct order.
 .TP
+.BI "\-\-ls"
+List directory contents. An inode should be specified together.
+.TP
 .BI "\-\-nid=" NID
 Specify an inode NID in order to print its file information.
 .TP
@@ -26,7 +29,7 @@ Specify an inode NID in order to print its file information.
 Specify an inode path in order to print its file information.
 .TP
 .BI \-e
-Show the file extent information. The option depends on option --nid to specify NID.
+Show the file extent information. An inode should be specified together.
 .TP
 .BI \-V
 Print the version number and exit.

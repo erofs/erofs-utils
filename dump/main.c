@@ -26,6 +26,7 @@ struct erofsdump_cfg {
 	bool show_extent;
 	bool show_superblock;
 	bool show_statistics;
+	bool show_subdirectories;
 	erofs_nid_t nid;
 	const char *inode_path;
 };
@@ -77,6 +78,7 @@ static struct option long_options[] = {
 	{"nid", required_argument, NULL, 2},
 	{"device", required_argument, NULL, 3},
 	{"path", required_argument, NULL, 4},
+	{"ls", no_argument, NULL, 5},
 	{0, 0, 0, 0},
 };
 
@@ -103,9 +105,10 @@ static void usage(void)
 	      "Dump erofs layout from IMAGE, and [options] are:\n"
 	      " -S              show statistic information of the image\n"
 	      " -V              print the version number of dump.erofs and exit.\n"
-	      " -e              show extent info (--nid is required)\n"
+	      " -e              show extent info (INODE required)\n"
 	      " -s              show information about superblock\n"
 	      " --device=X      specify an extra device to be used together\n"
+	      " --ls            show directory contents (INODE required)\n"
 	      " --nid=#         show the target inode info of nid #\n"
 	      " --path=X        show the target inode info of path X\n"
 	      " --help          display this help and exit.\n",
@@ -157,6 +160,9 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 			dumpcfg.inode_path = optarg;
 			dumpcfg.show_inode = true;
 			++dumpcfg.totalshow;
+			break;
+		case 5:
+			dumpcfg.show_subdirectories = true;
 			break;
 		default:
 			return -EINVAL;
@@ -248,6 +254,17 @@ static void update_file_size_statatics(erofs_off_t occupied_size,
 		stats.file_comp_size[FILE_MAX_SIZE_BITS]++;
 	else
 		stats.file_comp_size[occupied_size_mark]++;
+}
+
+static int erofsdump_ls_dirent_iter(struct erofs_dir_context *ctx)
+{
+	char fname[EROFS_NAME_LEN + 1];
+
+	strncpy(fname, ctx->dname, ctx->de_namelen);
+	fname[ctx->de_namelen] = '\0';
+	fprintf(stdout, "%10llu    %u  %s\n",  ctx->de_nid | 0ULL,
+		ctx->de_ftype, fname);
+	return 0;
 }
 
 static int erofsdump_dirent_iter(struct erofs_dir_context *ctx)
@@ -376,10 +393,29 @@ static void erofsdump_show_fileinfo(bool show_extent)
 	fprintf(stdout, "Access: %04o/%s\n", access_mode, access_mode_str);
 	fprintf(stdout, "Timestamp: %s.%09d\n", timebuf, inode.i_mtime_nsec);
 
+	if (dumpcfg.show_subdirectories) {
+		struct erofs_dir_context ctx = {
+			.flags = EROFS_READDIR_VALID_PNID,
+			.pnid = inode.nid,
+			.dir = &inode,
+			.cb = erofsdump_ls_dirent_iter,
+			.de_nid = 0,
+			.dname = "",
+			.de_namelen = 0,
+		};
+
+		fprintf(stdout, "\n       NID TYPE  FILENAME\n");
+		err = erofs_iterate_dir(&ctx, false);
+		if (err) {
+			erofs_err("failed to list directory contents");
+			return;
+		}
+	}
+
 	if (!dumpcfg.show_extent)
 		return;
 
-	fprintf(stdout, "\n Ext:   logical offset   |  length :     physical offset    |  length \n");
+	fprintf(stdout, "\n Ext:   logical offset   |  length :     physical offset    |  length\n");
 	while (map.m_la < inode.i_size) {
 		struct erofs_map_dev mdev;
 
