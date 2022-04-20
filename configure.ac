@@ -11,7 +11,7 @@ AC_CONFIG_SRCDIR([config.h.in])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR(config)
-AM_INIT_AUTOMAKE([foreign -Wall -Werror])
+AM_INIT_AUTOMAKE([foreign -Wall])
 
 # Checks for programs.
 AM_PROG_AR
@@ -64,6 +64,12 @@ AC_ARG_ENABLE([debug],
                     [enable debugging mode @<:@default=no@:>@])],
     [enable_debug="$enableval"],
     [enable_debug="no"])
+
+AC_ARG_ENABLE([werror],
+    [AS_HELP_STRING([--enable-werror],
+                    [enable -Werror @<:@default=no@:>@])],
+    [enable_werror="$enableval"],
+    [enable_werror="no"])
 
 AC_ARG_ENABLE(lz4,
    [AS_HELP_STRING([--disable-lz4], [disable LZ4 compression support @<:@default=enabled@:>@])],
@@ -195,6 +201,11 @@ AC_CHECK_FUNCS(m4_flatten([
 AS_IF([test "x$enable_debug" != "xno"], [], [
   dnl Turn off all assert checking.
   CPPFLAGS="$CPPFLAGS -DNDEBUG"
+])
+
+# Configure -Werror
+AS_IF([test "x$enable_werror" != "xyes"], [], [
+  CPPFLAGS="$CPPFLAGS -Werror"
 ])
 
 # Configure libuuid
