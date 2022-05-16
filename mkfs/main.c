@@ -423,8 +423,10 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		erofs_err("unexpected argument: %s\n", argv[optind]);
 		return -EINVAL;
 	}
-	if (quiet)
+	if (quiet) {
 		cfg.c_dbg_lvl = EROFS_ERR;
+		cfg.c_showprogress = false;
+	}
 	return 0;
 }
 
@@ -520,6 +522,7 @@ static int erofs_mkfs_superblock_csum_set(void)
 
 static void erofs_mkfs_default_options(void)
 {
+	cfg.c_showprogress = true;
 	cfg.c_legacy_compress = false;
 	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
 	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM |
@@ -738,6 +741,8 @@ exit:
 		erofs_err("\tCould not format the device : %s\n",
 			  erofs_strerror(err));
 		return 1;
+	} else {
+		erofs_update_progressinfo("Build completed.\n");
 	}
 	return 0;
 }

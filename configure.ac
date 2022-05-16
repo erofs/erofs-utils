@@ -140,6 +140,8 @@ AC_CHECK_HEADERS(m4_flatten([
 	unistd.h
 ]))
 
+AC_HEADER_TIOCGWINSZ
+
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
 AC_TYPE_INT64_T

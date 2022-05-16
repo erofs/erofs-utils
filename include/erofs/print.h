@@ -41,37 +41,39 @@ enum {
 #define PR_FMT_FUNC_LINE(fmt)	pr_fmt(fmt), __func__, __LINE__
 #endif
 
+void erofs_msg(int dbglv, const char *fmt, ...);
+
 #define erofs_dbg(fmt, ...) do {			\
 	if (cfg.c_dbg_lvl >= EROFS_DBG) {		\
-		fprintf(stdout,				\
-			"<D> " PR_FMT_FUNC_LINE(fmt),	\
-			##__VA_ARGS__);			\
+		erofs_msg(EROFS_DBG,			\
+			  "<D> " PR_FMT_FUNC_LINE(fmt),	\
+			  ##__VA_ARGS__);		\
 	}						\
 } while (0)
 
 #define erofs_info(fmt, ...) do {			\
 	if (cfg.c_dbg_lvl >= EROFS_INFO) {		\
-		fprintf(stdout,				\
-			"<I> " PR_FMT_FUNC_LINE(fmt),	\
-			##__VA_ARGS__);			\
+		erofs_msg(EROFS_INFO,			\
+			  "<I> " PR_FMT_FUNC_LINE(fmt),	\
+			  ##__VA_ARGS__);		\
 		fflush(stdout);				\
 	}						\
 } while (0)
 
 #define erofs_warn(fmt, ...) do {			\
 	if (cfg.c_dbg_lvl >= EROFS_WARN) {		\
-		fprintf(stdout,				\
-			"<W> " PR_FMT_FUNC_LINE(fmt),	\
-			##__VA_ARGS__);			\
+		erofs_msg(EROFS_WARN,			\
+			  "<W> " PR_FMT_FUNC_LINE(fmt),	\
+			  ##__VA_ARGS__);		\
 		fflush(stdout);				\
 	}						\
 } while (0)
 
 #define erofs_err(fmt, ...) do {			\
 	if (cfg.c_dbg_lvl >= EROFS_ERR) {		\
-		fprintf(stderr,				\
-			"<E> " PR_FMT_FUNC_LINE(fmt),	\
-			##__VA_ARGS__);			\
+		erofs_msg(EROFS_ERR,			\
+			  "<E> " PR_FMT_FUNC_LINE(fmt),	\
+			  ##__VA_ARGS__);		\
 	}						\
 } while (0)
 

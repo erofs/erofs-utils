@@ -1083,7 +1083,7 @@ static struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 		erofs_fixup_meta_blkaddr(dir);
 
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
-		char buf[PATH_MAX];
+		char buf[PATH_MAX], *trimmed;
 		unsigned char ftype;
 
 		if (is_dot_dotdot(d->name)) {
@@ -1098,6 +1098,10 @@ static struct erofs_inode *erofs_mkfs_build_tree(struct erofs_inode *dir)
 			goto fail;
 		}
 
+		trimmed = erofs_trim_for_progressinfo(erofs_fspath(buf),
+					sizeof("Processing  ...") - 1);
+		erofs_update_progressinfo("Processing %s ...", trimmed);
+		free(trimmed);
 		d->inode = erofs_mkfs_build_tree_from_path(dir, buf);
 		if (IS_ERR(d->inode)) {
 			ret = PTR_ERR(d->inode);

@@ -6,9 +6,13 @@
  */
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include "erofs/print.h"
 #include "erofs/internal.h"
 #include "liberofs_private.h"
+#ifdef HAVE_SYS_IOCTL_H
+#include <sys/ioctl.h>
+#endif
 
 struct erofs_configure cfg;
 struct erofs_sb_info sbi;
@@ -91,3 +95,66 @@ int erofs_selabel_open(const char *file_contexts)
 	return 0;
 }
 #endif
+
+static bool __erofs_is_progressmsg;
+
+char *erofs_trim_for_progressinfo(const char *str, int placeholder)
+{
+	struct winsize winsize;
+	int col, len;
+
+#ifdef GWINSZ_IN_SYS_IOCTL
+	if(ioctl(1, TIOCGWINSZ, &winsize) >= 0 &&
+	   winsize.ws_col > 0)
+		col = winsize.ws_col;
+	else
+#endif
+		col = 80;
+
+	if (col <= placeholder)
+		return strdup("");
+
+	len = strlen(str);
+	/* omit over long prefixes */
+	if (len > col - placeholder) {
+		char *s = strdup(str + len - (col - placeholder));
+
+		if (col > placeholder + 2) {
+			s[0] = '[';
+			s[1] = ']';
+		}
+		return s;
+	}
+	return strdup(str);
+}
+
+void erofs_msg(int dbglv, const char *fmt, ...)
+{
+	va_list ap;
+	FILE *f = dbglv >= EROFS_ERR ? stderr : stdout;
+
+	if (__erofs_is_progressmsg) {
+		fputc('\n', f);
+		__erofs_is_progressmsg = false;
+	}
+	va_start(ap, fmt);
+	vfprintf(f, fmt, ap);
+	va_end(ap);
+}
+
+void erofs_update_progressinfo(const char *fmt, ...)
+{
+	char msg[8192];
+	va_list ap;
+
+	if (cfg.c_dbg_lvl >= EROFS_INFO || !cfg.c_showprogress)
+		return;
+
+	va_start(ap, fmt);
+	vsprintf(msg, fmt, ap);
+	va_end(ap);
+
+	printf("\r\033[K%s", msg);
+	__erofs_is_progressmsg = true;
+	fflush(stdout);
+}
