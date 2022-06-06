@@ -1,0 +1,82 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# Test remounting one erofs fs when the backend user daemon has changed
+# with different tag.
+#
+# The previous implementation uses a global fscache_volume for all erofs
+# filesystems. When the old user daemon exits, and a new user daemon (with
+# a different tag) starts, the fscache_volume will exist there, still
+# bound to the cache created by the old user daemon. Later when a new
+# erofs filesystem is mounted, it will be bound to the global
+# fscache_volume. However since the fscache_volume is bound to a DEAD
+# cache (since the old user daemon has exited), fscache_begin_operation()
+# will fail with -ENOBUFS.
+#
+# fscache_begin_operation
+#	fscache_begin_cookie_access
+#		fscache_cache_is_live(cookie->volume->cache)
+#
+# The new implementation fixes this by creating one fscache_volume for
+# each erofs filesystem.
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	pkill cachefilesd2
+	# wait for cachefiles daemon exiting, or the backing files
+	# can't be deleted since they are still IN_USE.
+	sleep 1
+
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_fscache
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# collect files
+echo "test" > $localdir/testfile
+
+# start the cachefiles daemon with default tag "CacheFiles"
+($CACHEFILESD_PROG $tmp $tmp >> $seqres.full 2>&1 &)
+
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+SCRATCH_OPTIONS="-o fsid=erofs_${seq}.img"
+_scratch_mount 2>>$seqres.full
+cat $SCRATCH_MNT/testfile
+_scratch_unmount
+
+# restart the cachefiles daemon with tag "Test"
+pkill cachefilesd2
+sleep 1
+($CACHEFILESD_PROG -t Test $tmp $tmp >> $seqres.full 2>&1 &)
+
+SCRATCH_OPTIONS="-o fsid=erofs_${seq}.img"
+_scratch_mount 2>>$seqres.full
+cat $SCRATCH_MNT/testfile
+_scratch_unmount
+
+echo Silence is golden
+status=0
+exit 0
