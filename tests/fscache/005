@@ -1,0 +1,69 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# Fuzz Test
+#
+# Test if system could recover from previous wrong behaved user daemon.
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	pkill cachefilesd2
+	# wait for cachefiles daemon exiting, or the backing files
+	# can't be deleted since they are still IN_USE.
+	sleep 1
+
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_fscache
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# collect files
+echo "test" > $localdir/testfile
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+SCRATCH_OPTIONS="-o fsid=erofs_${seq}.img"
+
+for policy in 0x001 0x010 0x011 0x100 0x101 0x110 0x111; do
+	# start wrong behaved cachefilesd daemon
+	($CACHEFILESD_PROG -p $policy $tmp $tmp >> $seqres.full 2>&1 &)
+	_try_scratch_mount 2>>$seqres.full && cat $SCRATCH_MNT/testfile > /dev/null 2>&1
+	_scratch_unmount > /dev/null 2>&1
+
+	pkill cachefilesd2
+	sleep 1
+
+	# restart cachefilesd daemon
+	($CACHEFILESD_PROG $tmp $tmp >> $seqres.full 2>&1 &)
+	_scratch_mount 2>>$seqres.full
+	cat $SCRATCH_MNT/testfile
+	_scratch_unmount
+
+	pkill cachefilesd2
+	sleep 1
+done
+
+echo Silence is golden
+status=0
+exit 0

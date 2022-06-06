@@ -129,6 +129,9 @@ TESTS += fscache/003
 # 004 - test writing to premature anon_fd.
 TESTS += fscache/004
 
+# 005 - test if system could recover from previous wrong behaved user daemon
+TESTS += fscache/005
+
 EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check
