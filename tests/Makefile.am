@@ -135,6 +135,9 @@ TESTS += fscache/005
 # 006 - test user daemon closing anon_fd prematurely
 TESTS += fscache/006
 
+# 007 - test the behavior when user daemon fails to handle READ request
+TESTS += fscache/007
+
 EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check
