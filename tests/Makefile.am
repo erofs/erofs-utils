@@ -123,6 +123,9 @@ TESTS += fscache/001
 # 002 - test error path handling when OPEN request fails
 TESTS += fscache/002
 
+# 003 - test remounting erofs when user daemon has changed with different tag
+TESTS += fscache/003
+
 EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check
