@@ -117,6 +117,10 @@ TESTS += erofs/025
 TESTS += erofs/026
 
 EXTRA_DIST = common/rc erofs
+# 001 - check inline/non-inline/multidev layout in fscache mode
+TESTS += fscache/001
+
+EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check
 .PHONY: clean-local-check
