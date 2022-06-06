@@ -126,6 +126,9 @@ TESTS += fscache/002
 # 003 - test remounting erofs when user daemon has changed with different tag
 TESTS += fscache/003
 
+# 004 - test writing to premature anon_fd.
+TESTS += fscache/004
+
 EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check

@@ -18,3 +18,5 @@ noinst_HEADERS += internal.h cachefiles.h
 check_PROGRAMS += cachefilesd2
 cachefilesd2_SOURCES = libcachefilesd.c cachefilesd2.c
 
+check_PROGRAMS += fscache004
+fscache004_SOURCES = libcachefilesd.c fscache004.c

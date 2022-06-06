@@ -1,0 +1,57 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# Test writing to premature anon_fd.
+#
+# Writing to premature anon_fd (object->file == NULL) shall returns -ENOBUFS.
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+CACHEFILESD_PROG=${PWD}/src/fscache004
+
+cleanup()
+{
+	pkill fscache004
+	# wait for cachefiles daemon exiting, or the backing files
+	# can't be deleted since they are still IN_USE.
+	sleep 1
+
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_fscache
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# collect files
+echo "test" > $localdir/testfile
+
+# start the cachefiles daemon
+($CACHEFILESD_PROG $tmp $tmp >> $seqres.full 2>&1 &)
+
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+SCRATCH_OPTIONS="-o fsid=erofs_${seq}.img"
+_try_scratch_mount 2>>$seqres.full && _fail "mount shall not succeed"
+
+echo Silence is golden
+status=0
+exit 0
