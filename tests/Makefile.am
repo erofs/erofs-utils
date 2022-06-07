@@ -147,6 +147,9 @@ TESTS += fscache/009
 # 010 - lseek test
 TESTS += fscache/010
 
+# 011 - test the time sequence of closing device fd before closing anonymous fds
+TESTS += fscache/011
+
 EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check

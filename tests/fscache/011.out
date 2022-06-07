@@ -1,0 +1,6 @@
+QA output created by 011
+done: close cache
+expected: write dst image failed
+expected: send cread failed
+done: close anon_fd
+Silence is golden
