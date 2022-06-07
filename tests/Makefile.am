@@ -138,6 +138,9 @@ TESTS += fscache/006
 # 007 - test the behavior when user daemon fails to handle READ request
 TESTS += fscache/007
 
+# 008 - erofs-utils compiling test
+TESTS += fscache/008
+
 EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check
