@@ -1,0 +1,71 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# Test if the pending requests could be completed when daemon gets killed.
+#
+# Each request needs to be replied in current implementation, or the request
+# will never be completed and thus the user program triggers this reqeust will
+# hang (state D) there forever. When the device fd is closed, e.g. the daemon
+# gets killed, all the pending requests will be completed, and the previous
+# program will be awaken then.
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	pkill cachefilesd2
+	# wait for cachefiles daemon exiting, or the backing files
+	# can't be deleted since they are still IN_USE.
+	sleep 1
+
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_fscache
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# collect files
+echo "test" > $localdir/testfile
+
+# start the cachefiles daemon with policy POLICY_READ_IGNORE,
+# so that the READ request will hang there
+($CACHEFILESD_PROG -p 0x200 $tmp $tmp 2>>$seqres.full &)
+
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+SCRATCH_OPTIONS="-o fsid=erofs_${seq}.img"
+
+# the mount will hang there
+_try_scratch_mount 2>>$seqres.full &
+mount_pid=$!
+ps -p $mount_pid > /dev/null || _fail "The mount shall hang there"
+
+# when daemon is killed, all pending requests shall be completed
+pkill cachefilesd2
+sleep 1
+
+ps -p $mount_pid > /dev/null && \
+	_fail "All pending requests shall be completed when daemon is killed"
+
+echo Silence is golden
+status=0
+exit 0

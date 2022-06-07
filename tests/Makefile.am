@@ -150,6 +150,9 @@ TESTS += fscache/010
 # 011 - test the time sequence of closing device fd before closing anonymous fds
 TESTS += fscache/011
 
+# 012 - test if the pending requests could be completed when daemon gets killed
+TESTS += fscache/012
+
 EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check
