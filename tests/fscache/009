@@ -1,0 +1,77 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# erofs-utils compiling test (with I/O amplification)
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	pkill cachefilesd2
+	# wait for cachefiles daemon exiting, or the backing files
+	# can't be deleted since they are still IN_USE.
+	sleep 1
+
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_fscache
+_require_overlayfs
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# collect files
+git clone git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git \
+	$localdir/erofs-utils >> $seqres.full 2>&1 || _fail "failed to clone erofs-utils code"
+_scratch_mkfs $localdir/erofs-utils --chunksize=1048576 --blobdev=$tmp/blob.img -Eforce-chunk-indexes \
+	>> $seqres.full 2>&1 || _fail "failed to mkfs"
+
+# start the cachefiles daemon with policy POLICY_READ_RA
+($CACHEFILESD_PROG -p 0x400 $tmp $tmp >> $seqres.full 2>&1 &)
+
+SCRATCH_OPTIONS="-o fsid=erofs_${seq}.img -o device=blob.img"
+_scratch_mount 2>>$seqres.full
+
+overlaydir="$tmp/overlay"
+mkdir -p $overlaydir/upper $overlaydir/work $overlaydir/mnt
+$MOUNT_PROG -t overlay none \
+	-o lowerdir=$SCRATCH_MNT,upperdir=$overlaydir/upper,workdir=$overlaydir/work \
+	$overlaydir/mnt 2>>$seqres.full || _fail "failed to mount overlayfs"
+
+pushd $overlaydir/mnt >> $seqres.full 2>&1
+./autogen.sh >> $seqres.full 2>&1
+./configure >> $seqres.full 2>&1
+popd >> $seqres.full 2>&1
+[ -e $overlaydir/mnt/Makefile ] || _fail "failed to configure Makefile"
+make -C $overlaydir/mnt/ -s -j $(nproc) >> $seqres.full 2>&1
+
+if [ $? -ne 0 ]; then
+	$UMOUNT_PROG $overlaydir/mnt
+	_fail "failed to complie linux source code"
+fi
+
+$UMOUNT_PROG $overlaydir/mnt
+_scratch_unmount
+
+echo Silence is golden
+status=0
+exit 0

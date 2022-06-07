@@ -141,6 +141,9 @@ TESTS += fscache/007
 # 008 - erofs-utils compiling test
 TESTS += fscache/008
 
+# 009 - erofs-utils compiling test (readahead)
+TESTS += fscache/009
+
 EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check
