@@ -156,6 +156,9 @@ TESTS += fscache/012
 # 013 - test if 'inuse' and 'cull' cmds work as expected
 TESTS += fscache/013
 
+# 014 - test if multiple erofs filesystem instances can be mounted at the same time
+TESTS += fscache/014
+
 EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check
