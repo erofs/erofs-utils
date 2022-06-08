@@ -1,0 +1,66 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# Test if multiple erofs filesystem instances can be mounted at the same time.
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	pkill cachefilesd2
+	# wait for cachefiles daemon exiting, or the backing files
+	# can't be deleted since they are still IN_USE.
+	sleep 1
+
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_fscache
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_${seq}_scratch.img
+	rm -f SCRATCH_DEV
+fi
+
+if [ -z $TEST_DEV ]; then
+	TEST_DEV=$tmp/erofs_${seq}_test.img
+	rm -f TEST_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# collect files
+echo "test" > $localdir/testfile
+
+# start the cachefiles daemon
+($CACHEFILESD_PROG $tmp $tmp 2>>$seqres.full &)
+
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs scratch"
+SCRATCH_OPTIONS="-o fsid=erofs_${seq}_scratch.img"
+_scratch_mount 2>>$seqres.full
+cat $SCRATCH_MNT/testfile
+_scratch_unmount
+
+_test_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs test"
+TEST_OPTIONS="-o fsid=erofs_${seq}_test.img"
+_test_mount 2>>$seqres.full
+cat $TEST_MNT/testfile
+_test_unmount
+
+echo Silence is golden
+status=0
+exit 0
