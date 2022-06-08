@@ -29,3 +29,6 @@ fscache010_SOURCES = libcachefilesd.c fscache010.c
 
 check_PROGRAMS += fscache011
 fscache011_SOURCES = libcachefilesd.c fscache011.c
+
+check_PROGRAMS += fscache013
+fscache013_SOURCES = libcachefilesd.c fscache013.c

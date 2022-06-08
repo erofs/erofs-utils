@@ -153,6 +153,9 @@ TESTS += fscache/011
 # 012 - test if the pending requests could be completed when daemon gets killed
 TESTS += fscache/012
 
+# 013 - test if 'inuse' and 'cull' cmds work as expected
+TESTS += fscache/013
+
 EXTRA_DIST = common/rc erofs fscache
 
 clean-local: clean-local-check
