@@ -1,9 +1,13 @@
 erofs-utils
 ===========
 
-erofs-utils includes user-space tools for EROFS filesystem.
-Currently mkfs.erofs, (experimental) erofsfuse, dump.erofs, fsck.erofs
-are available.
+userspace tools for EROFS filesystem, currently including:
+
+  mkfs.erofs    filesystem formatter
+  erofsfuse     FUSE daemon alternative
+  dump.erofs    filesystem analyzer
+  fsck.erofs    filesystem compatibility & consistency checker as well
+                as extractor
 
 Dependencies & build
 --------------------
@@ -58,6 +62,7 @@ In order to enable LZMA support, build with the following commands:
 
 Additionally, you could specify liblzma build paths with:
 	--with-liblzma-incdir and --with-liblzma-libdir
+
 
 mkfs.erofs
 ----------
@@ -133,8 +138,9 @@ git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b obsoleted
 
 PLEASE NOTE: This version is highly _NOT recommended_ now.
 
-erofsfuse (experimental)
-------------------------
+
+erofsfuse
+---------
 
 erofsfuse is introduced to support EROFS format for various platforms
 (including older linux kernels) and new on-disk features iteration.
@@ -147,9 +153,9 @@ significant I/O overhead, double caching, etc.)
 
 Therefore, NEVER use it if performance is the top concern.
 
-Note that xattr & ACL aren't implemented yet due to the current Android
-use-case vs limited time. If you have some interest, contribution is,
-as always, welcome.
+Note that extended attributes and ACLs aren't implemented yet due to
+the current Android use case vs limited time. If you are interested,
+contribution is, as always, welcome.
 
 How to build erofsfuse
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -178,23 +184,51 @@ To debug erofsfuse (also automatically run in foreground):
 To unmount an erofsfuse mountpoint as a non-root user:
  $ fusermount -u foo/
 
-dump.erofs and fsck.erofs (experimental)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-dump.erofs and fsck.erofs are two new experimental tools to analyse
-and check EROFS file systems.
+dump.erofs and fsck.erofs
+-------------------------
 
-They are still incomplete and actively under development by the
-community. But you could check them out if needed in advance.
+dump.erofs and fsck.erofs are used to analyze, check, and extract
+EROFS filesystems. Note that extended attributes and ACLs are still
+unsupported when extracting images with fsck.erofs.
 
-Report, feedback and/or contribution are welcomed.
+Container images
+----------------
+
+EROFS filesystem is well-suitably used for container images with
+advanced features like chunk-based files, multi-devices (blobs)
+and new fscache backend for lazy pulling and cache management, etc.
+
+For example, CNCF Dragonfly Nydus image service [7] introduces an
+(EROFS-compatible) RAFS v6 image format to overcome flaws of the
+current OCIv1 tgz images so that:
+
+ - Images can be downloaded on demand in chunks aka lazy pulling with
+   new fscache backend (5.19+) or userspace block devices (5.16+);
+
+ - Finer chunk-based content-addressable data deduplication to minimize
+   storage, transmission and memory footprints;
+
+ - Merged filesystem tree to remove all metadata of intermediate layers
+   as an option;
+
+ - (e)stargz, zstd::chunked and other formats can be converted and run
+   on the fly;
+
+ - and more.
+
+Apart from Dragonfly Nydus, a native user daemon is planned to be added
+to erofs-utils to parse EROFS, (e)stargz and zstd::chunked images from
+network too as a real part of EROFS filesystem project.
+
 
 Contribution
 ------------
 
-erofs-utils is under GPLv2+ as a part of EROFS filesystem project,
-feel free to send patches or feedback to:
+erofs-utils is a part of EROFS filesystem project, feel free to send
+patches or feedback to:
   linux-erofs mailing list   <linux-erofs@lists.ozlabs.org>
+
 
 Comments
 --------
@@ -251,3 +285,6 @@ Comments
     which is also resolved in lz4-1.9.3.
 
 [6] https://tukaani.org/xz/xz-5.3.2alpha.tar.xz
+
+[7] https://nydus.dev
+    https://github.com/dragonflyoss/image-service
