@@ -638,6 +638,44 @@ out:
 	return ret;
 }
 
+static int erofs_extract_special(struct erofs_inode *inode)
+{
+	bool tryagain = true;
+	int ret;
+
+	erofs_dbg("extract special to path: %s", fsckcfg.extract_path);
+
+	/* verify data chunk layout */
+	ret = erofs_verify_inode_data(inode, -1);
+	if (ret)
+		return ret;
+
+again:
+	if (mknod(fsckcfg.extract_path, inode->i_mode, inode->u.i_rdev) < 0) {
+		if (errno == EEXIST && fsckcfg.overwrite && tryagain) {
+			erofs_warn("try to forcely remove file %s",
+				   fsckcfg.extract_path);
+			if (unlink(fsckcfg.extract_path) < 0) {
+				erofs_err("failed to remove: %s",
+					  fsckcfg.extract_path);
+				return -errno;
+			}
+			tryagain = false;
+			goto again;
+		}
+		if (errno == EEXIST || fsckcfg.superuser) {
+			erofs_err("failed to create special file: %s",
+				  fsckcfg.extract_path);
+			ret = -errno;
+		} else {
+			erofs_warn("failed to create special file: %s, skipped",
+				   fsckcfg.extract_path);
+			ret = -ECANCELED;
+		}
+	}
+	return ret;
+}
+
 static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 {
 	int ret;
@@ -698,6 +736,12 @@ static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 		case S_IFLNK:
 			ret = erofs_extract_symlink(&inode);
 			break;
+		case S_IFCHR:
+		case S_IFBLK:
+		case S_IFIFO:
+		case S_IFSOCK:
+			ret = erofs_extract_special(&inode);
+			break;
 		default:
 			/* TODO */
 			goto verify;
@@ -707,7 +751,7 @@ verify:
 		/* verify data chunk layout */
 		ret = erofs_verify_inode_data(&inode, -1);
 	}
-	if (ret)
+	if (ret && ret != -ECANCELED)
 		goto out;
 
 	/* XXXX: the dir depth should be restricted in order to avoid loops */
@@ -725,6 +769,8 @@ verify:
 	if (!ret)
 		erofsfsck_set_attributes(&inode, fsckcfg.extract_path);
 
+	if (ret == -ECANCELED)
+		ret = 0;
 out:
 	if (ret && ret != -EIO)
 		fsckcfg.corrupted = true;
