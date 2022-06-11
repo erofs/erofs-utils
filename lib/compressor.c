@@ -76,8 +76,8 @@ int erofs_compressor_init(struct erofs_compress *c, char *alg_name)
 	c->compress_threshold = 100;
 
 	/* optimize for 4k size page */
-	c->destsize_alignsize = PAGE_SIZE;
-	c->destsize_redzone_begin = PAGE_SIZE - 16;
+	c->destsize_alignsize = EROFS_BLKSIZ;
+	c->destsize_redzone_begin = EROFS_BLKSIZ - 16;
 	c->destsize_redzone_end = EROFS_CONFIG_COMPR_DEF_BOUNDARY;
 
 	if (!alg_name) {

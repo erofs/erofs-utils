@@ -22,7 +22,7 @@ static int erofs_map_blocks_flatmode(struct erofs_inode *inode,
 
 	trace_erofs_map_blocks_flatmode_enter(inode, map, flags);
 
-	nblocks = DIV_ROUND_UP(inode->i_size, PAGE_SIZE);
+	nblocks = DIV_ROUND_UP(inode->i_size, EROFS_BLKSIZ);
 	lastblk = nblocks - tailendpacking;
 
 	/* there is no hole in flatmode */
@@ -37,8 +37,8 @@ static int erofs_map_blocks_flatmode(struct erofs_inode *inode,
 			vi->xattr_isize + erofs_blkoff(map->m_la);
 		map->m_plen = inode->i_size - offset;
 
-		/* inline data should be located in one meta block */
-		if (erofs_blkoff(map->m_pa) + map->m_plen > PAGE_SIZE) {
+		/* inline data should be located in the same meta block */
+		if (erofs_blkoff(map->m_pa) + map->m_plen > EROFS_BLKSIZ) {
 			erofs_err("inline data cross block boundary @ nid %" PRIu64,
 				  vi->nid);
 			DBG_BUGON(1);

@@ -148,7 +148,7 @@ int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck)
 
 		nameoff = le16_to_cpu(de->nameoff);
 		if (nameoff < sizeof(struct erofs_dirent) ||
-		    nameoff >= PAGE_SIZE) {
+		    nameoff >= EROFS_BLKSIZ) {
 			erofs_err("invalid de[0].nameoff %u @ nid %llu, lblk %u",
 				  nameoff, dir->nid | 0ULL, lblk);
 			return -EFSCORRUPTED;

@@ -36,7 +36,7 @@ typedef unsigned short umode_t;
 
 /* no obvious reason to support explicit PAGE_SIZE != 4096 for now */
 #if PAGE_SIZE != 4096
-#error incompatible PAGE_SIZE is already defined
+#warning EROFS may be incompatible on your platform
 #endif
 
 #ifndef PAGE_MASK
