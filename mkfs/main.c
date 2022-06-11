@@ -50,6 +50,7 @@ static struct option long_options[] = {
 	{"quiet", no_argument, 0, 12},
 	{"blobdev", required_argument, NULL, 13},
 	{"ignore-mtime", no_argument, NULL, 14},
+	{"preserve-mtime", no_argument, NULL, 15},
 #ifdef WITH_ANDROID
 	{"mount-point", required_argument, NULL, 512},
 	{"product-out", required_argument, NULL, 513},
@@ -99,6 +100,7 @@ static void usage(void)
 	      " --help                display this help and exit\n"
 	      " --ignore-mtime        use build time instead of strict per-file modification time\n"
 	      " --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
+	      " --preserve-mtime      keep per-file modification time strictly\n"
 	      " --quiet               quiet execution (do not write anything to standard output.)\n"
 #ifndef NDEBUG
 	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
@@ -158,6 +160,7 @@ static int parse_extended_opts(const char *opts)
 			if (vallen)
 				return -EINVAL;
 			cfg.c_force_inodeversion = FORCE_INODE_COMPACT;
+			cfg.c_ignore_mtime = true;
 		}
 
 		if (MATCH_EXTENTED_OPT("force-inode-extended", token, keylen)) {
@@ -376,6 +379,9 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			break;
 		case 14:
 			cfg.c_ignore_mtime = true;
+			break;
+		case 15:
+			cfg.c_ignore_mtime = false;
 			break;
 		case 1:
 			usage();

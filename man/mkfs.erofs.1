@@ -119,6 +119,10 @@ can reduce total metadata size.
 .TP
 .BI "\-\-max-extent-bytes " #
 Specify maximum decompressed extent size # in bytes.
+.TP
+.B "\-\-preserve-mtime"
+File modification time is preserved whenever \fBmkfs.erofs\fR decides to use
+extended inodes over compact inodes.
 .SH AUTHOR
 This version of \fBmkfs.erofs\fR is written by Li Guifu <blucerlee@gmail.com>,
 Miao Xie <miaoxie@huawei.com> and Gao Xiang <xiang@kernel.org> with
