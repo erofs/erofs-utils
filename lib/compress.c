@@ -607,7 +607,7 @@ void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 int erofs_write_compressed_file(struct erofs_inode *inode)
 {
 	struct erofs_buffer_head *bh;
-	struct z_erofs_vle_compress_ctx ctx;
+	static struct z_erofs_vle_compress_ctx ctx;
 	erofs_off_t remaining;
 	erofs_blk_t blkaddr, compressed_blocks;
 	unsigned int legacymetasize;
