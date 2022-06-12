@@ -42,24 +42,28 @@ and may take an argument using the equals ('=') sign.
 The following extended options are supported:
 .RS 1.2i
 .TP
-.BI legacy-compress
-Disable "decompression in-place" and "compacted indexes" support, which is used
-when generating EROFS images for kernel version < 5.3.
-.TP
 .BI force-inode-compact
 Forcely generate compact inodes (32-byte inodes) to output.
 .TP
 .BI force-inode-extended
 Forcely generate extended inodes (64-byte inodes) to output.
 .TP
-.BI noinline_data
-Don't inline regular files for FSDAX support (Linux v5.15+).
-.TP
 .BI force-inode-blockmap
 Forcely generate inode chunk format in 4-byte block address array.
 .TP
 .BI force-chunk-indexes
 Forcely generate inode chunk format in 8-byte chunk indexes (with device id).
+.TP
+.BI legacy-compress
+Drop "inplace decompression" and "compacted indexes" support, which is used
+to generate compatible EROFS images for Linux v4.19 - 5.3.
+.TP
+.BI noinline_data
+Don't inline regular files to enable FSDAX for these files (Linux v5.15+).
+.TP
+.BI ztailpacking
+Pack the tail part (pcluster) of compressed files into its metadata to save
+more space and the tail part I/O. (Linux v5.17+)
 .RE
 .TP
 .BI "\-T " #
