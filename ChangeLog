@@ -1,3 +1,16 @@
+erofs-utils 1.5
+
+ * This release includes the following updates:
+   - (fsck.erofs) support filesystem extraction (Igor Ostapenko);
+   - support ztailpacking inline feature for compressed files (Yue Hu);
+   - (dump.erofs) support listing directories;
+   - more liberofs APIs (including iterate APIs) (me, Kelvin Zhang);
+   - use mtime to allow more control over the timestamps (David Anderson);
+   - switch to GPL-2.0+ OR Apache-2.0 dual license for liberofs;
+   - various bugfixes and cleanups;
+
+ -- Gao Xiang <xiang@kernel.org>  Mon, 13 Jun 2022 00:00:00 +0800
+
 erofs-utils 1.4
 
  * This release includes the following updates:
