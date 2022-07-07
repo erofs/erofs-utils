@@ -67,8 +67,8 @@ struct erofs_configure {
 	u32 c_dict_size;
 	u64 c_unix_timestamp;
 	u32 c_uid, c_gid;
+	const char *mount_point;
 #ifdef WITH_ANDROID
-	char *mount_point;
 	char *target_out_path;
 	char *fs_config_file;
 	char *block_list_file;

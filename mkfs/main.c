@@ -51,8 +51,8 @@ static struct option long_options[] = {
 	{"blobdev", required_argument, NULL, 13},
 	{"ignore-mtime", no_argument, NULL, 14},
 	{"preserve-mtime", no_argument, NULL, 15},
-#ifdef WITH_ANDROID
 	{"mount-point", required_argument, NULL, 512},
+#ifdef WITH_ANDROID
 	{"product-out", required_argument, NULL, 513},
 	{"fs-config-file", required_argument, NULL, 514},
 	{"block-list-file", required_argument, NULL, 515},
@@ -105,9 +105,9 @@ static void usage(void)
 #ifndef NDEBUG
 	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
 #endif
+	      " --mount-point=X       X=prefix of target fs path (default: /)\n"
 #ifdef WITH_ANDROID
 	      "\nwith following android-specific options:\n"
-	      " --mount-point=X       X=prefix of target fs path (default: /)\n"
 	      " --product-out=X       X=product_out directory\n"
 	      " --fs-config-file=X    X=fs_config file\n"
 	      " --block-list-file=X   X=block_list file\n"
@@ -323,7 +323,6 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		case 10:
 			cfg.c_compress_hints_file = optarg;
 			break;
-#ifdef WITH_ANDROID
 		case 512:
 			cfg.mount_point = optarg;
 			/* all trailing '/' should be deleted */
@@ -331,6 +330,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			if (opt && optarg[opt - 1] == '/')
 				optarg[opt - 1] = '\0';
 			break;
+#ifdef WITH_ANDROID
 		case 513:
 			cfg.target_out_path = optarg;
 			break;
