@@ -261,6 +261,8 @@ int dev_read(int device_id, void *buf, u64 offset, size_t len)
 	if (cfg.c_dry_run)
 		return 0;
 
+	offset += cfg.c_offset;
+
 	if (!buf) {
 		erofs_err("buf is NULL");
 		return -EINVAL;

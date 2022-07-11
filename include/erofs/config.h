@@ -73,6 +73,9 @@ struct erofs_configure {
 	char *fs_config_file;
 	char *block_list_file;
 #endif
+
+	/* offset when reading multi partition images */
+	u64 c_offset;
 };
 
 extern struct erofs_configure cfg;

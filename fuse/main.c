@@ -151,6 +151,7 @@ static struct fuse_operations erofs_ops = {
 static struct options {
 	const char *disk;
 	const char *mountpoint;
+	u64 offset;
 	unsigned int debug_lvl;
 	bool show_help;
 	bool odebug;
@@ -158,6 +159,7 @@ static struct options {
 
 #define OPTION(t, p) { t, offsetof(struct options, p), 1 }
 static const struct fuse_opt option_spec[] = {
+	OPTION("--offset=%lu", offset),
 	OPTION("--dbglevel=%u", debug_lvl),
 	OPTION("--help", show_help),
 	FUSE_OPT_KEY("--device=", 1),
@@ -170,6 +172,7 @@ static void usage(void)
 
 	fputs("usage: [options] IMAGE MOUNTPOINT\n\n"
 	      "Options:\n"
+	      "    --offset=#             skip # bytes when reading IMAGE\n"
 	      "    --dbglevel=#           set output message level to # (maximum 9)\n"
 	      "    --device=#             specify an extra device to be used together\n"
 #if FUSE_MAJOR_VERSION < 3
@@ -190,6 +193,7 @@ static void usage(void)
 static void erofsfuse_dumpcfg(void)
 {
 	erofs_dump("disk: %s\n", fusecfg.disk);
+	erofs_dump("offset: %lu\n", fusecfg.offset);
 	erofs_dump("mountpoint: %s\n", fusecfg.mountpoint);
 	erofs_dump("dbglevel: %u\n", cfg.c_dbg_lvl);
 }
@@ -278,6 +282,8 @@ int main(int argc, char *argv[])
 
 	if (fusecfg.odebug && cfg.c_dbg_lvl < EROFS_DBG)
 		cfg.c_dbg_lvl = EROFS_DBG;
+
+	cfg.c_offset = fusecfg.offset;
 
 	erofsfuse_dumpcfg();
 	ret = dev_open_ro(fusecfg.disk);
