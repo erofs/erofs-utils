@@ -318,6 +318,7 @@ struct erofs_map_dev {
 
 /* super.c */
 int erofs_read_superblock(void);
+void erofs_put_super(void);
 
 /* namei.c */
 int erofs_read_inode_from_disk(struct erofs_inode *vi);

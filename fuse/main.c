@@ -299,6 +299,8 @@ int main(int argc, char *argv[])
 	}
 
 	ret = fuse_main(args.argc, args.argv, &erofs_ops, NULL);
+
+	erofs_put_super();
 err_dev_close:
 	blob_closeall();
 	dev_close();
