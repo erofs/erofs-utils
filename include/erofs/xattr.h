@@ -14,6 +14,27 @@ extern "C"
 
 #include "internal.h"
 
+#ifndef ENOATTR
+#define ENOATTR	ENODATA
+#endif
+
+static inline unsigned int inlinexattr_header_size(struct erofs_inode *vi)
+{
+	return sizeof(struct erofs_xattr_ibody_header) +
+		sizeof(u32) * vi->xattr_shared_count;
+}
+
+static inline erofs_blk_t xattrblock_addr(unsigned int xattr_id)
+{
+	return sbi.xattr_blkaddr +
+		xattr_id * sizeof(__u32) / EROFS_BLKSIZ;
+}
+
+static inline unsigned int xattrblock_offset(unsigned int xattr_id)
+{
+	return (xattr_id * sizeof(__u32)) % EROFS_BLKSIZ;
+}
+
 #define EROFS_INODE_XATTR_ICOUNT(_size)	({\
 	u32 __size = le16_to_cpu(_size); \
 	((__size) == 0) ? 0 : \

@@ -142,7 +142,38 @@ static int erofsfuse_readlink(const char *path, char *buffer, size_t size)
 	return 0;
 }
 
+static int erofsfuse_getxattr(const char *path, const char *name, char *value,
+			size_t size)
+{
+	int ret;
+	struct erofs_inode vi;
+
+	erofs_dbg("getxattr(%s): name=%s size=%llu", path, name, size);
+
+	ret = erofs_ilookup(path, &vi);
+	if (ret)
+		return ret;
+
+	return erofs_getxattr(&vi, name, value, size);
+}
+
+static int erofsfuse_listxattr(const char *path, char *list, size_t size)
+{
+	int ret;
+	struct erofs_inode vi;
+
+	erofs_dbg("listxattr(%s): size=%llu", path, size);
+
+	ret = erofs_ilookup(path, &vi);
+	if (ret)
+		return ret;
+
+	return erofs_listxattr(&vi, list, size);
+}
+
 static struct fuse_operations erofs_ops = {
+	.getxattr = erofsfuse_getxattr,
+	.listxattr = erofsfuse_listxattr,
 	.readlink = erofsfuse_readlink,
 	.getattr = erofsfuse_getattr,
 	.readdir = erofsfuse_readdir,

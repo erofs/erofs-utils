@@ -180,6 +180,9 @@ struct erofs_inode {
 	unsigned int xattr_isize;
 	unsigned int extent_isize;
 
+	unsigned int xattr_shared_count;
+	unsigned int *xattr_shared_xattrs;
+
 	erofs_nid_t nid;
 	struct erofs_buffer_head *bh;
 	struct erofs_buffer_head *bh_inline, *bh_data;
@@ -351,6 +354,11 @@ static inline int erofs_get_occupied_size(const struct erofs_inode *inode,
 	}
 	return 0;
 }
+
+/* data.c */
+int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
+		   size_t buffer_size);
+int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size);
 
 /* zmap.c */
 int z_erofs_fill_inode(struct erofs_inode *vi);
