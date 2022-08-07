@@ -43,6 +43,25 @@ unsigned char erofs_mode_to_ftype(umode_t mode)
 	return erofs_ftype_by_mode[(mode & S_IFMT) >> S_SHIFT];
 }
 
+static const unsigned char erofs_dtype_by_ftype[EROFS_FT_MAX] = {
+	[EROFS_FT_UNKNOWN]	= DT_UNKNOWN,
+	[EROFS_FT_REG_FILE]	= DT_REG,
+	[EROFS_FT_DIR]		= DT_DIR,
+	[EROFS_FT_CHRDEV]	= DT_CHR,
+	[EROFS_FT_BLKDEV]	= DT_BLK,
+	[EROFS_FT_FIFO]		= DT_FIFO,
+	[EROFS_FT_SOCK]		= DT_SOCK,
+	[EROFS_FT_SYMLINK]	= DT_LNK
+};
+
+unsigned char erofs_ftype_to_dtype(unsigned int filetype)
+{
+	if (filetype >= EROFS_FT_MAX)
+		return DT_UNKNOWN;
+
+	return erofs_dtype_by_ftype[filetype];
+}
+
 #define NR_INODE_HASHTABLE	16384
 
 struct list_head inode_hashtable[NR_INODE_HASHTABLE];

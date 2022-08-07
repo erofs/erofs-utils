@@ -16,6 +16,7 @@ extern "C"
 #include "erofs/internal.h"
 
 unsigned char erofs_mode_to_ftype(umode_t mode);
+unsigned char erofs_ftype_to_dtype(unsigned int filetype);
 void erofs_inode_manager_init(void);
 unsigned int erofs_iput(struct erofs_inode *inode);
 erofs_nid_t erofs_lookupnid(struct erofs_inode *inode);

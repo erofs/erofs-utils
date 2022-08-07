@@ -13,6 +13,7 @@
 #include "erofs/print.h"
 #include "erofs/io.h"
 #include "erofs/dir.h"
+#include "erofs/inode.h"
 
 struct erofsfuse_dir_context {
 	struct erofs_dir_context ctx;
@@ -24,11 +25,13 @@ struct erofsfuse_dir_context {
 static int erofsfuse_fill_dentries(struct erofs_dir_context *ctx)
 {
 	struct erofsfuse_dir_context *fusectx = (void *)ctx;
+	struct stat st = {0};
 	char dname[EROFS_NAME_LEN + 1];
 
 	strncpy(dname, ctx->dname, ctx->de_namelen);
 	dname[ctx->de_namelen] = '\0';
-	fusectx->filler(fusectx->buf, dname, NULL, 0);
+	st.st_mode = erofs_ftype_to_dtype(ctx->de_ftype) << 12;
+	fusectx->filler(fusectx->buf, dname, &st, 0);
 	return 0;
 }
 
