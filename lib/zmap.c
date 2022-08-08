@@ -325,7 +325,7 @@ static int compacted_load_cluster_from_disk(struct z_erofs_maprecorder *m,
 	const erofs_off_t ebase = round_up(iloc(vi->nid) + vi->inode_isize +
 					   vi->xattr_isize, 8) +
 		sizeof(struct z_erofs_map_header);
-	const unsigned int totalidx = DIV_ROUND_UP(vi->i_size, EROFS_BLKSIZ);
+	const unsigned int totalidx = BLK_ROUND_UP(vi->i_size);
 	unsigned int compacted_4b_initial, compacted_2b;
 	unsigned int amortizedshift;
 	erofs_off_t pos;

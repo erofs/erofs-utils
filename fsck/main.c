@@ -483,10 +483,8 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	}
 
 	if (fsckcfg.print_comp_ratio) {
-		fsckcfg.logical_blocks +=
-			DIV_ROUND_UP(inode->i_size, EROFS_BLKSIZ);
-		fsckcfg.physical_blocks +=
-			DIV_ROUND_UP(pchunk_len, EROFS_BLKSIZ);
+		fsckcfg.logical_blocks += BLK_ROUND_UP(inode->i_size);
+		fsckcfg.physical_blocks += BLK_ROUND_UP(pchunk_len);
 	}
 out:
 	if (raw)

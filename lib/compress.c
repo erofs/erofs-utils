@@ -303,7 +303,7 @@ nocompression:
 
 			tailused = ret & (EROFS_BLKSIZ - 1);
 			padding = 0;
-			ctx->compressedblks = DIV_ROUND_UP(ret, EROFS_BLKSIZ);
+			ctx->compressedblks = BLK_ROUND_UP(ret);
 			DBG_BUGON(ctx->compressedblks * EROFS_BLKSIZ >= count);
 
 			/* zero out garbage trailing data for non-0padding */
@@ -584,7 +584,7 @@ void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 		u8 *out;
 
 		eofs = inode->extent_isize -
-			(4 << (DIV_ROUND_UP(inode->i_size, EROFS_BLKSIZ) & 1));
+			(4 << (BLK_ROUND_UP(inode->i_size) & 1));
 		base = round_down(eofs, 8);
 		pos = 16 /* encodebits */ * ((eofs - base) / 4);
 		out = inode->compressmeta + base;

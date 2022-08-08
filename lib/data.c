@@ -22,7 +22,7 @@ static int erofs_map_blocks_flatmode(struct erofs_inode *inode,
 
 	trace_erofs_map_blocks_flatmode_enter(inode, map, flags);
 
-	nblocks = DIV_ROUND_UP(inode->i_size, EROFS_BLKSIZ);
+	nblocks = BLK_ROUND_UP(inode->i_size);
 	lastblk = nblocks - tailendpacking;
 
 	/* there is no hole in flatmode */
