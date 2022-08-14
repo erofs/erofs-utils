@@ -855,6 +855,15 @@ static int erofs_fill_inode(struct erofs_inode *inode,
 	inode->i_mode = st->st_mode;
 	inode->i_uid = cfg.c_uid == -1 ? st->st_uid : cfg.c_uid;
 	inode->i_gid = cfg.c_gid == -1 ? st->st_gid : cfg.c_gid;
+
+	if (inode->i_uid + cfg.c_uid_offset < 0)
+		erofs_err("uid overflow @ %s", path);
+	inode->i_uid += cfg.c_uid_offset;
+
+	if (inode->i_gid + cfg.c_gid_offset < 0)
+		erofs_err("gid overflow @ %s", path);
+	inode->i_gid += cfg.c_gid_offset;
+
 	inode->i_mtime = st->st_mtime;
 	inode->i_mtime_nsec = ST_MTIM_NSEC(st);
 

@@ -51,6 +51,8 @@ static struct option long_options[] = {
 	{"blobdev", required_argument, NULL, 13},
 	{"ignore-mtime", no_argument, NULL, 14},
 	{"preserve-mtime", no_argument, NULL, 15},
+	{"uid-offset", required_argument, NULL, 16},
+	{"gid-offset", required_argument, NULL, 17},
 	{"mount-point", required_argument, NULL, 512},
 #ifdef WITH_ANDROID
 	{"product-out", required_argument, NULL, 513},
@@ -97,6 +99,8 @@ static void usage(void)
 #endif
 	      " --force-uid=#         set all file uids to # (# = UID)\n"
 	      " --force-gid=#         set all file gids to # (# = GID)\n"
+	      " --uid-offset=#        add offset # to all file uids (# = id offset)\n"
+	      " --gid-offset=#        add offset # to all file gids (# = id offset)\n"
 	      " --help                display this help and exit\n"
 	      " --ignore-mtime        use build time instead of strict per-file modification time\n"
 	      " --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
@@ -382,6 +386,22 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			break;
 		case 15:
 			cfg.c_ignore_mtime = false;
+			break;
+		case 16:
+			errno = 0;
+			cfg.c_uid_offset = strtoll(optarg, &endptr, 0);
+			if (errno || *endptr != '\0') {
+				erofs_err("invalid uid offset %s", optarg);
+				return -EINVAL;
+			}
+			break;
+		case 17:
+			errno = 0;
+			cfg.c_gid_offset = strtoll(optarg, &endptr, 0);
+			if (errno || *endptr != '\0') {
+				erofs_err("invalid gid offset %s", optarg);
+				return -EINVAL;
+			}
 			break;
 		case 1:
 			usage();
