@@ -565,6 +565,7 @@ void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 
 	h->h_advise = cpu_to_le16(le16_to_cpu(h->h_advise) &
 				  ~Z_EROFS_ADVISE_INLINE_PCLUSTER);
+	h->h_idata_size = 0;
 	if (!inode->eof_tailraw)
 		return;
 	DBG_BUGON(inode->compressed_idata != true);
