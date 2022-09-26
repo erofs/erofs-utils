@@ -258,7 +258,8 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 		} else {
 			DBG_BUGON(end != map.m_la + map.m_llen);
 			length = map.m_llen;
-			partial = !(map.m_flags & EROFS_MAP_FULL_MAPPED);
+			partial = !(map.m_flags & EROFS_MAP_FULL_MAPPED) ||
+				(map.m_flags & EROFS_MAP_PARTIAL_REF);
 		}
 
 		if (map.m_la < offset) {

@@ -136,6 +136,7 @@ EROFS_FEATURE_FUNCS(chunked_file, incompat, INCOMPAT_CHUNKED_FILE)
 EROFS_FEATURE_FUNCS(device_table, incompat, INCOMPAT_DEVICE_TABLE)
 EROFS_FEATURE_FUNCS(ztailpacking, incompat, INCOMPAT_ZTAILPACKING)
 EROFS_FEATURE_FUNCS(fragments, incompat, INCOMPAT_FRAGMENTS)
+EROFS_FEATURE_FUNCS(dedupe, incompat, INCOMPAT_DEDUPE)
 EROFS_FEATURE_FUNCS(sb_chksum, compat, COMPAT_SB_CHKSUM)
 
 #define EROFS_I_EA_INITED	(1 << 0)
@@ -286,6 +287,7 @@ enum {
 	BH_Encoded,
 	BH_FullMapped,
 	BH_Fragment,
+	BH_Partialref,
 };
 
 /* Has a disk mapping */
@@ -298,6 +300,8 @@ enum {
 #define EROFS_MAP_FULL_MAPPED	(1 << BH_FullMapped)
 /* Located in the special packed inode */
 #define EROFS_MAP_FRAGMENT	(1 << BH_Fragment)
+/* The extent refers to partial decompressed data */
+#define EROFS_MAP_PARTIAL_REF	(1 << BH_Partialref)
 
 struct erofs_map_blocks {
 	char mpage[EROFS_BLKSIZ];
