@@ -70,6 +70,8 @@ struct erofs_device_info {
 	u32 mapped_blkaddr;
 };
 
+#define EROFS_PACKED_NID_UNALLOCATED	-1
+
 struct erofs_sb_info {
 	struct erofs_device_info *devs;
 
@@ -212,6 +214,7 @@ struct erofs_inode {
 	uint64_t capabilities;
 #endif
 	erofs_off_t fragmentoff;
+	unsigned int fragment_size;
 };
 
 static inline bool is_inode_layout_compression(struct erofs_inode *inode)

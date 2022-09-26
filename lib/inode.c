@@ -25,6 +25,7 @@
 #include "erofs/block_list.h"
 #include "erofs/compress_hints.h"
 #include "erofs/blobchunk.h"
+#include "erofs/fragments.h"
 #include "liberofs_private.h"
 
 #define S_SHIFT                 12
@@ -424,7 +425,11 @@ int erofs_write_file(struct erofs_inode *inode)
 	}
 
 	if (cfg.c_compr_alg_master && erofs_file_is_compressible(inode)) {
-		ret = erofs_write_compressed_file(inode);
+		fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
+		if (fd < 0)
+			return -errno;
+		ret = erofs_write_compressed_file(inode, fd);
+		close(fd);
 
 		if (!ret || ret != -ENOSPC)
 			return ret;
@@ -769,6 +774,8 @@ static bool erofs_should_use_inode_extended(struct erofs_inode *inode)
 		return true;
 	if (inode->i_size > UINT_MAX)
 		return true;
+	if (erofs_is_packed_inode(inode))
+		return false;
 	if (inode->i_uid > USHRT_MAX)
 		return true;
 	if (inode->i_gid > USHRT_MAX)
@@ -803,6 +810,9 @@ int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
 
 	inode->capabilities = 0;
 	if (!cfg.fs_config_file && !cfg.mount_point)
+		return 0;
+	/* avoid loading special inodes */
+	if (path == EROFS_PACKED_INODE)
 		return 0;
 
 	if (!cfg.mount_point ||
@@ -844,8 +854,7 @@ static int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
 }
 #endif
 
-static int erofs_fill_inode(struct erofs_inode *inode,
-			    struct stat64 *st,
+static int erofs_fill_inode(struct erofs_inode *inode, struct stat64 *st,
 			    const char *path)
 {
 	int err = erofs_droid_inode_fsconfig(inode, st, path);
@@ -1179,4 +1188,50 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(struct erofs_inode *parent,
 		inode->i_parent = inode;	/* rootdir mark */
 
 	return erofs_mkfs_build_tree(inode);
+}
+
+struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
+{
+	struct stat64 st;
+	struct erofs_inode *inode;
+	int ret;
+
+	lseek(fd, 0, SEEK_SET);
+	ret = fstat64(fd, &st);
+	if (ret)
+		return ERR_PTR(-errno);
+
+	inode = erofs_new_inode();
+	if (IS_ERR(inode))
+		return inode;
+
+	if (name == EROFS_PACKED_INODE) {
+		st.st_uid = st.st_gid = 0;
+		st.st_nlink = 0;
+	}
+
+	ret = erofs_fill_inode(inode, &st, name);
+	if (ret) {
+		free(inode);
+		return ERR_PTR(ret);
+	}
+
+	if (name == EROFS_PACKED_INODE) {
+		sbi.packed_nid = EROFS_PACKED_NID_UNALLOCATED;
+		inode->nid = sbi.packed_nid;
+	}
+
+	ret = erofs_write_compressed_file(inode, fd);
+	if (ret == -ENOSPC) {
+		lseek(fd, 0, SEEK_SET);
+		ret = write_uncompressed_file_from_fd(inode, fd);
+	}
+
+	if (ret) {
+		DBG_BUGON(ret == -ENOSPC);
+		return ERR_PTR(ret);
+	}
+	erofs_prepare_inode_buffer(inode);
+	erofs_write_tail_end(inode);
+	return inode;
 }
