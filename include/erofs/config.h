@@ -45,6 +45,7 @@ struct erofs_configure {
 	bool c_noinline_data;
 	bool c_ztailpacking;
 	bool c_fragments;
+	bool c_dedupe;
 	bool c_ignore_mtime;
 	bool c_showprogress;
 

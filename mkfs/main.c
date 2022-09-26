@@ -18,6 +18,7 @@
 #include "erofs/inode.h"
 #include "erofs/io.h"
 #include "erofs/compress.h"
+#include "erofs/dedupe.h"
 #include "erofs/xattr.h"
 #include "erofs/exclude.h"
 #include "erofs/block_list.h"
@@ -219,6 +220,12 @@ static int parse_extended_opts(const char *opts)
 				}
 				cfg.c_pclusterblks_packed = i / EROFS_BLKSIZ;
 			}
+		}
+
+		if (MATCH_EXTENTED_OPT("dedupe", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			cfg.c_dedupe = true;
 		}
 	}
 	return 0;
@@ -699,6 +706,8 @@ int main(int argc, char **argv)
 		}
 		erofs_warn("EXPERIMENTAL compressed fragments feature in use. Use at your own risk!");
 	}
+	if (cfg.c_dedupe)
+		erofs_warn("EXPERIMENTAL data deduplication feature in use. Use at your own risk!");
 	erofs_set_fs_root(cfg.c_src_path);
 #ifndef NDEBUG
 	if (cfg.c_random_pclusterblks)
@@ -723,6 +732,15 @@ int main(int argc, char **argv)
 		erofs_err("failed to load compress hints %s",
 			  cfg.c_compress_hints_file);
 		goto exit;
+	}
+
+	if (cfg.c_dedupe) {
+		err = z_erofs_dedupe_init(EROFS_BLKSIZ);
+		if (err) {
+			erofs_err("failed to initialize deduplication: %s",
+				  erofs_strerror(err));
+			goto exit;
+		}
 	}
 
 	err = z_erofs_compress_init(sb_bh);
@@ -795,6 +813,7 @@ int main(int argc, char **argv)
 		err = erofs_mkfs_superblock_csum_set();
 exit:
 	z_erofs_compress_exit();
+	z_erofs_dedupe_exit();
 #ifdef WITH_ANDROID
 	erofs_droid_blocklist_fclose();
 #endif
