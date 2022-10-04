@@ -66,6 +66,11 @@ Pack the tail part (pcluster) of compressed files into its metadata to save
 more space and the tail part I/O. (Linux v5.17+)
 .RE
 .TP
+.BI "\-L " volume-label
+Set the volume label for the filesystem to
+.IR volume-label .
+The maximum length of the volume label is 16 bytes.
+.TP
 .BI "\-T " #
 Set all files to the given UNIX timestamp. Reproducible builds requires setting
 all to a specific one.
