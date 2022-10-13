@@ -99,7 +99,7 @@ int z_erofs_dedupe_insert(struct z_erofs_inmem_extent *e,
 {
 	struct z_erofs_dedupe_item *di;
 
-	if (e->length < window_size)
+	if (!dedupe_subtree || e->length < window_size)
 		return 0;
 
 	di = malloc(sizeof(*di) + e->length - window_size);
