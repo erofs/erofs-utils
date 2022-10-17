@@ -663,12 +663,6 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (cfg.c_chunkbits) {
-		err = erofs_blob_init(cfg.c_blobdev_path);
-		if (err)
-			return 1;
-	}
-
 	err = lstat64(cfg.c_src_path, &st);
 	if (err)
 		return 1;
@@ -747,20 +741,31 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
-	if (cfg.c_dedupe) {
-		err = z_erofs_dedupe_init(EROFS_BLKSIZ);
-		if (err) {
-			erofs_err("failed to initialize deduplication: %s",
-				  erofs_strerror(err));
-			goto exit;
-		}
-	}
-
 	err = z_erofs_compress_init(sb_bh);
 	if (err) {
 		erofs_err("failed to initialize compressor: %s",
 			  erofs_strerror(err));
 		goto exit;
+	}
+
+	if (cfg.c_dedupe) {
+		if (!cfg.c_compr_alg_master) {
+			erofs_err("Compression is not enabled.  Turn on chunk-based data deduplication instead.");
+			cfg.c_chunkbits = LOG_BLOCK_SIZE;
+		} else {
+			err = z_erofs_dedupe_init(EROFS_BLKSIZ);
+			if (err) {
+				erofs_err("failed to initialize deduplication: %s",
+					  erofs_strerror(err));
+				goto exit;
+			}
+		}
+	}
+
+	if (cfg.c_chunkbits) {
+		err = erofs_blob_init(cfg.c_blobdev_path);
+		if (err)
+			return 1;
 	}
 
 	err = erofs_generate_devtable();
