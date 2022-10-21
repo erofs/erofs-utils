@@ -256,7 +256,7 @@ int dev_resize(unsigned int blocks)
 
 int dev_read(int device_id, void *buf, u64 offset, size_t len)
 {
-	int ret, fd;
+	int read_count, fd;
 
 	if (cfg.c_dry_run)
 		return 0;
@@ -278,15 +278,27 @@ int dev_read(int device_id, void *buf, u64 offset, size_t len)
 		fd = erofs_blobfd[device_id - 1];
 	}
 
+	while (len > 0) {
 #ifdef HAVE_PREAD64
-	ret = pread64(fd, buf, len, (off64_t)offset);
+		read_count = pread64(fd, buf, len, (off64_t)offset);
 #else
-	ret = pread(fd, buf, len, (off_t)offset);
+		read_count = pread(fd, buf, len, (off_t)offset);
 #endif
-	if (ret != (int)len) {
-		erofs_err("Failed to read data from device - %s:[%" PRIu64 ", %zd].",
-			  erofs_devname, offset, len);
-		return -errno;
+		if (read_count == -1 || read_count == 0) {
+			if (errno) {
+				erofs_err("Failed to read data from device - %s:[%" PRIu64 ", %zd].",
+					  erofs_devname, offset, len);
+				return -errno;
+			} else {
+				erofs_err("Reach EOF of device - %s:[%" PRIu64 ", %zd].",
+					  erofs_devname, offset, len);
+				return -EINVAL;
+			}
+		}
+
+		offset += read_count;
+		len -= read_count;
+		buf += read_count;
 	}
 	return 0;
 }
