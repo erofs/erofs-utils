@@ -37,7 +37,7 @@ static const char header_format[] = "%-16s %11s %16s |%-50s|\n";
 static char *file_types[] = {
 	".txt", ".so", ".xml", ".apk",
 	".odex", ".vdex", ".oat", ".rc",
-	".otf", ".txt", "others",
+	".otf", "others",
 };
 #define OTHERFILETYPE	ARRAY_SIZE(file_types)
 /* (1 << FILE_MAX_SIZE_BITS)KB */
