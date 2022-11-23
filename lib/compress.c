@@ -186,12 +186,22 @@ static int z_erofs_compress_dedupe(struct erofs_inode *inode,
 		if (z_erofs_dedupe_match(&dctx))
 			break;
 
+		delta = ctx->queue + ctx->head - dctx.cur;
+		/*
+		 * For big pcluster dedupe, leave two indices at least to store
+		 * CBLKCNT as the first step.  Even laterly, an one-block
+		 * decompresssion could be done as another try in practice.
+		 */
+		if (dctx.e.compressedblks > 1 &&
+		    (ctx->clusterofs + ctx->e.length - delta) % EROFS_BLKSIZ +
+			dctx.e.length < 2 * EROFS_BLKSIZ)
+			break;
+
 		/* fall back to noncompact indexes for deduplication */
 		inode->z_advise &= ~Z_EROFS_ADVISE_COMPACTED_2B;
 		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION_LEGACY;
 		erofs_sb_set_dedupe();
 
-		delta = ctx->queue + ctx->head - dctx.cur;
 		if (delta) {
 			DBG_BUGON(delta < 0);
 			DBG_BUGON(!ctx->e.length);
