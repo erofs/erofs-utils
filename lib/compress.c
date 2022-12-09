@@ -174,6 +174,13 @@ static int z_erofs_compress_dedupe(struct z_erofs_vle_compress_ctx *ctx,
 	struct erofs_inode *inode = ctx->inode;
 	int ret = 0;
 
+	/*
+	 * No need dedupe for packed inode since it is composed of
+	 * fragments which have already been deduplicated.
+	 */
+	if (erofs_is_packed_inode(inode))
+		goto out;
+
 	do {
 		struct z_erofs_dedupe_ctx dctx = {
 			.start = ctx->queue + ctx->head - ({ int rc;
@@ -238,6 +245,7 @@ static int z_erofs_compress_dedupe(struct z_erofs_vle_compress_ctx *ctx,
 		}
 	} while (*len);
 
+out:
 	z_erofs_write_indexes(ctx);
 	return ret;
 }
@@ -369,12 +377,13 @@ static int vle_compress_one(struct z_erofs_vle_compress_ctx *ctx)
 	char *const dst = dstbuf + EROFS_BLKSIZ;
 	struct erofs_compress *const h = &compresshandle;
 	unsigned int len = ctx->tail - ctx->head;
+	bool is_packed_inode = erofs_is_packed_inode(inode);
 	bool final = !ctx->remaining;
 	int ret;
 
 	while (len) {
 		bool may_packing = (cfg.c_fragments && final &&
-				   !erofs_is_packed_inode(inode));
+				   !is_packed_inode);
 		bool may_inline = (cfg.c_ztailpacking && final &&
 				  !may_packing);
 		bool fix_dedupedfrag = ctx->fix_dedupedfrag;
@@ -513,7 +522,7 @@ frag_packing:
 		}
 		ctx->e.partial = false;
 		ctx->e.blkaddr = ctx->blkaddr;
-		if (!may_inline && !may_packing)
+		if (!may_inline && !may_packing && !is_packed_inode)
 			(void)z_erofs_dedupe_insert(&ctx->e,
 						    ctx->queue + ctx->head);
 		ctx->blkaddr += ctx->e.compressedblks;
