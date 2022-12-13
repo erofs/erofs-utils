@@ -3,7 +3,18 @@
  * Copyright (C), 2022, Coolpad Group Limited.
  * Created by Yue Hu <huyue2@coolpad.com>
  */
+#ifndef _LARGEFILE_SOURCE
+#define _LARGEFILE_SOURCE
+#endif
+#ifndef _LARGEFILE64_SOURCE
+#define _LARGEFILE64_SOURCE
+#endif
+#ifndef _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
+#endif
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <stdlib.h>
 #include <unistd.h>
 #include "erofs/err.h"
@@ -30,6 +41,12 @@ static struct list_head dupli_frags[FRAGMENT_HASHSIZE];
 static FILE *packedfile;
 const char *frags_packedname = "packed_file";
 
+#ifndef HAVE_LSEEK64
+#define erofs_lseek64 lseek
+#else
+#define erofs_lseek64 lseek64
+#endif
+
 static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 					 u32 crc)
 {
@@ -53,8 +70,7 @@ static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 	if (!data)
 		return -ENOMEM;
 
-	ret = lseek(fd, inode->i_size - length, SEEK_SET);
-	if (ret < 0) {
+	if (erofs_lseek64(fd, inode->i_size - length, SEEK_SET) < 0) {
 		ret = -errno;
 		goto out;
 	}
@@ -113,8 +129,7 @@ int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 *tofcrc)
 	if (inode->i_size <= EROFS_TOF_HASHLEN)
 		return 0;
 
-	ret = lseek(fd, inode->i_size - EROFS_TOF_HASHLEN, SEEK_SET);
-	if (ret < 0)
+	if (erofs_lseek64(fd, inode->i_size - EROFS_TOF_HASHLEN, SEEK_SET) < 0)
 		return -errno;
 
 	ret = read(fd, data_to_hash, EROFS_TOF_HASHLEN);
@@ -192,9 +207,17 @@ void z_erofs_fragments_commit(struct erofs_inode *inode)
 int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
 			   unsigned int len, u32 tofcrc)
 {
+#ifdef HAVE_FTELLO64
+	off64_t offset = ftello64(packedfile);
+#else
+	off_t offset = ftello(packedfile);
+#endif
 	int ret;
 
-	inode->fragmentoff = ftell(packedfile);
+	if (offset < 0)
+		return -errno;
+
+	inode->fragmentoff = (erofs_off_t)offset;
 	inode->fragment_size = len;
 
 	if (fwrite(data, len, 1, packedfile) != 1)

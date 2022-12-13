@@ -190,6 +190,8 @@ AC_CHECK_FUNCS(m4_flatten([
 	llistxattr
 	memset
 	realpath
+	lseek64
+	ftello64
 	pread64
 	pwrite64
 	strdup
