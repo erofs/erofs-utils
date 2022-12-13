@@ -406,7 +406,7 @@ static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 	return 0;
 }
 
-int erofs_write_file(struct erofs_inode *inode)
+static int erofs_write_file(struct erofs_inode *inode)
 {
 	int ret, fd;
 
@@ -1196,7 +1196,10 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
 	struct erofs_inode *inode;
 	int ret;
 
-	lseek(fd, 0, SEEK_SET);
+	ret = lseek(fd, 0, SEEK_SET);
+	if (ret < 0)
+		return ERR_PTR(-errno);
+
 	ret = fstat64(fd, &st);
 	if (ret)
 		return ERR_PTR(-errno);
@@ -1223,7 +1226,10 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
 
 	ret = erofs_write_compressed_file(inode, fd);
 	if (ret == -ENOSPC) {
-		lseek(fd, 0, SEEK_SET);
+		ret = lseek(fd, 0, SEEK_SET);
+		if (ret < 0)
+			return ERR_PTR(-errno);
+
 		ret = write_uncompressed_file_from_fd(inode, fd);
 	}
 
