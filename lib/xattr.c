@@ -465,7 +465,7 @@ static int erofs_count_all_xattrs_from_path(const char *path)
 {
 	int ret;
 	DIR *_dir;
-	struct stat64 st;
+	struct stat st;
 
 	_dir = opendir(path);
 	if (!_dir) {
@@ -500,7 +500,7 @@ static int erofs_count_all_xattrs_from_path(const char *path)
 			goto fail;
 		}
 
-		ret = lstat64(buf, &st);
+		ret = lstat(buf, &st);
 		if (ret) {
 			ret = -errno;
 			goto fail;

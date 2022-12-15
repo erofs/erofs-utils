@@ -641,7 +641,7 @@ int main(int argc, char **argv)
 	struct erofs_buffer_head *sb_bh;
 	struct erofs_inode *root_inode, *packed_inode;
 	erofs_nid_t root_nid, packed_nid;
-	struct stat64 st;
+	struct stat st;
 	erofs_blk_t nblocks;
 	struct timeval t;
 	char uuid_str[37] = "not available";
@@ -663,7 +663,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	err = lstat64(cfg.c_src_path, &st);
+	err = lstat(cfg.c_src_path, &st);
 	if (err)
 		return 1;
 	if (!S_ISDIR(st.st_mode)) {
