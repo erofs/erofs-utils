@@ -21,6 +21,7 @@ typedef unsigned short umode_t;
 
 #include "erofs_fs.h"
 #include <fcntl.h>
+#include <sys/types.h> /* for off_t definition */
 
 #ifndef PATH_MAX
 #define PATH_MAX        4096    /* # chars in a path name including nul */
@@ -107,6 +108,10 @@ struct erofs_sb_info {
 	};
 	erofs_nid_t packed_nid;
 };
+
+
+/* make sure that any user of the erofs headers has atleast 64bit off_t type */
+extern int erofs_assert_largefile[sizeof(off_t)-8];
 
 /* global sbi */
 extern struct erofs_sb_info sbi;
