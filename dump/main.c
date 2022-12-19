@@ -225,36 +225,23 @@ static void inc_file_extension_count(const char *dname, unsigned int len)
 	++stats.file_type_stat[type];
 }
 
-static void update_file_size_statatics(erofs_off_t occupied_size,
-		erofs_off_t original_size)
+static void update_file_size_statistics(erofs_off_t size, bool original)
 {
-	int occupied_size_mark, original_size_mark;
+	unsigned int *file_size = original ? stats.file_original_size :
+				  stats.file_comp_size;
+	int size_mark = 0;
 
-	original_size_mark = 0;
-	occupied_size_mark = 0;
-	occupied_size >>= 10;
-	original_size >>= 10;
+	size >>= 10;
 
-	while (occupied_size || original_size) {
-		if (occupied_size) {
-			occupied_size >>= 1;
-			occupied_size_mark++;
-		}
-		if (original_size) {
-			original_size >>= 1;
-			original_size_mark++;
-		}
+	while (size) {
+		size >>= 1;
+		size_mark++;
 	}
 
-	if (original_size_mark >= FILE_MAX_SIZE_BITS)
-		stats.file_original_size[FILE_MAX_SIZE_BITS]++;
+	if (size_mark >= FILE_MAX_SIZE_BITS)
+		file_size[FILE_MAX_SIZE_BITS]++;
 	else
-		stats.file_original_size[original_size_mark]++;
-
-	if (occupied_size_mark >= FILE_MAX_SIZE_BITS)
-		stats.file_comp_size[FILE_MAX_SIZE_BITS]++;
-	else
-		stats.file_comp_size[occupied_size_mark]++;
+		file_size[size_mark]++;
 }
 
 static int erofsdump_ls_dirent_iter(struct erofs_dir_context *ctx)
@@ -301,7 +288,8 @@ static int erofsdump_readdir(struct erofs_dir_context *ctx)
 		stats.files_total_origin_size += vi.i_size;
 		inc_file_extension_count(ctx->dname, ctx->de_namelen);
 		stats.files_total_size += occupied_size;
-		update_file_size_statatics(occupied_size, vi.i_size);
+		update_file_size_statistics(vi.i_size, true);
+		update_file_size_statistics(occupied_size, false);
 	}
 
 	/* XXXX: the dir depth should be restricted in order to avoid loops */
