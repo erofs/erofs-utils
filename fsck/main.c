@@ -458,6 +458,9 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 				.in = raw,
 				.out = buffer,
 				.decodedskip = 0,
+				.interlaced_offset =
+					map.m_algorithmformat == Z_EROFS_COMPRESSION_INTERLACED ?
+						erofs_blkoff(map.m_la) : 0,
 				.inputsize = map.m_plen,
 				.decodedlength = map.m_llen,
 				.alg = map.m_algorithmformat,
