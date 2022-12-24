@@ -287,9 +287,9 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 				return ret;
 			}
 
-			ret = z_erofs_read_data(&packed_inode,
-					buffer + end - offset, length - skip,
-					inode->fragmentoff + skip);
+			ret = erofs_pread(&packed_inode, buffer + end - offset,
+					  length - skip,
+					  inode->fragmentoff + skip);
 			if (ret < 0)
 				break;
 			continue;
