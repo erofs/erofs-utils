@@ -388,7 +388,6 @@ static void erofsdump_show_fileinfo(bool show_extent)
 		inode.datalayout,
 		(double)(100 * size) / (double)(inode.i_size));
 	fprintf(stdout, "Inode size: %d   ", inode.inode_isize);
-	fprintf(stdout, "Extent size: %u   ", inode.extent_isize);
 	fprintf(stdout,	"Xattr size: %u\n", inode.xattr_isize);
 	fprintf(stdout, "Uid: %u   Gid: %u  ", inode.i_uid, inode.i_gid);
 	fprintf(stdout, "Access: %04o/%s\n", access_mode, access_mode_str);
