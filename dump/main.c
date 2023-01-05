@@ -14,6 +14,8 @@
 #include "erofs/inode.h"
 #include "erofs/io.h"
 #include "erofs/dir.h"
+#include "erofs/compress.h"
+#include "erofs/fragments.h"
 #include "../lib/liberofs_private.h"
 
 #ifdef HAVE_LIBUUID
@@ -96,6 +98,7 @@ static struct erofsdump_feature feature_lists[] = {
 	{ false, EROFS_FEATURE_INCOMPAT_CHUNKED_FILE, "chunked_file" },
 	{ false, EROFS_FEATURE_INCOMPAT_DEVICE_TABLE, "device_table" },
 	{ false, EROFS_FEATURE_INCOMPAT_ZTAILPACKING, "ztailpacking" },
+	{ false, EROFS_FEATURE_INCOMPAT_FRAGMENTS, "fragments" },
 };
 
 static int erofsdump_readdir(struct erofs_dir_context *ctx);
@@ -264,6 +267,32 @@ static int erofsdump_dirent_iter(struct erofs_dir_context *ctx)
 	return erofsdump_readdir(ctx);
 }
 
+static int erofsdump_read_packed_inode(void)
+{
+	int err;
+	erofs_off_t occupied_size = 0;
+	struct erofs_inode vi = { .nid = sbi.packed_nid };
+
+	if (!erofs_sb_has_fragments())
+		return 0;
+
+	err = erofs_read_inode_from_disk(&vi);
+	if (err) {
+		erofs_err("failed to read packed file inode from disk");
+		return err;
+	}
+
+	err = erofsdump_get_occupied_size(&vi, &occupied_size);
+	if (err) {
+		erofs_err("failed to get the file size of packed inode");
+		return err;
+	}
+
+	stats.files_total_size += occupied_size;
+	update_file_size_statistics(occupied_size, false);
+	return 0;
+}
+
 static int erofsdump_readdir(struct erofs_dir_context *ctx)
 {
 	int err;
@@ -356,8 +385,8 @@ static void erofsdump_show_fileinfo(bool show_extent)
 
 	err = erofs_get_pathname(inode.nid, path, sizeof(path));
 	if (err < 0) {
-		erofs_err("file path not found @ nid %llu", inode.nid | 0ULL);
-		return;
+		strncpy(path, "(not found)", sizeof(path) - 1);
+		path[sizeof(path) - 1] = '\0';
 	}
 
 	strftime(timebuf, sizeof(timebuf),
@@ -366,7 +395,8 @@ static void erofsdump_show_fileinfo(bool show_extent)
 	for (i = 8; i >= 0; i--)
 		if (((access_mode >> i) & 1) == 0)
 			access_mode_str[8 - i] = '-';
-	fprintf(stdout, "File : %s\n", path);
+	fprintf(stdout, "Path : %s\n",
+		erofs_is_packed_inode(&inode) ? "(packed file)" : path);
 	fprintf(stdout, "Size: %" PRIu64"  On-disk size: %" PRIu64 "  %s\n",
 		inode.i_size, size,
 		file_category_types[erofs_mode_to_ftype(inode.i_mode)]);
@@ -424,13 +454,21 @@ static void erofsdump_show_fileinfo(bool show_extent)
 			return;
 		}
 
-		fprintf(stdout, ext_fmt[!!mdev.m_deviceid], extent_count++,
-			map.m_la, map.m_la + map.m_llen, map.m_llen,
-			mdev.m_pa, mdev.m_pa + map.m_plen, map.m_plen,
-			mdev.m_deviceid);
+		if (map.m_flags & EROFS_MAP_FRAGMENT)
+			fprintf(stdout, ext_fmt[!!mdev.m_deviceid],
+				extent_count++,
+				map.m_la, map.m_la + map.m_llen, map.m_llen,
+				0, 0, 0, mdev.m_deviceid);
+		else
+			fprintf(stdout, ext_fmt[!!mdev.m_deviceid],
+				extent_count++,
+				map.m_la, map.m_la + map.m_llen, map.m_llen,
+				mdev.m_pa, mdev.m_pa + map.m_plen, map.m_plen,
+				mdev.m_deviceid);
 		map.m_la += map.m_llen;
 	}
-	fprintf(stdout, "%s: %d extents found\n", path, extent_count);
+	fprintf(stdout, "%s: %d extents found\n",
+		erofs_is_packed_inode(&inode) ? "(packed file)" : path, extent_count);
 }
 
 static void erofsdump_filesize_distribution(const char *title,
@@ -536,6 +574,11 @@ static void erofsdump_print_statistic(void)
 		erofs_err("read dir failed");
 		return;
 	}
+	err = erofsdump_read_packed_inode();
+	if (err) {
+		erofs_err("failed to read packed inode");
+		return;
+	}
 	erofsdump_file_statistic();
 	erofsdump_filesize_distribution("Original",
 			stats.file_original_size,
@@ -562,6 +605,9 @@ static void erofsdump_show_superblock(void)
 			sbi.xattr_blkaddr);
 	fprintf(stdout, "Filesystem root nid:                          %llu\n",
 			sbi.root_nid | 0ULL);
+	if (erofs_sb_has_fragments())
+		fprintf(stdout, "Filesystem packed nid:                        %llu\n",
+			sbi.packed_nid | 0ULL);
 	fprintf(stdout, "Filesystem inode count:                       %llu\n",
 			sbi.inos | 0ULL);
 	fprintf(stdout, "Filesystem created:                           %s",
