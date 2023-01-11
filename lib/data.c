@@ -158,19 +158,38 @@ int erofs_map_dev(struct erofs_sb_info *sbi, struct erofs_map_dev *map)
 	return 0;
 }
 
+int erofs_read_one_data(struct erofs_map_blocks *map, char *buffer, u64 offset,
+			size_t len)
+{
+	struct erofs_map_dev mdev;
+	int ret;
+
+	mdev = (struct erofs_map_dev) {
+		.m_deviceid = map->m_deviceid,
+		.m_pa = map->m_pa,
+	};
+	ret = erofs_map_dev(&sbi, &mdev);
+	if (ret)
+		return ret;
+
+	ret = dev_read(mdev.m_deviceid, buffer, mdev.m_pa + offset, len);
+	if (ret < 0)
+		return -EIO;
+	return 0;
+}
+
 static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 			       erofs_off_t size, erofs_off_t offset)
 {
 	struct erofs_map_blocks map = {
 		.index = UINT_MAX,
 	};
-	struct erofs_map_dev mdev;
 	int ret;
 	erofs_off_t ptr = offset;
 
 	while (ptr < offset + size) {
 		char *const estart = buffer + ptr - offset;
-		erofs_off_t eend;
+		erofs_off_t eend, moff = 0;
 
 		map.m_la = ptr;
 		ret = erofs_map_blocks(inode, &map, 0);
@@ -178,14 +197,6 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 			return ret;
 
 		DBG_BUGON(map.m_plen != map.m_llen);
-
-		mdev = (struct erofs_map_dev) {
-			.m_deviceid = map.m_deviceid,
-			.m_pa = map.m_pa,
-		};
-		ret = erofs_map_dev(&sbi, &mdev);
-		if (ret)
-			return ret;
 
 		/* trim extent */
 		eend = min(offset + size, map.m_la + map.m_llen);
@@ -204,16 +215,70 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 		}
 
 		if (ptr > map.m_la) {
-			mdev.m_pa += ptr - map.m_la;
+			moff = ptr - map.m_la;
 			map.m_la = ptr;
 		}
 
-		ret = dev_read(mdev.m_deviceid, estart, mdev.m_pa,
-			       eend - map.m_la);
-		if (ret < 0)
-			return -EIO;
+		ret = erofs_read_one_data(&map, estart, moff, eend - map.m_la);
+		if (ret)
+			return ret;
 		ptr = eend;
 	}
+	return 0;
+}
+
+int z_erofs_read_one_data(struct erofs_inode *inode,
+			struct erofs_map_blocks *map, char *raw, char *buffer,
+			erofs_off_t skip, erofs_off_t length, bool trimmed)
+{
+	struct erofs_map_dev mdev;
+	int ret = 0;
+
+	if (map->m_flags & EROFS_MAP_FRAGMENT) {
+		struct erofs_inode packed_inode = {
+			.nid = sbi.packed_nid,
+		};
+
+		ret = erofs_read_inode_from_disk(&packed_inode);
+		if (ret) {
+			erofs_err("failed to read packed inode from disk");
+			return ret;
+		}
+
+		return erofs_pread(&packed_inode, buffer, length - skip,
+				   inode->fragmentoff + skip);
+	}
+
+	/* no device id here, thus it will always succeed */
+	mdev = (struct erofs_map_dev) {
+		.m_pa = map->m_pa,
+	};
+	ret = erofs_map_dev(&sbi, &mdev);
+	if (ret) {
+		DBG_BUGON(1);
+		return ret;
+	}
+
+	ret = dev_read(mdev.m_deviceid, raw, mdev.m_pa, map->m_plen);
+	if (ret < 0)
+		return ret;
+
+	ret = z_erofs_decompress(&(struct z_erofs_decompress_req) {
+			.in = raw,
+			.out = buffer,
+			.decodedskip = skip,
+			.interlaced_offset =
+				map->m_algorithmformat == Z_EROFS_COMPRESSION_INTERLACED ?
+					erofs_blkoff(map->m_la) : 0,
+			.inputsize = map->m_plen,
+			.decodedlength = length,
+			.alg = map->m_algorithmformat,
+			.partial_decoding = trimmed ? true :
+				!(map->m_flags & EROFS_MAP_FULL_MAPPED) ||
+					(map->m_flags & EROFS_MAP_PARTIAL_REF),
+			 });
+	if (ret < 0)
+		return ret;
 	return 0;
 }
 
@@ -224,9 +289,8 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 	struct erofs_map_blocks map = {
 		.index = UINT_MAX,
 	};
-	struct erofs_map_dev mdev;
-	bool partial;
-	unsigned int bufsize = 0, interlaced_offset;
+	bool trimmed;
+	unsigned int bufsize = 0;
 	char *raw = NULL;
 	int ret = 0;
 
@@ -238,28 +302,17 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 		if (ret)
 			break;
 
-		/* no device id here, thus it will always succeed */
-		mdev = (struct erofs_map_dev) {
-			.m_pa = map.m_pa,
-		};
-		ret = erofs_map_dev(&sbi, &mdev);
-		if (ret) {
-			DBG_BUGON(1);
-			break;
-		}
-
 		/*
 		 * trim to the needed size if the returned extent is quite
 		 * larger than requested, and set up partial flag as well.
 		 */
 		if (end < map.m_la + map.m_llen) {
 			length = end - map.m_la;
-			partial = true;
+			trimmed = true;
 		} else {
 			DBG_BUGON(end != map.m_la + map.m_llen);
 			length = map.m_llen;
-			partial = !(map.m_flags & EROFS_MAP_FULL_MAPPED) ||
-				(map.m_flags & EROFS_MAP_PARTIAL_REF);
+			trimmed = false;
 		}
 
 		if (map.m_la < offset) {
@@ -276,25 +329,6 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 			continue;
 		}
 
-		if (map.m_flags & EROFS_MAP_FRAGMENT) {
-			struct erofs_inode packed_inode = {
-				.nid = sbi.packed_nid,
-			};
-
-			ret = erofs_read_inode_from_disk(&packed_inode);
-			if (ret) {
-				erofs_err("failed to read packed inode from disk");
-				return ret;
-			}
-
-			ret = erofs_pread(&packed_inode, buffer + end - offset,
-					  length - skip,
-					  inode->fragmentoff + skip);
-			if (ret < 0)
-				break;
-			continue;
-		}
-
 		if (map.m_plen > bufsize) {
 			bufsize = map.m_plen;
 			raw = realloc(raw, bufsize);
@@ -303,24 +337,9 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 				break;
 			}
 		}
-		ret = dev_read(mdev.m_deviceid, raw, mdev.m_pa, map.m_plen);
-		if (ret < 0)
-			break;
 
-		interlaced_offset = 0;
-		if (map.m_algorithmformat == Z_EROFS_COMPRESSION_INTERLACED)
-			interlaced_offset = erofs_blkoff(map.m_la);
-
-		ret = z_erofs_decompress(&(struct z_erofs_decompress_req) {
-					.in = raw,
-					.out = buffer + end - offset,
-					.decodedskip = skip,
-					.interlaced_offset = interlaced_offset,
-					.inputsize = map.m_plen,
-					.decodedlength = length,
-					.alg = map.m_algorithmformat,
-					.partial_decoding = partial
-					 });
+		ret = z_erofs_read_one_data(inode, &map, raw,
+				buffer + end - offset, skip, length, trimmed);
 		if (ret < 0)
 			break;
 	}
