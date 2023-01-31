@@ -143,7 +143,12 @@ static int erofsfuse_readlink(const char *path, char *buffer, size_t size)
 }
 
 static int erofsfuse_getxattr(const char *path, const char *name, char *value,
-			size_t size)
+			size_t size
+#ifdef __APPLE__
+			, uint32_t position)
+#else
+			)
+#endif
 {
 	int ret;
 	struct erofs_inode vi;
@@ -227,7 +232,7 @@ static void usage(void)
 static void erofsfuse_dumpcfg(void)
 {
 	erofs_dump("disk: %s\n", fusecfg.disk);
-	erofs_dump("offset: %lu\n", fusecfg.offset);
+	erofs_dump("offset: %llu\n", fusecfg.offset | 0ULL);
 	erofs_dump("mountpoint: %s\n", fusecfg.mountpoint);
 	erofs_dump("dbglevel: %u\n", cfg.c_dbg_lvl);
 }
