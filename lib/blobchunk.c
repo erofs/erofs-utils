@@ -237,6 +237,8 @@ int erofs_blob_remap(void)
 		erofs_bdrop(bh_devt, false);
 		return 0;
 	}
+	if (!length)	/* bail out if there is no chunked data */
+		return 0;
 	bh = erofs_balloc(DATA, length, 0, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
