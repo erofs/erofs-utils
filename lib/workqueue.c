@@ -19,13 +19,12 @@ static void *workqueue_thread(void *arg)
 	struct erofs_workqueue		*wq = arg;
 	struct erofs_work		*wi;
 
+	pthread_mutex_lock(&wq->lock);
 	/*
 	 * Loop pulling work from the passed in work queue.
 	 * Check for notification to exit after every chunk of work.
 	 */
 	while (1) {
-		pthread_mutex_lock(&wq->lock);
-
 		/*
 		 * Wait for work.
 		 */
@@ -54,9 +53,13 @@ static void *workqueue_thread(void *arg)
 			/* more work, wake up another worker */
 			pthread_cond_signal(&wq->wakeup);
 		}
-		pthread_mutex_unlock(&wq->lock);
+		wi->next = NULL;
 
+		pthread_mutex_unlock(&wq->lock);
 		(wi->function)(wq, wi);
+		pthread_mutex_lock(&wq->lock);
+
+		wi->function = NULL;
 	}
 	return NULL;
 }

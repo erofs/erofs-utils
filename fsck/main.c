@@ -14,10 +14,14 @@
 #include "erofs/compress.h"
 #include "erofs/decompress.h"
 #include "erofs/dir.h"
+#include "erofs/workqueue.h"
 
 static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid);
+struct erofsfsck_work;
 
 struct erofsfsck_cfg {
+	struct erofs_workqueue wq;
+	struct erofsfsck_work *idle;
 	u64 physical_blocks;
 	u64 logical_blocks;
 	char *extract_path;
@@ -31,6 +35,7 @@ struct erofsfsck_cfg {
 	bool overwrite;
 	bool preserve_owner;
 	bool preserve_perms;
+	bool multithreading;
 };
 static struct erofsfsck_cfg fsckcfg;
 
@@ -361,17 +366,67 @@ out:
 	return ret;
 }
 
+struct erofsfsck_work {
+	struct erofs_work work;
+	struct erofs_map_blocks map;
+	struct erofs_inode *inode;
+	char *buffer, *raw;
+	struct erofsfsck_work *next;
+	unsigned int raw_size, buffer_size;
+	bool compressed, eio;
+};
+
+static int erofsfsck_extract_one(struct erofsfsck_work *fw)
+{
+	unsigned int plen = fw->map.m_plen;
+	int ret;
+
+	fw->eio = false;
+	if (plen > fw->raw_size) {
+		fw->raw_size = plen;
+		fw->raw = realloc(fw->raw, plen);
+		BUG_ON(!fw->raw);
+	}
+
+	if (fw->compressed) {
+		unsigned int llen = fw->map.m_llen;
+
+		if (llen > fw->buffer_size) {
+			fw->buffer_size = llen;
+			fw->buffer = realloc(fw->buffer, llen);
+			BUG_ON(!fw->buffer);
+		}
+		ret = z_erofs_read_one_data(fw->inode, &fw->map, fw->raw,
+					    fw->buffer, 0, llen, false);
+	} else {
+		ret = erofs_read_one_data(&fw->map, fw->raw, 0, plen);
+	}
+
+	if (ret)
+		fw->eio = true;
+	return ret;
+}
+
+static void erofsfsck_decompress_work(struct erofs_workqueue *wq,
+				      struct erofs_work *wi)
+{
+	(void)erofsfsck_extract_one((struct erofsfsck_work *)wi);
+}
+
 static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 {
-	struct erofs_map_blocks map = {
-		.index = UINT_MAX,
-	};
 	int ret = 0;
-	bool compressed;
 	erofs_off_t pos = 0;
 	u64 pchunk_len = 0;
-	unsigned int raw_size = 0, buffer_size = 0;
-	char *raw = NULL, *buffer = NULL;
+	struct erofsfsck_work *head = NULL, **last = &head;
+	struct erofsfsck_work s, *work;
+
+	s.inode = inode;
+	s.map = (struct erofs_map_blocks) {
+		.index = UINT_MAX,
+	};
+	s.buffer = s.raw = NULL;
+	s.buffer_size = s.raw_size = 0;
 
 	erofs_dbg("verify data chunk of nid(%llu): type(%d)",
 		  inode->nid | 0ULL, inode->datalayout);
@@ -380,11 +435,11 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	case EROFS_INODE_FLAT_PLAIN:
 	case EROFS_INODE_FLAT_INLINE:
 	case EROFS_INODE_CHUNK_BASED:
-		compressed = false;
+		s.compressed = false;
 		break;
 	case EROFS_INODE_FLAT_COMPRESSION_LEGACY:
 	case EROFS_INODE_FLAT_COMPRESSION:
-		compressed = true;
+		s.compressed = true;
 		break;
 	default:
 		erofs_err("unknown datalayout");
@@ -392,60 +447,80 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	}
 
 	while (pos < inode->i_size) {
-		map.m_la = pos;
-		if (compressed)
-			ret = z_erofs_map_blocks_iter(inode, &map,
+		s.map.m_la = pos;
+		if (s.compressed)
+			ret = z_erofs_map_blocks_iter(inode, &s.map,
 					EROFS_GET_BLOCKS_FIEMAP);
 		else
-			ret = erofs_map_blocks(inode, &map,
+			ret = erofs_map_blocks(inode, &s.map,
 					EROFS_GET_BLOCKS_FIEMAP);
 		if (ret)
 			goto out;
 
-		if (!compressed && map.m_llen != map.m_plen) {
+		if (!s.compressed && s.map.m_llen != s.map.m_plen) {
 			erofs_err("broken chunk length m_la %" PRIu64 " m_llen %" PRIu64 " m_plen %" PRIu64,
-				  map.m_la, map.m_llen, map.m_plen);
+				  s.map.m_la, s.map.m_llen, s.map.m_plen);
 			ret = -EFSCORRUPTED;
 			goto out;
 		}
 
 		/* the last lcluster can be divided into 3 parts */
-		if (map.m_la + map.m_llen > inode->i_size)
-			map.m_llen = inode->i_size - map.m_la;
+		if (s.map.m_la + s.map.m_llen > inode->i_size)
+			s.map.m_llen = inode->i_size - s.map.m_la;
 
-		pchunk_len += map.m_plen;
-		pos += map.m_llen;
+		pchunk_len += s.map.m_plen;
+		pos += s.map.m_llen;
 
 		/* should skip decomp? */
-		if (!(map.m_flags & EROFS_MAP_MAPPED) || !fsckcfg.check_decomp)
+		if (!(s.map.m_flags & EROFS_MAP_MAPPED) || !fsckcfg.check_decomp)
 			continue;
 
-		if (map.m_plen > raw_size) {
-			raw_size = map.m_plen;
-			raw = realloc(raw, raw_size);
-			BUG_ON(!raw);
-		}
-
-		if (compressed) {
-			if (map.m_llen > buffer_size) {
-				buffer_size = map.m_llen;
-				buffer = realloc(buffer, buffer_size);
-				BUG_ON(!buffer);
+		if (fsckcfg.multithreading) {
+			if (fsckcfg.idle) {
+				work = fsckcfg.idle;
+				fsckcfg.idle = work->next;
+				work->next = NULL;
+			} else {
+				work = calloc(1, sizeof(*work));
+				BUG_ON(!work);
 			}
-			ret = z_erofs_read_one_data(inode, &map, raw, buffer,
-						    0, map.m_llen, false);
+			*last = work;
+			last = &work->next;
+			work->work.function = erofsfsck_decompress_work;
+			work->map = s.map;
+			work->compressed = s.compressed;
+			ret = erofs_workqueue_add(&fsckcfg.wq, &work->work);
+			if (ret)
+				goto out;	/* XXXX? */
+			pthread_mutex_lock(&fsckcfg.wq.lock);
+			while (!(work = head)->work.function) {
+				if (work->eio)
+					ret = -EIO;
+				else if (outfd >= 0 &&
+					 write(outfd, s.compressed ?
+					       head->buffer : work->raw,
+					       work->map.m_llen) < 0)
+					ret = -EIO;
+				head = head->next;
+				work->next = fsckcfg.idle;
+				fsckcfg.idle = work;
+				if (!head || ret)
+					break;
+			}
+			pthread_mutex_unlock(&fsckcfg.wq.lock);
+			if (!head)
+				last = &head;
+			if (ret)
+				goto err_eio;
 		} else {
-			ret = erofs_read_one_data(&map, raw, 0, map.m_plen);
-		}
-		if (ret)
-			goto out;
-
-		if (outfd >= 0 && write(outfd, compressed ? buffer : raw,
-					map.m_llen) < 0) {
-			erofs_err("I/O error occurred when verifying data chunk @ nid %llu",
-				  inode->nid | 0ULL);
-			ret = -EIO;
-			goto out;
+			ret = erofsfsck_extract_one(&s);
+			if (ret)
+				goto out;
+			if (outfd < 0)
+				continue;
+			if (write(outfd, s.compressed ? s.buffer : s.raw,
+				  s.map.m_llen) < 0)
+				goto err_eio;
 		}
 	}
 
@@ -454,12 +529,38 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 			fsckcfg.logical_blocks += BLK_ROUND_UP(inode->i_size);
 		fsckcfg.physical_blocks += BLK_ROUND_UP(pchunk_len);
 	}
+
 out:
-	if (raw)
-		free(raw);
-	if (buffer)
-		free(buffer);
+	if (fsckcfg.multithreading) {
+		while (head) {
+			pthread_mutex_lock(&fsckcfg.wq.lock);
+			while (!(work = head)->work.function) {
+				if (work->eio)
+					ret = -EIO;
+				else if (outfd >= 0 && write(outfd, s.compressed ?
+					  work->buffer : work->raw,
+						  work->map.m_llen) < 0)
+					ret = -EIO;
+				head = head->next;
+				work->next = fsckcfg.idle;
+				fsckcfg.idle = work;
+				if (!head)
+					break;
+			}
+			pthread_mutex_unlock(&fsckcfg.wq.lock);
+		}
+	}
+
+	if (s.raw)
+		free(s.raw);
+	if (s.buffer)
+		free(s.buffer);
 	return ret < 0 ? ret : 0;
+err_eio:
+	erofs_err("I/O error occurred when extracting data @ nid %llu",
+		  inode->nid | 0ULL);
+	ret = -EIO;
+	goto out;
 }
 
 static inline int erofs_extract_dir(struct erofs_inode *inode)
@@ -788,6 +889,10 @@ int main(int argc, char **argv)
 		erofs_err("failed to verify superblock checksum");
 		goto exit_put_super;
 	}
+
+	err = erofs_workqueue_create(&fsckcfg.wq,
+			erofs_get_available_processors(), erofs_get_available_processors() << 2);
+	fsckcfg.multithreading = !err;
 
 	if (erofs_sb_has_fragments()) {
 		err = erofsfsck_check_inode(sbi.packed_nid, sbi.packed_nid);
