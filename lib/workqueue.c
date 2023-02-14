@@ -59,7 +59,7 @@ static void *workqueue_thread(void *arg)
 		(wi->function)(wq, wi);
 		pthread_mutex_lock(&wq->lock);
 
-		wi->function = NULL;
+		//wi->function = NULL;
 	}
 	return NULL;
 }

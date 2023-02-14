@@ -474,7 +474,7 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 		if (!(s.map.m_flags & EROFS_MAP_MAPPED) || !fsckcfg.check_decomp)
 			continue;
 
-		if (fsckcfg.multithreading) {
+		if (0)  {//fsckcfg.multithreading) {
 			if (fsckcfg.idle) {
 				work = fsckcfg.idle;
 				fsckcfg.idle = work->next;
@@ -530,7 +530,7 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	}
 
 out:
-	if (fsckcfg.multithreading) {
+	if (0) {//fsckcfg.multithreading) {
 		while (head) {
 			pthread_mutex_lock(&fsckcfg.wq.lock);
 			while (!(work = head)->work.function) {
@@ -608,6 +608,24 @@ static inline int erofs_extract_dir(struct erofs_inode *inode)
 	return 0;
 }
 
+struct erofsfsck_file_work {
+	struct erofs_work work;
+	struct erofs_inode inode;
+	int fd;
+};
+
+static void erofsfsck_file_work(struct erofs_workqueue *wq,
+			       struct erofs_work *wi)
+{
+	struct erofsfsck_file_work *work = (void *)wi;
+	int ret;
+
+	ret = erofs_verify_inode_data(&work->inode, work->fd);
+	if (ret || close(work->fd))
+		ret = 1;
+	free(work);
+}
+
 static inline int erofs_extract_file(struct erofs_inode *inode)
 {
 	bool tryagain = true;
@@ -643,6 +661,25 @@ again:
 		return -errno;
 	}
 
+	if (fsckcfg.multithreading) {
+		struct erofsfsck_file_work *work;
+
+		work = calloc(1, sizeof(*work));
+		if (!work)
+			goto fallback;
+
+		work->work.function = erofsfsck_file_work;
+		work->inode = *inode;
+		work->fd = fd;
+		ret = erofs_workqueue_add(&fsckcfg.wq, &work->work);
+		if (ret) {
+			free(work);
+			goto fallback;
+		}
+		return 0;
+	}
+
+fallback:
 	/* verify data chunk layout */
 	ret = erofs_verify_inode_data(inode, fd);
 	if (ret)
@@ -742,19 +779,6 @@ again:
 	return ret;
 }
 
-struct erofsfsck_dir_work {
-	struct erofs_work work;
-	erofs_nid_t pnid, nid;
-};
-
-static void erofsfsck_dir_work(struct erofs_workqueue *wq,
-			       struct erofs_work *wi)
-{
-	struct erofsfsck_dir_work *work = (void *)wi;
-
-	erofsfsck_check_inode(work->pnid, work->nid);
-}
-
 static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 {
 	int ret;
@@ -774,27 +798,7 @@ static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 		fsckcfg.extract_pos = curr_pos;
 	}
 
-	if (fsckcfg.multithreading &&
-	    fsckcfg.extract_path && ctx->de_ftype == EROFS_FT_DIR) {
-		struct erofsfsck_dir_work *work;
-
-		work = calloc(1, sizeof(*work));
-		if (!work)
-			goto fallback;
-
-		work->work.function = erofsfsck_dir_work;
-		work->pnid = ctx->dir->nid;
-		work->nid = ctx->de_nid;
-		ret = erofs_workqueue_add(&fsckcfg.wq, &work->work);
-		if (ret) {
-			free(work);
-			ret = 0;
-			goto fallback;
-		}
-	} else {
-fallback:
-		ret = erofsfsck_check_inode(ctx->dir->nid, ctx->de_nid);
-	}
+	ret = erofsfsck_check_inode(ctx->dir->nid, ctx->de_nid);
 
 	if (fsckcfg.extract_path) {
 		fsckcfg.extract_path[prev_pos] = '\0';
