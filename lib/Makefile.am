@@ -43,3 +43,7 @@ if ENABLE_LIBLZMA
 liberofs_la_CFLAGS += ${liblzma_CFLAGS}
 liberofs_la_SOURCES += compressor_liblzma.c
 endif
+if ENABLE_EROFS_MT
+liberofs_la_CFLAGS += -lpthread
+liberofs_la_SOURCES += workqueue.c
+endif
