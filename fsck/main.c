@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright 2021 Google LLC
  * Author: Daeho Jeong <daehojeong@google.com>
@@ -743,6 +742,19 @@ again:
 	return ret;
 }
 
+struct erofsfsck_dir_work {
+	struct erofs_work work;
+	erofs_nid_t pnid, nid;
+};
+
+static void erofsfsck_dir_work(struct erofs_workqueue *wq,
+			       struct erofs_work *wi)
+{
+	struct erofsfsck_dir_work *work = (void *)wi;
+
+	erofsfsck_check_inode(work->pnid, work->nid);
+}
+
 static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 {
 	int ret;
@@ -762,7 +774,27 @@ static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 		fsckcfg.extract_pos = curr_pos;
 	}
 
-	ret = erofsfsck_check_inode(ctx->dir->nid, ctx->de_nid);
+	if (fsckcfg.multithreading &&
+	    fsckcfg.extract_path && ctx->de_ftype == EROFS_FT_DIR) {
+		struct erofsfsck_dir_work *work;
+
+		work = calloc(1, sizeof(*work));
+		if (!work)
+			goto fallback;
+
+		work->work.function = erofsfsck_dir_work;
+		work->pnid = ctx->dir->nid;
+		work->nid = ctx->de_nid;
+		ret = erofs_workqueue_add(&fsckcfg.wq, &work->work);
+		if (ret) {
+			free(work);
+			ret = 0;
+			goto fallback;
+		}
+	} else {
+fallback:
+		ret = erofsfsck_check_inode(ctx->dir->nid, ctx->de_nid);
+	}
 
 	if (fsckcfg.extract_path) {
 		fsckcfg.extract_path[prev_pos] = '\0';
@@ -898,7 +930,7 @@ int main(int argc, char **argv)
 		err = erofsfsck_check_inode(sbi.packed_nid, sbi.packed_nid);
 		if (err) {
 			erofs_err("failed to verify packed file");
-			goto exit_put_super;
+			goto exit_destroy_wq;
 		}
 	}
 
@@ -924,6 +956,9 @@ int main(int argc, char **argv)
 		}
 	}
 
+exit_destroy_wq:
+	erofs_workqueue_terminate(&fsckcfg.wq);
+	erofs_workqueue_destroy(&fsckcfg.wq);
 exit_put_super:
 	erofs_put_super();
 exit_dev_close:
