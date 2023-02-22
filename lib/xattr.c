@@ -915,7 +915,7 @@ static int xattr_foreach(struct xattr_iter *it,
 			it->ofs = 0;
 		}
 
-		slice = min_t(unsigned int, PAGE_SIZE - it->ofs,
+		slice = min_t(unsigned int, EROFS_BLKSIZ - it->ofs,
 			      entry.e_name_len - processed);
 
 		/* handle name */
@@ -950,7 +950,7 @@ static int xattr_foreach(struct xattr_iter *it,
 			it->ofs = 0;
 		}
 
-		slice = min_t(unsigned int, PAGE_SIZE - it->ofs,
+		slice = min_t(unsigned int, EROFS_BLKSIZ - it->ofs,
 			      value_sz - processed);
 		op->value(it, processed, it->kaddr + it->ofs, slice);
 		it->ofs += slice;
