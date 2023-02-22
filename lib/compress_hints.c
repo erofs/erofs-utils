@@ -101,6 +101,9 @@ int erofs_load_compress_hints(void)
 		unsigned int pclustersize;
 		char *pattern;
 
+		if (*buf == '#' || *buf == '\n')
+			continue;
+
 		pclustersize = atoi(strtok(buf, "\t "));
 		pattern = strtok(NULL, "\n");
 		if (!pattern || *pattern == '\0') {
