@@ -21,14 +21,19 @@
 #include "erofs/compress_hints.h"
 #include "erofs/fragments.h"
 
-static struct erofs_compress compresshandle;
-static unsigned int algorithmtype[2];
+/* compressing configuration specified by users */
+struct erofs_compress_cfg {
+	struct erofs_compress handle;
+	unsigned int algorithmtype;
+} erofs_ccfg[EROFS_MAX_COMPR_CFGS];
 
 struct z_erofs_vle_compress_ctx {
 	u8 queue[EROFS_CONFIG_COMPR_MAX_SZ * 2];
 	struct z_erofs_inmem_extent e;	/* (lookahead) extent */
 
 	struct erofs_inode *inode;
+	struct erofs_compress_cfg *ccfg;
+
 	u8 *metacur;
 	unsigned int head, tail;
 	erofs_off_t remaining;
@@ -318,7 +323,8 @@ static int z_erofs_fill_inline_data(struct erofs_inode *inode, void *data,
 	return len;
 }
 
-static void tryrecompress_trailing(void *in, unsigned int *insize,
+static void tryrecompress_trailing(struct erofs_compress *ec,
+				   void *in, unsigned int *insize,
 				   void *out, int *compressedsize)
 {
 	static char tmp[Z_EROFS_PCLUSTER_MAX_SIZE];
@@ -330,8 +336,7 @@ static void tryrecompress_trailing(void *in, unsigned int *insize,
 		return;
 
 	count = *insize;
-	ret = erofs_compress_destsize(&compresshandle,
-				      in, &count, (void *)tmp,
+	ret = erofs_compress_destsize(ec, in, &count, (void *)tmp,
 				      rounddown(ret, EROFS_BLKSIZ), false);
 	if (ret <= 0 || ret + (*insize - count) >=
 			roundup(*compressedsize, EROFS_BLKSIZ))
@@ -375,7 +380,7 @@ static int vle_compress_one(struct z_erofs_vle_compress_ctx *ctx)
 	static char dstbuf[EROFS_CONFIG_COMPR_MAX_SZ + EROFS_BLKSIZ];
 	struct erofs_inode *inode = ctx->inode;
 	char *const dst = dstbuf + EROFS_BLKSIZ;
-	struct erofs_compress *const h = &compresshandle;
+	struct erofs_compress *const h = &ctx->ccfg->handle;
 	unsigned int len = ctx->tail - ctx->head;
 	bool is_packed_inode = erofs_is_packed_inode(inode);
 	bool final = !ctx->remaining;
@@ -491,7 +496,7 @@ frag_packing:
 			}
 
 			if (may_inline && len == ctx->e.length)
-				tryrecompress_trailing(ctx->queue + ctx->head,
+				tryrecompress_trailing(h, ctx->queue + ctx->head,
 						&ctx->e.length, dst, &ret);
 
 			tailused = ret & (EROFS_BLKSIZ - 1);
@@ -853,8 +858,10 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 	}
 	if (cfg.c_fragments && !cfg.c_dedupe)
 		inode->z_advise |= Z_EROFS_ADVISE_INTERLACED_PCLUSTER;
-	inode->z_algorithmtype[0] = algorithmtype[0];
-	inode->z_algorithmtype[1] = algorithmtype[1];
+
+	ctx.ccfg = &erofs_ccfg[inode->z_algorithmtype[0]];
+	inode->z_algorithmtype[0] = ctx.ccfg[0].algorithmtype;
+	inode->z_algorithmtype[1] = 0;
 	inode->z_logical_clusterbits = LOG_BLOCK_SIZE;
 
 	inode->idata_size = 0;
@@ -1050,36 +1057,39 @@ int z_erofs_build_compr_cfgs(struct erofs_buffer_head *sb_bh)
 
 int z_erofs_compress_init(struct erofs_buffer_head *sb_bh)
 {
-	/* initialize for primary compression algorithm */
-	int ret = erofs_compressor_init(&compresshandle,
-					cfg.c_compr_alg_master);
+	int i, ret;
 
-	if (ret)
-		return ret;
+	for (i = 0; cfg.c_compr_alg[i]; ++i) {
+		ret = erofs_compressor_init(&erofs_ccfg[i].handle,
+					     cfg.c_compr_alg[i]);
+		if (ret)
+			return ret;
+
+		ret = erofs_compressor_setlevel(&erofs_ccfg[i].handle,
+						cfg.c_compr_level[i]);
+		if (ret)
+			return ret;
+
+		ret = erofs_get_compress_algorithm_id(cfg.c_compr_alg[i]);
+		if (ret < 0)
+			return ret;
+		erofs_ccfg[i].algorithmtype = ret;
+		sbi.available_compr_algs |= 1 << ret;
+		if (ret != Z_EROFS_COMPRESSION_LZ4)
+			erofs_sb_set_compr_cfgs();
+	}
 
 	/*
 	 * if primary algorithm is empty (e.g. compression off),
 	 * clear 0PADDING feature for old kernel compatibility.
 	 */
-	if (!cfg.c_compr_alg_master ||
-	    (cfg.c_legacy_compress && !strcmp(cfg.c_compr_alg_master, "lz4")))
+	if (!cfg.c_compr_alg[0] ||
+	    (cfg.c_legacy_compress && !strncmp(cfg.c_compr_alg[0], "lz4", 3)))
 		erofs_sb_clear_lz4_0padding();
 
-	if (!cfg.c_compr_alg_master)
+	if (!cfg.c_compr_alg[0])
 		return 0;
 
-	ret = erofs_compressor_setlevel(&compresshandle,
-					cfg.c_compr_level_master);
-	if (ret)
-		return ret;
-
-	/* figure out primary algorithm */
-	ret = erofs_get_compress_algorithm_id(cfg.c_compr_alg_master);
-	if (ret < 0)
-		return ret;
-
-	algorithmtype[0] = ret;	/* primary algorithm (head 0) */
-	algorithmtype[1] = 0;	/* secondary algorithm (head 1) */
 	/*
 	 * if big pcluster is enabled, an extra CBLKCNT lcluster index needs
 	 * to be loaded in order to get those compressed block counts.
@@ -1098,9 +1108,6 @@ int z_erofs_compress_init(struct erofs_buffer_head *sb_bh)
 		return -EINVAL;
 	}
 
-	if (ret != Z_EROFS_COMPRESSION_LZ4)
-		erofs_sb_set_compr_cfgs();
-
 	if (erofs_sb_has_compr_cfgs()) {
 		sbi.available_compr_algs |= 1 << ret;
 		return z_erofs_build_compr_cfgs(sb_bh);
@@ -1110,5 +1117,12 @@ int z_erofs_compress_init(struct erofs_buffer_head *sb_bh)
 
 int z_erofs_compress_exit(void)
 {
-	return erofs_compressor_exit(&compresshandle);
+	int i, ret;
+
+	for (i = 0; cfg.c_compr_alg[i]; ++i) {
+		ret = erofs_compressor_exit(&erofs_ccfg[i].handle);
+		if (ret)
+			return ret;
+	}
+	return 0;
 }

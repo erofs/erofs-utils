@@ -232,6 +232,31 @@ static int parse_extended_opts(const char *opts)
 	return 0;
 }
 
+static int mkfs_parse_compress_algs(char *algs)
+{
+	unsigned int i;
+	char *s;
+
+	for (s = strtok(algs, ":"), i = 0; s; s = strtok(NULL, ":"), ++i) {
+		const char *lv;
+
+		if (i >= EROFS_MAX_COMPR_CFGS - 1) {
+			erofs_err("too many algorithm types");
+			return -EINVAL;
+		}
+
+		lv = strchr(s, ',');
+		if (lv) {
+			cfg.c_compr_level[i] = atoi(lv + 1);
+			cfg.c_compr_alg[i] = strndup(s, lv - s);
+		} else {
+			cfg.c_compr_level[i] = -1;
+			cfg.c_compr_alg[i] = strdup(s);
+		}
+	}
+	return 0;
+}
+
 static int mkfs_parse_options_cfg(int argc, char *argv[])
 {
 	char *endptr;
@@ -243,19 +268,13 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		switch (opt) {
 		case 'z':
 			if (!optarg) {
-				cfg.c_compr_alg_master = "(default)";
+				cfg.c_compr_alg[0] = "(default)";
+				cfg.c_compr_level[0] = -1;
 				break;
 			}
-			/* get specified compression level */
-			for (i = 0; optarg[i] != '\0'; ++i) {
-				if (optarg[i] == ',') {
-					cfg.c_compr_level_master =
-						atoi(optarg + i + 1);
-					optarg[i] = '\0';
-					break;
-				}
-			}
-			cfg.c_compr_alg_master = strndup(optarg, i);
+			i = mkfs_parse_compress_algs(optarg);
+			if (i)
+				return i;
 			break;
 
 		case 'd':
@@ -749,7 +768,7 @@ int main(int argc, char **argv)
 	}
 
 	if (cfg.c_dedupe) {
-		if (!cfg.c_compr_alg_master) {
+		if (!cfg.c_compr_alg[0]) {
 			erofs_err("Compression is not enabled.  Turn on chunk-based data deduplication instead.");
 			cfg.c_chunkbits = LOG_BLOCK_SIZE;
 		} else {

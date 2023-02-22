@@ -20,6 +20,7 @@ struct erofs_compress_hints {
 
 	regex_t reg;
 	unsigned int physical_clusterblks;
+	unsigned char algorithmtype;
 };
 
 bool z_erofs_apply_compress_hints(struct erofs_inode *inode);

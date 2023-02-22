@@ -20,28 +20,28 @@ static void dump_regerror(int errcode, const char *s, const regex_t *preg)
 	erofs_err("invalid regex %s (%s)\n", s, str);
 }
 
-static int erofs_insert_compress_hints(const char *s, unsigned int blks)
+/* algorithmtype is actually ccfg # here */
+static int erofs_insert_compress_hints(const char *s, unsigned int blks,
+				       unsigned int algorithmtype)
 {
-	struct erofs_compress_hints *r;
+	struct erofs_compress_hints *ch;
 	int ret;
 
-	r = malloc(sizeof(struct erofs_compress_hints));
-	if (!r)
+	ch = malloc(sizeof(struct erofs_compress_hints));
+	if (!ch)
 		return -ENOMEM;
 
-	ret = regcomp(&r->reg, s, REG_EXTENDED|REG_NOSUB);
+	ret = regcomp(&ch->reg, s, REG_EXTENDED|REG_NOSUB);
 	if (ret) {
-		dump_regerror(ret, s, &r->reg);
-		goto err_out;
+		dump_regerror(ret, s, &ch->reg);
+		free(ch);
+		return ret;
 	}
-	r->physical_clusterblks = blks;
+	ch->physical_clusterblks = blks;
+	ch->algorithmtype = algorithmtype;
 
-	list_add_tail(&r->list, &compress_hints_head);
+	list_add_tail(&ch->list, &compress_hints_head);
 	erofs_info("compress hint %s (%u) is inserted", s, blks);
-	return ret;
-
-err_out:
-	free(r);
 	return ret;
 }
 
@@ -49,28 +49,31 @@ bool z_erofs_apply_compress_hints(struct erofs_inode *inode)
 {
 	const char *s;
 	struct erofs_compress_hints *r;
-	unsigned int pclusterblks;
+	unsigned int pclusterblks, algorithmtype;
 
 	if (inode->z_physical_clusterblks)
 		return true;
 
 	s = erofs_fspath(inode->i_srcpath);
 	pclusterblks = cfg.c_pclusterblks_def;
+	algorithmtype = 0;
 
 	list_for_each_entry(r, &compress_hints_head, list) {
 		int ret = regexec(&r->reg, s, (size_t)0, NULL, 0);
 
 		if (!ret) {
 			pclusterblks = r->physical_clusterblks;
+			algorithmtype = r->algorithmtype;
 			break;
 		}
 		if (ret != REG_NOMATCH)
 			dump_regerror(ret, s, &r->reg);
 	}
 	inode->z_physical_clusterblks = pclusterblks;
+	inode->z_algorithmtype[0] = algorithmtype;
 
 	/* pclusterblks is 0 means this file shouldn't be compressed */
-	return !!pclusterblks;
+	return pclusterblks != 0;
 }
 
 void erofs_cleanup_compress_hints(void)
@@ -98,20 +101,38 @@ int erofs_load_compress_hints(void)
 		return -errno;
 
 	for (line = 1; fgets(buf, sizeof(buf), f); ++line) {
-		unsigned int pclustersize;
-		char *pattern;
+		unsigned int pclustersize, ccfg;
+		char *alg, *pattern;
 
 		if (*buf == '#' || *buf == '\n')
 			continue;
 
 		pclustersize = atoi(strtok(buf, "\t "));
+		alg = strtok(NULL, "\n\t ");
 		pattern = strtok(NULL, "\n");
+		if (!pattern) {
+			pattern = alg;
+			alg = NULL;
+		}
 		if (!pattern || *pattern == '\0') {
 			erofs_err("cannot find a match pattern at line %u",
 				  line);
 			ret = -EINVAL;
 			goto out;
 		}
+		if (!alg || *alg == '\0') {
+			ccfg = 0;
+		} else {
+			ccfg = atoi(alg);
+			if (ccfg >= EROFS_MAX_COMPR_CFGS ||
+			    !cfg.c_compr_alg[ccfg]) {
+				erofs_err("invalid compressing configuration \"%s\" at line %u",
+					  alg, line);
+				ret = -EINVAL;
+				goto out;
+			}
+		}
+
 		if (pclustersize % EROFS_BLKSIZ) {
 			erofs_warn("invalid physical clustersize %u, "
 				   "use default pclusterblks %u",
@@ -119,7 +140,7 @@ int erofs_load_compress_hints(void)
 			continue;
 		}
 		erofs_insert_compress_hints(pattern,
-					    pclustersize / EROFS_BLKSIZ);
+					    pclustersize / EROFS_BLKSIZ, ccfg);
 
 		if (pclustersize > max_pclustersize)
 			max_pclustersize = pclustersize;

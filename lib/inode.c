@@ -424,7 +424,7 @@ static int erofs_write_file(struct erofs_inode *inode)
 		return erofs_blob_write_chunked_file(inode);
 	}
 
-	if (cfg.c_compr_alg_master && erofs_file_is_compressible(inode)) {
+	if (cfg.c_compr_alg[0] && erofs_file_is_compressible(inode)) {
 		fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
 		if (fd < 0)
 			return -errno;
