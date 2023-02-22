@@ -25,6 +25,7 @@
 struct erofs_compress_cfg {
 	struct erofs_compress handle;
 	unsigned int algorithmtype;
+	bool enable;
 } erofs_ccfg[EROFS_MAX_COMPR_CFGS];
 
 struct z_erofs_vle_compress_ctx {
@@ -859,6 +860,16 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 	if (cfg.c_fragments && !cfg.c_dedupe)
 		inode->z_advise |= Z_EROFS_ADVISE_INTERLACED_PCLUSTER;
 
+#ifndef NDEBUG
+	if (cfg.c_random_algorithms) {
+		while (1) {
+			inode->z_algorithmtype[0] =
+				rand() % EROFS_MAX_COMPR_CFGS;
+			if (erofs_ccfg[inode->z_algorithmtype[0]].enable)
+				break;
+		}
+	}
+#endif
 	ctx.ccfg = &erofs_ccfg[inode->z_algorithmtype[0]];
 	inode->z_algorithmtype[0] = ctx.ccfg[0].algorithmtype;
 	inode->z_algorithmtype[1] = 0;
@@ -1074,6 +1085,7 @@ int z_erofs_compress_init(struct erofs_buffer_head *sb_bh)
 		if (ret < 0)
 			return ret;
 		erofs_ccfg[i].algorithmtype = ret;
+		erofs_ccfg[i].enable = true;
 		sbi.available_compr_algs |= 1 << ret;
 		if (ret != Z_EROFS_COMPRESSION_LZ4)
 			erofs_sb_set_compr_cfgs();

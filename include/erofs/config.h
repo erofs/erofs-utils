@@ -41,6 +41,7 @@ struct erofs_configure {
 	bool c_legacy_compress;
 #ifndef NDEBUG
 	bool c_random_pclusterblks;
+	bool c_random_algorithms;
 #endif
 	char c_timeinherit;
 	char c_chunkbits;

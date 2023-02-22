@@ -45,6 +45,7 @@ static struct option long_options[] = {
 	{"all-root", no_argument, NULL, 7},
 #ifndef NDEBUG
 	{"random-pclusterblks", no_argument, NULL, 8},
+	{"random-algorithms", no_argument, NULL, 18},
 #endif
 	{"max-extent-bytes", required_argument, NULL, 9},
 	{"compress-hints", required_argument, NULL, 10},
@@ -111,6 +112,7 @@ static void usage(void)
 	      " --quiet               quiet execution (do not write anything to standard output.)\n"
 #ifndef NDEBUG
 	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
+	      " --random-algorithms   randomize per-file algorithms (debugging only)\n"
 #endif
 	      " --mount-point=X       X=prefix of target fs path (default: /)\n"
 #ifdef WITH_ANDROID
@@ -369,6 +371,9 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 #ifndef NDEBUG
 		case 8:
 			cfg.c_random_pclusterblks = true;
+			break;
+		case 18:
+			cfg.c_random_algorithms = true;
 			break;
 #endif
 		case 9:
