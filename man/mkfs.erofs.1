@@ -69,6 +69,11 @@ more space and the tail part I/O. (Linux v5.17+)
 Pack the tail part (pcluster) of compressed files or the whole files into a
 special inode for smaller image sizes, and it may take an argument as the
 pcluster size of the packed inode in bytes. (Linux v6.1+)
+.TP
+.BI dedupe
+Enable global compressed data deduplication to minimize duplicated data in
+the filesystem. It may be used with \fI-Efragments\fR option together to
+further reduce image sizes. (Linux v6.1+)
 .RE
 .TP
 .BI "\-L " volume-label
