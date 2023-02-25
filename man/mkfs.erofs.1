@@ -38,7 +38,7 @@ Disable storing xattrs if < 0.
 .TP
 .BI "\-E " extended-option " [,...]"
 Set extended options for the filesystem. Extended options are comma separated,
-and may take an argument using the equals ('=') sign.
+and may take an extra argument using the equals ('=') sign.
 The following extended options are supported:
 .RS 1.2i
 .TP
@@ -64,6 +64,11 @@ Don't inline regular files to enable FSDAX for these files (Linux v5.15+).
 .BI ztailpacking
 Pack the tail part (pcluster) of compressed files into its metadata to save
 more space and the tail part I/O. (Linux v5.17+)
+.TP
+.BI fragments
+Pack the tail part (pcluster) of compressed files or the whole files into a
+special inode for smaller image sizes, and it may take an argument as the
+pcluster size of the packed inode in bytes. (Linux v6.1+)
 .RE
 .TP
 .BI "\-L " volume-label
