@@ -724,8 +724,6 @@ int main(int argc, char **argv)
 	}
 #endif
 	erofs_show_config();
-	if (cfg.c_ztailpacking)
-		erofs_warn("EXPERIMENTAL compressed inline data feature in use. Use at your own risk!");
 	if (cfg.c_fragments) {
 		if (!cfg.c_pclusterblks_packed)
 			cfg.c_pclusterblks_packed = cfg.c_pclusterblks_def;
