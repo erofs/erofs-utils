@@ -899,22 +899,26 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 	ctx.remaining = inode->i_size - inode->fragment_size;
 	ctx.fix_dedupedfrag = false;
 	ctx.fragemitted = false;
+	if (cfg.c_all_fragments && !erofs_is_packed_inode(inode) &&
+	    !inode->fragment_size) {
+		ret = z_erofs_pack_file_from_fd(inode, fd, ctx.tof_chksum);
+	} else {
+		while (ctx.remaining) {
+			const u64 rx = min_t(u64, ctx.remaining,
+					     sizeof(ctx.queue) - ctx.tail);
 
-	while (ctx.remaining) {
-		const u64 readcount = min_t(u64, ctx.remaining,
-					    sizeof(ctx.queue) - ctx.tail);
+			ret = read(fd, ctx.queue + ctx.tail, rx);
+			if (ret != rx) {
+				ret = -errno;
+				goto err_bdrop;
+			}
+			ctx.remaining -= rx;
+			ctx.tail += rx;
 
-		ret = read(fd, ctx.queue + ctx.tail, readcount);
-		if (ret != readcount) {
-			ret = -errno;
-			goto err_bdrop;
+			ret = vle_compress_one(&ctx);
+			if (ret)
+				goto err_free_idata;
 		}
-		ctx.remaining -= readcount;
-		ctx.tail += readcount;
-
-		ret = vle_compress_one(&ctx);
-		if (ret)
-			goto err_free_idata;
 	}
 	DBG_BUGON(ctx.head != ctx.tail);
 

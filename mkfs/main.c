@@ -208,10 +208,16 @@ static int parse_extended_opts(const char *opts)
 			cfg.c_ztailpacking = true;
 		}
 
+		if (MATCH_EXTENTED_OPT("all-fragments", token, keylen)) {
+			cfg.c_all_fragments = true;
+			goto handle_fragment;
+		}
+
 		if (MATCH_EXTENTED_OPT("fragments", token, keylen)) {
 			char *endptr;
 			u64 i;
 
+handle_fragment:
 			cfg.c_fragments = true;
 			if (vallen) {
 				i = strtoull(value, &endptr, 0);

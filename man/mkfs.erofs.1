@@ -42,6 +42,16 @@ and may take an extra argument using the equals ('=') sign.
 The following extended options are supported:
 .RS 1.2i
 .TP
+.BI all-fragments
+Forcely record the whole files into a special inode for better compression and
+it may take an argument as the pcluster size of the packed inode in bytes.
+(Linux v6.1+)
+.TP
+.BI dedupe
+Enable global compressed data deduplication to minimize duplicated data in
+the filesystem. It may be used with \fI-Efragments\fR option together to
+further reduce image sizes. (Linux v6.1+)
+.TP
 .BI force-inode-compact
 Forcely generate compact inodes (32-byte inodes) to output.
 .TP
@@ -54,6 +64,11 @@ Forcely generate inode chunk format in 4-byte block address array.
 .BI force-chunk-indexes
 Forcely generate inode chunk format in 8-byte chunk indexes (with device id).
 .TP
+.BI fragments
+Pack the tail part (pcluster) of compressed files or the whole files into a
+special inode for smaller image sizes, and it may take an argument as the
+pcluster size of the packed inode in bytes. (Linux v6.1+)
+.TP
 .BI legacy-compress
 Drop "inplace decompression" and "compacted indexes" support, which is used
 to generate compatible EROFS images for Linux v4.19 - 5.3.
@@ -64,16 +79,6 @@ Don't inline regular files to enable FSDAX for these files (Linux v5.15+).
 .BI ztailpacking
 Pack the tail part (pcluster) of compressed files into its metadata to save
 more space and the tail part I/O. (Linux v5.17+)
-.TP
-.BI fragments
-Pack the tail part (pcluster) of compressed files or the whole files into a
-special inode for smaller image sizes, and it may take an argument as the
-pcluster size of the packed inode in bytes. (Linux v6.1+)
-.TP
-.BI dedupe
-Enable global compressed data deduplication to minimize duplicated data in
-the filesystem. It may be used with \fI-Efragments\fR option together to
-further reduce image sizes. (Linux v6.1+)
 .RE
 .TP
 .BI "\-L " volume-label

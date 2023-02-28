@@ -17,6 +17,7 @@
 #endif
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/mman.h>
 #include "erofs/err.h"
 #include "erofs/inode.h"
 #include "erofs/compress.h"
@@ -154,7 +155,11 @@ static int z_erofs_fragments_dedupe_insert(void *data, unsigned int len,
 
 	if (len <= EROFS_TOF_HASHLEN)
 		return 0;
-
+	if (len > EROFS_CONFIG_COMPR_MAX_SZ) {
+		data += len - EROFS_CONFIG_COMPR_MAX_SZ;
+		pos += len - EROFS_CONFIG_COMPR_MAX_SZ;
+		len = EROFS_CONFIG_COMPR_MAX_SZ;
+	}
 	di = malloc(sizeof(*di) + len);
 	if (!di)
 		return -ENOMEM;
@@ -202,6 +207,42 @@ void z_erofs_fragments_commit(struct erofs_inode *inode)
 
 	inode->z_advise |= Z_EROFS_ADVISE_FRAGMENT_PCLUSTER;
 	erofs_sb_set_fragments();
+}
+
+int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd,
+			      u32 tofcrc)
+{
+#ifdef HAVE_FTELLO64
+	off64_t offset = ftello64(packedfile);
+#else
+	off_t offset = ftello(packedfile);
+#endif
+	char *memblock;
+	int rc;
+
+	if (offset < 0)
+		return -errno;
+
+	memblock = mmap(NULL, inode->i_size, PROT_READ, MAP_SHARED, fd, 0);
+	if (memblock == MAP_FAILED)
+		return -EFAULT;
+
+	inode->fragmentoff = (erofs_off_t)offset;
+	inode->fragment_size = inode->i_size;
+
+	if (fwrite(memblock, inode->fragment_size, 1, packedfile) != 1) {
+		rc = -EIO;
+		goto out;
+	}
+
+	erofs_dbg("Recording %u fragment data at %lu", inode->fragment_size,
+		  inode->fragmentoff);
+
+	rc = z_erofs_fragments_dedupe_insert(memblock, inode->fragment_size,
+					     inode->fragmentoff, tofcrc);
+out:
+	munmap(memblock, inode->i_size);
+	return rc;
 }
 
 int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,

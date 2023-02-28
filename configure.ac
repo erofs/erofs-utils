@@ -134,6 +134,7 @@ AC_CHECK_HEADERS(m4_flatten([
 	stdlib.h
 	string.h
 	sys/ioctl.h
+	sys/mman.h
 	sys/stat.h
 	sys/sysmacros.h
 	sys/time.h
