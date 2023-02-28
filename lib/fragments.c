@@ -26,7 +26,7 @@
 
 struct erofs_fragment_dedupe_item {
 	struct list_head	list;
-	unsigned int		length, nr_dup;
+	unsigned int		length;
 	erofs_off_t		pos;
 	u8			data[];
 };
@@ -53,7 +53,7 @@ static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 	struct erofs_fragment_dedupe_item *cur, *di = NULL;
 	struct list_head *head;
 	u8 *data;
-	unsigned int length, e2;
+	unsigned int length, e2, deduped;
 	int ret;
 
 	head = &dupli_frags[FRAGMENT_HASH(crc)];
@@ -83,6 +83,7 @@ static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 
 	DBG_BUGON(length <= EROFS_TOF_HASHLEN);
 	e2 = length - EROFS_TOF_HASHLEN;
+	deduped = 0;
 
 	list_for_each_entry(cur, head, list) {
 		unsigned int e1, mn, i = 0;
@@ -97,22 +98,22 @@ static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 		while (i < mn && cur->data[e1 - i - 1] == data[e2 - i - 1])
 			++i;
 
-		if (i && (!di || i + EROFS_TOF_HASHLEN > di->nr_dup)) {
-			cur->nr_dup = i + EROFS_TOF_HASHLEN;
+		if (!di || i + EROFS_TOF_HASHLEN > deduped) {
+			deduped = i + EROFS_TOF_HASHLEN;
 			di = cur;
 
 			/* full match */
-			if (i == mn)
+			if (i == e2)
 				break;
 		}
 	}
 	if (!di)
 		goto out;
 
-	DBG_BUGON(di->length < di->nr_dup);
+	DBG_BUGON(di->length < deduped);
 
-	inode->fragment_size = di->nr_dup;
-	inode->fragmentoff = di->pos + di->length - di->nr_dup;
+	inode->fragment_size = deduped;
+	inode->fragmentoff = di->pos + di->length - deduped;
 
 	erofs_dbg("Dedupe %u tail data at %llu", inode->fragment_size,
 		  inode->fragmentoff | 0ULL);
@@ -161,7 +162,6 @@ static int z_erofs_fragments_dedupe_insert(void *data, unsigned int len,
 	memcpy(di->data, data, len);
 	di->length = len;
 	di->pos = pos;
-	di->nr_dup = 0;
 
 	list_add_tail(&di->list, &dupli_frags[FRAGMENT_HASH(crc)]);
 	return 0;
