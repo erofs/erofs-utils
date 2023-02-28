@@ -95,7 +95,7 @@ static void z_erofs_write_indexes(struct z_erofs_vle_compress_ctx *ctx)
 		 * A lcluster cannot have three parts with the middle one which
 		 * is well-compressed for !ztailpacking cases.
 		 */
-		DBG_BUGON(!ctx->e.raw && !cfg.c_ztailpacking);
+		DBG_BUGON(!ctx->e.raw && !cfg.c_ztailpacking && !cfg.c_fragments);
 		DBG_BUGON(ctx->e.partial);
 		type = ctx->e.raw ? Z_EROFS_VLE_CLUSTER_TYPE_PLAIN :
 			Z_EROFS_VLE_CLUSTER_TYPE_HEAD;
@@ -457,7 +457,7 @@ frag_packing:
 			if (ret < 0)
 				return ret;
 			ctx->e.compressedblks = 0; /* indicate a fragment */
-			ctx->e.raw = true;
+			ctx->e.raw = false;
 			ctx->fragemitted = true;
 			fix_dedupedfrag = false;
 		/* tailpcluster should be less than 1 block */
@@ -928,7 +928,7 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 		z_erofs_write_indexes(&ctx);
 		ctx.e.length = inode->fragment_size;
 		ctx.e.compressedblks = 0;
-		ctx.e.raw = true;
+		ctx.e.raw = false;
 		ctx.e.partial = false;
 		ctx.e.blkaddr = ctx.blkaddr;
 	}
