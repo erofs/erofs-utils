@@ -6,9 +6,7 @@
 #include "erofs/print.h"
 #include "rb_tree.h"
 #include "rolling_hash.h"
-
-void erofs_sha256(const unsigned char *in, unsigned long in_size,
-		  unsigned char out[32]);
+#include "sha256.h"
 
 static unsigned int window_size, rollinghash_rm;
 static struct rb_tree *dedupe_tree, *dedupe_subtree;
