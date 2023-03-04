@@ -627,7 +627,8 @@ static void *write_compacted_indexes(u8 *out,
 				blkaddr += cblks;
 				*dummy_head = false;
 			} else if (i + 1 == vcnt) {
-				offset = cv[i].u.delta[1];
+				offset = min_t(u16, cv[i].u.delta[1],
+						(1 << logical_clusterbits) - 1);
 			} else {
 				offset = cv[i].u.delta[0];
 			}
