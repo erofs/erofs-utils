@@ -180,7 +180,7 @@ struct erofs_inode {
 		};
 	} u;
 
-	char i_srcpath[PATH_MAX + 1];
+	char *i_srcpath;
 
 	unsigned char datalayout;
 	unsigned char inode_isize;
