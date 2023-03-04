@@ -223,14 +223,39 @@ int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd,
 	if (offset < 0)
 		return -errno;
 
-	memblock = mmap(NULL, inode->i_size, PROT_READ, MAP_SHARED, fd, 0);
-	if (memblock == MAP_FAILED)
-		return -EFAULT;
-
 	inode->fragmentoff = (erofs_off_t)offset;
 	inode->fragment_size = inode->i_size;
 
-	if (fwrite(memblock, inode->fragment_size, 1, packedfile) != 1) {
+	memblock = mmap(NULL, inode->i_size, PROT_READ, MAP_SHARED, fd, 0);
+	if (memblock == MAP_FAILED || !memblock) {
+		unsigned long long remaining = inode->fragment_size;
+
+		memblock = NULL;
+		while (remaining) {
+			char buf[32768];
+			unsigned int sz = min_t(unsigned int, remaining,
+						sizeof(buf));
+
+			rc = read(fd, buf, sz);
+			if (rc != sz) {
+				if (rc < 0)
+					rc = -errno;
+				else
+					rc = -EAGAIN;
+				goto out;
+			}
+			if (fwrite(buf, sz, 1, packedfile) != 1) {
+				rc = -EIO;
+				goto out;
+			}
+			remaining -= sz;
+		}
+		rc = lseek(fd, 0, SEEK_SET);
+		if (rc < 0) {
+			rc = -errno;
+			goto out;
+		}
+	} else if (fwrite(memblock, inode->fragment_size, 1, packedfile) != 1) {
 		rc = -EIO;
 		goto out;
 	}
@@ -238,10 +263,12 @@ int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd,
 	erofs_dbg("Recording %u fragment data at %lu", inode->fragment_size,
 		  inode->fragmentoff);
 
-	rc = z_erofs_fragments_dedupe_insert(memblock, inode->fragment_size,
-					     inode->fragmentoff, tofcrc);
+	if (memblock)
+		rc = z_erofs_fragments_dedupe_insert(memblock,
+			inode->fragment_size, inode->fragmentoff, tofcrc);
 out:
-	munmap(memblock, inode->i_size);
+	if (memblock)
+		munmap(memblock, inode->i_size);
 	return rc;
 }
 
