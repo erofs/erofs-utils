@@ -55,6 +55,7 @@ static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 	struct list_head *head;
 	u8 *data;
 	unsigned int length, e2, deduped;
+	erofs_off_t pos;
 	int ret;
 
 	head = &dupli_frags[FRAGMENT_HASH(crc)];
@@ -112,9 +113,31 @@ static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 		goto out;
 
 	DBG_BUGON(di->length < deduped);
+	pos = di->pos + di->length - deduped;
+	/* let's read more to dedupe as long as we can */
+	if (deduped == di->length) {
+		fflush(packedfile);
 
+		while(deduped < inode->i_size && pos) {
+			char buf[2][16384];
+			unsigned int sz = min_t(unsigned int, pos,
+						sizeof(buf[0]));
+
+			if (pread(fileno(packedfile), buf[0], sz,
+				  pos - sz) != sz)
+				break;
+			if (pread(fd, buf[1], sz,
+				  inode->i_size - deduped - sz) != sz)
+				break;
+
+			if (memcmp(buf[0], buf[1], sz))
+				break;
+			pos -= sz;
+			deduped += sz;
+		}
+	}
 	inode->fragment_size = deduped;
-	inode->fragmentoff = di->pos + di->length - deduped;
+	inode->fragmentoff = pos;
 
 	erofs_dbg("Dedupe %u tail data at %llu", inode->fragment_size,
 		  inode->fragmentoff | 0ULL);

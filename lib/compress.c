@@ -371,7 +371,8 @@ static bool z_erofs_fixup_deduped_fragment(struct z_erofs_vle_compress_ctx *ctx,
 		  inode->fragment_size, inode->fragmentoff | 0ULL);
 
 	/* it's the end */
-	ctx->head += newsize;
+	DBG_BUGON(ctx->tail - ctx->head + ctx->remaining != newsize);
+	ctx->head = ctx->tail;
 	ctx->remaining = 0;
 	return true;
 }
