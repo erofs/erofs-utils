@@ -315,7 +315,7 @@ static int read_xattrs_from_file(const char *path, mode_t mode,
 	unsigned int keylen;
 	struct xattr_item *item;
 
-	if (kllen < 0 && errno != ENODATA) {
+	if (kllen < 0 && errno != ENODATA && errno != EOPNOTSUPP) {
 		erofs_err("llistxattr to get the size of names for %s failed",
 			  path);
 		return -errno;
