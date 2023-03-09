@@ -1,7 +1,7 @@
 erofs-utils
 ===========
 
-userspace tools for EROFS filesystem, currently including:
+Userspace tools for EROFS filesystem, currently including:
 
   mkfs.erofs    filesystem formatter
   erofsfuse     FUSE daemon alternative
@@ -9,76 +9,60 @@ userspace tools for EROFS filesystem, currently including:
   fsck.erofs    filesystem compatibility & consistency checker as well
                 as extractor
 
-Dependencies & build
---------------------
 
- lz4 1.8.0+ for lz4 enabled [2], lz4 1.9.3+ highly recommended [4][5].
- XZ Utils 5.3.2alpha [6] or later versions for MicroLZMA enabled.
+EROFS filesystem overview
+-------------------------
 
- libfuse 2.6+ for erofsfuse enabled as a plus.
+EROFS filesystem stands for Enhanced Read-Only File System.  It aims to
+form a generic read-only filesystem solution for various read-only use
+cases instead of just focusing on storage space saving without
+considering any side effects of runtime performance.
 
-How to build with lz4-1.9.0 or above
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Typically EROFS could be considered in the following use scenarios:
+  - Firmwares in performance-sensitive systems, such as system
+    partitions of Android smartphones;
 
-To build, you can run the following commands in order:
+  - Mountable immutable images such as container images for effective
+    metadata & data access compared with tar, cpio or other local
+    filesystems (e.g. ext4, XFS, btrfs, etc.)
 
-::
+  - FSDAX-enabled rootfs for secure containers (Linux 5.15+);
 
-	$ ./autogen.sh
-	$ ./configure
-	$ make
+  - Live CDs which need a set of files with another high-performance
+    algorithm to optimize startup time; others files for archival
+    purposes only are not needed;
 
-mkfs.erofs binary will be generated under mkfs folder.
+  - and more.
 
-* For lz4 < 1.9.2, there are some stability issues about
-  LZ4_compress_destSize(). (lz4hc isn't impacted) [3].
+Note that all EROFS metadata is uncompressed by design, so that you
+could take EROFS as a drop-in read-only replacement of ext4, XFS,
+btrfs, etc. without any compression-based dependencies and EROFS can
+bring more effective filesystem accesses to users with reduced
+metadata.
 
-** For lz4 = 1.9.2, there is a noticeable regression about
-   LZ4_decompress_safe_partial() [5], which impacts erofsfuse
-   functionality for legacy images (without 0PADDING).
+For more details of EROFS filesystem itself, please refer to:
+https://www.kernel.org/doc/html/next/filesystems/erofs.html
 
-How to build with lz4-1.8.0~1.8.3
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+For more details on how to build erofs-utils, see `docs/INSTALL.md`.
 
-For these old lz4 versions, lz4hc algorithm cannot be supported
-without lz4-static installed due to LZ4_compress_HC_destSize()
-unstable api usage, which means lz4 will only be available if
-lz4-static isn't found.
-
-On Fedora, lz4-static can be installed by using:
-
-	yum install lz4-static.x86_64
-
-However, it's still not recommended using those versions directly
-since there are serious bugs in these compressors, see [2] [3] [4]
-as well.
-
-How to build with liblzma
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-In order to enable LZMA support, build with the following commands:
-	$ ./configure --enable-lzma
-	$ make
-
-Additionally, you could specify liblzma build paths with:
-	--with-liblzma-incdir and --with-liblzma-libdir
+For more details about filesystem performance, see
+`docs/PERFORMANCE.md`.
 
 
 mkfs.erofs
 ----------
 
-two main kinds of EROFS images can be generated: (un)compressed.
+Two main kinds of EROFS images can be generated: (un)compressed images.
 
- - For uncompressed images, there will be none of compression
-   files in these images. However, it can decide whether the tail
-   block of a file should be inlined or not properly [1].
+ - For uncompressed images, there will be none of compresssed files in
+   these images.  However, it can decide whether the tail block of a
+   file should be inlined or not properly [1].
 
- - For compressed images, it'll try to use specific algorithms
-   first for each regular file and see if storage space can be
-   saved with compression. If not, fallback to an uncompressed
-   file.
+ - For compressed images, it'll try to use the given algorithms first
+   for each regular file and see if storage space can be saved with
+   compression. If not, fallback to an uncompressed file.
 
-How to generate EROFS images (lz4 for Linux 5.3+, lzma for Linux 5.16+)
+How to generate EROFS images (LZ4 for Linux 5.3+, LZMA for Linux 5.16+)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Currently lz4(hc) and lzma are available for compression, e.g.
@@ -113,12 +97,55 @@ Note that large pcluster size can cause bad random performance, so
 please evaluate carefully in advance. Or make your own per-(sub)file
 compression strategies according to file access patterns if needed.
 
+How to generate EROFS images with multiple algorithms (Linux 5.16+)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+It's possible to generate an EROFS image with files in different
+algorithms due to various purposes.  For example, LZMA for archival
+purposes and LZ4 for runtime purposes.
+
+In order to use alternative algorithms, just specify two or more
+compressing configurations together separated by ':' like below:
+    -zlzma:lz4hc,12:lzma,9 -C32768
+
+Although mkfs still choose the first one by default, you could try to
+write a compress-hints file like below:
+    4096  1 .*\.so$
+    32768 2 .*\.txt$
+    4096    sbin/.*$
+    16384 0 .*
+
+and specify with `--compress-hints=` so that ".so" files will use
+"lz4hc,12" compression with 4k pclusters, ".txt" files will use
+"lzma,9" compression with 32k pclusters, files  under "/sbin" will use
+the default "lzma" compression with 4k plusters and other files will
+use "lzma" compression with 16k pclusters.
+
+Note that the largest pcluster size should be specified with the "-C"
+option (here 32k pcluster size), otherwise all larger pclusters will be
+limited.
+
+How to generate well-compressed EROFS images
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Even if EROFS is not designed for such purposes in the beginning, it
+could still produce some smaller images (not always) compared to other
+approaches with better performance (see `docs/PERFORMANCE.md`).  In
+order to build well-compressed EROFS images, try the following options:
+ -C1048576                     (5.13+)
+ -Eztailpacking                (5.16+)
+ -Efragments / -Eall-fragments ( 6.1+);
+ -Ededupe                      ( 6.1+).
+
+Also EROFS uses lz4hc level 9 by default, whereas some other approaches
+use lz4hc level 12 by default.  So please explicitly specify
+`-zlz4hc,12 ` for comparison purposes.
+
 How to generate legacy EROFS images (Linux 4.19+)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Decompression inplace and compacted indexes have been introduced in
-Linux upstream v5.3, which are not forward-compatible with older
-kernels.
+Linux v5.3, which are not forward-compatible with older kernels.
 
 In order to generate _legacy_ EROFS images for old kernels,
 consider adding "-E legacy-compress" to the command line, e.g.
@@ -153,21 +180,6 @@ significant I/O overhead, double caching, etc.)
 
 Therefore, NEVER use it if performance is the top concern.
 
-Note that extended attributes and ACLs aren't implemented yet due to
-the current Android use case vs limited time. If you are interested,
-contribution is, as always, welcome.
-
-How to build erofsfuse
-~~~~~~~~~~~~~~~~~~~~~~
-
-It's disabled by default as an experimental feature for now due to
-the extra libfuse dependency, to enable and build it manually:
-
-	$ ./configure --enable-fuse
-	$ make
-
-erofsfuse binary will be generated under fuse folder.
-
 How to mount an EROFS image with erofsfuse
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -190,36 +202,8 @@ dump.erofs and fsck.erofs
 
 dump.erofs and fsck.erofs are used to analyze, check, and extract
 EROFS filesystems. Note that extended attributes and ACLs are still
-unsupported when extracting images with fsck.erofs.
-
-Container images
-----------------
-
-EROFS filesystem is well-suitably used for container images with
-advanced features like chunk-based files, multi-devices (blobs)
-and new fscache backend for lazy pulling and cache management, etc.
-
-For example, CNCF Dragonfly Nydus image service [7] introduces an
-(EROFS-compatible) RAFS v6 image format to overcome flaws of the
-current OCIv1 tgz images so that:
-
- - Images can be downloaded on demand in chunks aka lazy pulling with
-   new fscache backend (5.19+) or userspace block devices (5.16+);
-
- - Finer chunk-based content-addressable data deduplication to minimize
-   storage, transmission and memory footprints;
-
- - Merged filesystem tree to remove all metadata of intermediate layers
-   as an option;
-
- - (e)stargz, zstd::chunked and other formats can be converted and run
-   on the fly;
-
- - and more.
-
-Apart from Dragonfly Nydus, a native user daemon is planned to be added
-to erofs-utils to parse EROFS, (e)stargz and zstd::chunked images from
-network too as a real part of EROFS filesystem project.
+unsupported when extracting images with fsck.erofs.  If you are
+interested, contribution is, as always, welcome.
 
 
 Contribution
@@ -233,58 +217,7 @@ patches or feedback to:
 Comments
 --------
 
-[1] According to the EROFS on-disk format, the tail block of files
-    could be inlined aggressively with its metadata in order to reduce
-    the I/O overhead and save the storage space (called tail-packing).
-
-[2] There was a bug until lz4-1.8.3, which can crash erofs-utils
-    randomly. Fortunately bugfix by our colleague Qiuyang Sun was
-    merged in lz4-1.9.0.
-
-    For more details, please refer to
-    https://github.com/lz4/lz4/commit/660d21272e4c8a0f49db5fc1e6853f08713dff82
-
-[3] There were many bugfixes merged into lz4-1.9.2 for
-    LZ4_compress_destSize(), and I once ran into some crashs due to
-    those issues. * Again lz4hc is not affected. *
-
-    [LZ4_compress_destSize] Allow 2 more bytes of match length
-    https://github.com/lz4/lz4/commit/690009e2c2f9e5dcb0d40e7c0c40610ce6006eda
-
-    [LZ4_compress_destSize] Fix rare data corruption bug
-    https://github.com/lz4/lz4/commit/6bc6f836a18d1f8fd05c8fc2b42f1d800bc25de1
-
-    [LZ4_compress_destSize] Fix overflow condition
-    https://github.com/lz4/lz4/commit/13a2d9e34ffc4170720ce417c73e396d0ac1471a
-
-    [LZ4_compress_destSize] Fix off-by-one error in fix
-    https://github.com/lz4/lz4/commit/7c32101c655d93b61fc212dcd512b87119dd7333
-
-    [LZ4_compress_destSize] Fix off-by-one error
-    https://github.com/lz4/lz4/commit/d7cad81093cd805110291f84d64d385557d0ffba
-
-    since upstream lz4 doesn't have stable branch for old versions, it's
-    preferred to use latest upstream lz4 library (although some regressions
-    could happen since new features are also introduced to latest upstream
-    version as well) or backport all stable bugfixes to old stable versions,
-    e.g. our unofficial lz4 fork: https://github.com/erofs/lz4
-
-[4] LZ4HC didn't compress long zeroed buffer properly with
-    LZ4_compress_HC_destSize()
-    https://github.com/lz4/lz4/issues/784
-
-    which has been resolved in
-    https://github.com/lz4/lz4/commit/e7fe105ac6ed02019d34731d2ba3aceb11b51bb1
-
-    and already included in lz4-1.9.3, see:
-    https://github.com/lz4/lz4/releases/tag/v1.9.3
-
-[5] LZ4_decompress_safe_partial is broken in 1.9.2
-    https://github.com/lz4/lz4/issues/783
-
-    which is also resolved in lz4-1.9.3.
-
-[6] https://tukaani.org/xz/xz-5.3.2alpha.tar.xz
-
-[7] https://nydus.dev
-    https://github.com/dragonflyoss/image-service
+[1] According to the EROFS on-disk format, the tail blocks of files
+    could be inlined aggressively with their metadata (called
+    tail-packing) in order to minimize the extra I/Os and the storage
+    space.
