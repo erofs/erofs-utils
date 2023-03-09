@@ -8,6 +8,45 @@
 #include "rolling_hash.h"
 #include "sha256.h"
 
+unsigned long erofs_memcmp2(const u8 *s1, const u8 *s2,
+			    unsigned long sz)
+{
+	unsigned long n = sz;
+
+	if (sz >= sizeof(long) && ((long)s1 & (sizeof(long) - 1)) ==
+			((long)s2 & (sizeof(long) - 1))) {
+		const unsigned long *a1, *a2;
+
+		while ((long)s1 & (sizeof(long) - 1)) {
+			if (*s1 != *s2)
+				break;
+			++s1;
+			++s2;
+			--sz;
+		}
+
+		a1 = (const unsigned long *)s1;
+		a2 = (const unsigned long *)s2;
+		while (sz >= sizeof(long)) {
+			if (*a1 != *a2)
+				break;
+			++a1;
+			++a2;
+			sz -= sizeof(long);
+		}
+		s1 = (const u8 *)a1;
+		s2 = (const u8 *)a2;
+	}
+	while (sz) {
+		if (*s1 != *s2)
+			break;
+		++s1;
+		++s2;
+		--sz;
+	}
+	return n - sz;
+}
+
 static unsigned int window_size, rollinghash_rm;
 static struct rb_tree *dedupe_tree, *dedupe_subtree;
 
@@ -72,12 +111,9 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 		if (memcmp(sha256, e->prefix_sha256, sizeof(sha256)))
 			continue;
 
-		extra = 0;
-		while (cur + window_size + extra < ctx->end &&
-		       window_size + extra < e->original_length &&
-		       e->extra_data[extra] == cur[window_size + extra])
-			++extra;
-
+		extra = min_t(unsigned int, ctx->end - cur - window_size,
+			      e->original_length - window_size);
+		extra = erofs_memcmp2(cur + window_size, e->extra_data, extra);
 		if (window_size + extra <= ctx->cur - cur)
 			continue;
 		ctx->cur = cur;
