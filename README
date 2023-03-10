@@ -183,7 +183,7 @@ Therefore, NEVER use it if performance is the top concern.
 How to mount an EROFS image with erofsfuse
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-As the other FUSE implementations, it's quite simple to mount with
+As the other FUSE implementations, it's quite easy to mount by using
 erofsfuse, e.g.:
  $ erofsfuse foo.erofs.img foo/
 
@@ -202,15 +202,19 @@ dump.erofs and fsck.erofs
 
 dump.erofs and fsck.erofs are used to analyze, check, and extract
 EROFS filesystems. Note that extended attributes and ACLs are still
-unsupported when extracting images with fsck.erofs.  If you are
-interested, contribution is, as always, welcome.
+unsupported when extracting images with fsck.erofs.
+
+Note that fragment extraction with fsck.erofs could be slow now and
+it needs to be optimized later.  If you are interested, contribution
+is, as always, welcome.
 
 
 Contribution
 ------------
 
-erofs-utils is a part of EROFS filesystem project, feel free to send
-patches or feedback to:
+erofs-utils is a part of EROFS filesystem project, which is completely
+community-driven open source software.  If you have interest in EROFS,
+feel free to send feedback and/or patches to:
   linux-erofs mailing list   <linux-erofs@lists.ozlabs.org>
 
 
