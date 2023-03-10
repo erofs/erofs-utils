@@ -22,7 +22,8 @@ from \fISOURCE\fR directory.
 .TP
 .BI "\-z " compression-algorithm " [" ",#" "]"
 Set an algorithm for file compression, which can be set with an optional
-compression level separated by a comma.
+compression level (1 to 12 for LZ4HC, 0 to 9 for LZMA and 100 to 109 for LZMA
+extreme compression) separated by a comma.
 .TP
 .BI "\-C " max-pcluster-size
 Specify the maximum size of compress physical cluster in bytes. It may enable
