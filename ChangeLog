@@ -1,3 +1,18 @@
+erofs-utils 1.6
+
+ * This release includes the following updates:
+   - support fragments by using `-Efragments` (Yue Hu);
+   - support compressed data deduplication by using `-Ededupe` (Ziyang Zhang);
+   - (erofsfuse) support extended attributes (Huang Jianan);
+   - (mkfs.erofs) support multiple algorithms in a single image (Gao Xiang);
+   - (mkfs.erofs) support chunk-based sparse files (Gao Xiang);
+   - (mkfs.erofs) add volume-label setting support (Naoto Yamaguchi);
+   - (mkfs.erofs) add uid/gid offsetting support (Naoto Yamaguchi);
+   - (mkfs.erofs) pack files entirely by using `-Eall-fragments` (Gao Xiang);
+   - various bugfixes and cleanups;
+
+ -- Gao Xiang <xiang@kernel.org>  Sun, 12 Mar 2023 00:00:00 +0800
+
 erofs-utils 1.5
 
  * This release includes the following updates:
