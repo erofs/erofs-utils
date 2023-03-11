@@ -20,10 +20,11 @@ mkfs.erofs is used to create such EROFS filesystem \fIDESTINATION\fR image file
 from \fISOURCE\fR directory.
 .SH OPTIONS
 .TP
-.BI "\-z " compression-algorithm " [" ",#" "]"
-Set an algorithm for file compression, which can be set with an optional
+.BI "\-z " compression-algorithm " [" ",#" "]" " [:" " ... " "]"
+Set a primary algorithm for data compression, which can be set with an optional
 compression level (1 to 12 for LZ4HC, 0 to 9 for LZMA and 100 to 109 for LZMA
-extreme compression) separated by a comma.
+extreme compression) separated by a comma.  Alternative algorithms could be
+specified and separated by colons.
 .TP
 .BI "\-C " max-pcluster-size
 Specify the maximum size of compress physical cluster in bytes. It may enable
@@ -112,9 +113,11 @@ If the optional
 argument is given,
 .B mkfs.erofs
 uses it to apply the per-file compression strategy. Each line is defined by
-tokens separated by spaces in the following form:
+tokens separated by spaces in the following form.  Optionally, instead of
+the given primary algorithm, alternative algorithms could be specified with
+\fIalgorithm-index\fR by hand:
 .RS 1.2i
-<pcluster-in-bytes> <match-pattern>
+<pcluster-in-bytes> [algorithm-index] <match-pattern>
 .RE
 .TP
 .BI "\-\-exclude-path=" path

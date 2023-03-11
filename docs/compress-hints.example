@@ -1,0 +1,7 @@
+# https://github.com/debuerreotype/docker-debian-artifacts/blob/dist-amd64/bullseye/rootfs.tar.xz?raw=true
+# -zlzma:lz4hc,12:lzma,109 -C131072 --compress-hints=compress-hints.example  image size: 66M
+# -zlz4hc,12                                                                 image size: 76M
+4096     1 .*\.so.*$
+4096     1 bin/
+4096     1 sbin/
+131072   2 etc/
