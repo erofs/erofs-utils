@@ -82,6 +82,7 @@ static void usage(void)
 {
 	fputs("usage: [options] FILE DIRECTORY\n\n"
 	      "Generate erofs image from DIRECTORY to FILE, and [options] are:\n"
+	      " -b#                   set block size to # (# = page size by default)\n"
 	      " -d#                   set output message level to # (maximum 9)\n"
 	      " -x#                   set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
 	      " -zX[,Y][:..]          X=compressor (Y=compression level, optional)\n"
@@ -273,7 +274,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	int opt, i;
 	bool quiet = false;
 
-	while ((opt = getopt_long(argc, argv, "C:E:L:T:U:d:x:z:",
+	while ((opt = getopt_long(argc, argv, "C:E:L:T:U:b:d:x:z:",
 				  long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'z':
@@ -285,6 +286,15 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			i = mkfs_parse_compress_algs(optarg);
 			if (i)
 				return i;
+			break;
+
+		case 'b':
+			i = atoi(optarg);
+			if (i < 512 || i > EROFS_MAX_BLOCK_SIZE) {
+				erofs_err("invalid block size %s", optarg);
+				return -EINVAL;
+			}
+			sbi.blkszbits = ilog2(i);
 			break;
 
 		case 'd':
@@ -515,7 +525,11 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		cfg.c_dbg_lvl = EROFS_ERR;
 		cfg.c_showprogress = false;
 	}
-
+	if (cfg.c_compr_alg[0] && erofs_blksiz() != PAGE_SIZE) {
+		erofs_err("compression is unsupported for now with block size %u",
+			  erofs_blksiz());
+		return -EINVAL;
+	}
 	if (pclustersize_max) {
 		if (pclustersize_max < erofs_blksiz() ||
 		    pclustersize_max % erofs_blksiz()) {
@@ -597,9 +611,10 @@ static int erofs_mkfs_superblock_csum_set(void)
 	int ret;
 	u8 buf[EROFS_MAX_BLOCK_SIZE];
 	u32 crc;
+	unsigned int len;
 	struct erofs_super_block *sb;
 
-	ret = blk_read(0, buf, 0, 1);
+	ret = blk_read(0, buf, 0, erofs_blknr(sizeof(buf)));
 	if (ret) {
 		erofs_err("failed to read superblock to set checksum: %s",
 			  erofs_strerror(ret));
@@ -620,7 +635,11 @@ static int erofs_mkfs_superblock_csum_set(void)
 	/* turn on checksum feature */
 	sb->feature_compat = cpu_to_le32(le32_to_cpu(sb->feature_compat) |
 					 EROFS_FEATURE_COMPAT_SB_CHKSUM);
-	crc = erofs_crc32c(~0, (u8 *)sb, erofs_blksiz() - EROFS_SUPER_OFFSET);
+	if (erofs_blksiz() > EROFS_SUPER_OFFSET)
+		len = erofs_blksiz() - EROFS_SUPER_OFFSET;
+	else
+		len = erofs_blksiz();
+	crc = erofs_crc32c(~0, (u8 *)sb, len);
 
 	/* set up checksum field to erofs_super_block */
 	sb->checksum = cpu_to_le32(crc);

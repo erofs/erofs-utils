@@ -136,8 +136,11 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 		}
 		vi->u.chunkbits = sbi.blkszbits +
 			(vi->u.chunkformat & EROFS_CHUNK_FORMAT_BLKBITS_MASK);
-	} else if (erofs_inode_is_data_compressed(vi->datalayout))
+	} else if (erofs_inode_is_data_compressed(vi->datalayout)) {
+		if (erofs_blksiz() != PAGE_SIZE)
+			return -EOPNOTSUPP;
 		return z_erofs_fill_inode(vi);
+	}
 	return 0;
 bogusimode:
 	erofs_err("bogus i_mode (%o) @ nid %llu", vi->i_mode, vi->nid | 0ULL);
