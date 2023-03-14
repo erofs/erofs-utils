@@ -126,6 +126,8 @@ static void usage(void)
 	print_available_compressors(stderr, ", ");
 }
 
+static unsigned int pclustersize_packed, pclustersize_max;
+
 static int parse_extended_opts(const char *opts)
 {
 #define MATCH_EXTENTED_OPT(opt, token, keylen) \
@@ -222,13 +224,12 @@ handle_fragment:
 			cfg.c_fragments = true;
 			if (vallen) {
 				i = strtoull(value, &endptr, 0);
-				if (endptr - value != vallen ||
-				    i < EROFS_BLKSIZ || i % EROFS_BLKSIZ) {
+				if (endptr - value != vallen) {
 					erofs_err("invalid pcluster size for the packed file %s",
 						  next);
 					return -EINVAL;
 				}
-				cfg.c_pclusterblks_packed = i / EROFS_BLKSIZ;
+				pclustersize_packed = i;
 			}
 		}
 
@@ -415,14 +416,12 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 #endif
 		case 'C':
 			i = strtoull(optarg, &endptr, 0);
-			if (*endptr != '\0' ||
-			    i < EROFS_BLKSIZ || i % EROFS_BLKSIZ) {
+			if (*endptr != '\0') {
 				erofs_err("invalid physical clustersize %s",
 					  optarg);
 				return -EINVAL;
 			}
-			cfg.c_pclusterblks_max = i / EROFS_BLKSIZ;
-			cfg.c_pclusterblks_def = cfg.c_pclusterblks_max;
+			pclustersize_max = i;
 			break;
 		case 11:
 			i = strtol(optarg, &endptr, 0);
@@ -433,11 +432,6 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			cfg.c_chunkbits = ilog2(i);
 			if ((1 << cfg.c_chunkbits) != i) {
 				erofs_err("chunksize %s must be a power of two",
-					  optarg);
-				return -EINVAL;
-			}
-			if (i < EROFS_BLKSIZ) {
-				erofs_err("chunksize %s must be larger than block size",
 					  optarg);
 				return -EINVAL;
 			}
@@ -520,6 +514,32 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	if (quiet) {
 		cfg.c_dbg_lvl = EROFS_ERR;
 		cfg.c_showprogress = false;
+	}
+
+	if (pclustersize_max) {
+		if (pclustersize_max < EROFS_BLKSIZ ||
+		    pclustersize_max % EROFS_BLKSIZ) {
+			erofs_err("invalid physical clustersize %u",
+				  pclustersize_max);
+			return -EINVAL;
+		}
+		cfg.c_pclusterblks_max = pclustersize_max / EROFS_BLKSIZ;
+		cfg.c_pclusterblks_def = cfg.c_pclusterblks_max;
+	}
+	if (cfg.c_chunkbits && 1u << cfg.c_chunkbits < EROFS_BLKSIZ) {
+		erofs_err("chunksize %u must be larger than block size",
+			  1u << cfg.c_chunkbits);
+		return -EINVAL;
+	}
+
+	if (pclustersize_packed) {
+		if (pclustersize_max < EROFS_BLKSIZ ||
+		    pclustersize_max % EROFS_BLKSIZ) {
+			erofs_err("invalid pcluster size for the packed file %u",
+				  pclustersize_packed);
+			return -EINVAL;
+		}
+		cfg.c_pclusterblks_packed = pclustersize_packed / EROFS_BLKSIZ;
 	}
 	return 0;
 }
