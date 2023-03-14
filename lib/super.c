@@ -70,7 +70,6 @@ int erofs_read_superblock(void)
 {
 	char data[EROFS_BLKSIZ];
 	struct erofs_super_block *dsb;
-	unsigned int blkszbits;
 	int ret;
 
 	ret = blk_read(0, data, 0, 1);
@@ -88,11 +87,11 @@ int erofs_read_superblock(void)
 
 	sbi.feature_compat = le32_to_cpu(dsb->feature_compat);
 
-	blkszbits = dsb->blkszbits;
+	sbi.blkszbits = dsb->blkszbits;
 	/* 9(512 bytes) + LOG_SECTORS_PER_BLOCK == LOG_BLOCK_SIZE */
-	if (blkszbits != LOG_BLOCK_SIZE) {
+	if (sbi.blkszbits != LOG_BLOCK_SIZE) {
 		erofs_err("blksize %d isn't supported on this platform",
-			  1 << blkszbits);
+			  1 << sbi.blkszbits);
 		return ret;
 	}
 
