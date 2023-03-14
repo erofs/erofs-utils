@@ -68,7 +68,7 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 
 int erofs_read_superblock(void)
 {
-	char data[EROFS_BLKSIZ];
+	char data[EROFS_MAX_BLOCK_SIZE];
 	struct erofs_super_block *dsb;
 	int ret;
 
@@ -89,9 +89,9 @@ int erofs_read_superblock(void)
 
 	sbi.blkszbits = dsb->blkszbits;
 	/* 9(512 bytes) + LOG_SECTORS_PER_BLOCK == LOG_BLOCK_SIZE */
-	if (sbi.blkszbits != LOG_BLOCK_SIZE) {
+	if (1u << sbi.blkszbits != PAGE_SIZE) {
 		erofs_err("blksize %d isn't supported on this platform",
-			  1 << sbi.blkszbits);
+			  erofs_blksiz());
 		return ret;
 	}
 

@@ -133,21 +133,21 @@ int erofs_load_compress_hints(void)
 			}
 		}
 
-		if (pclustersize % EROFS_BLKSIZ) {
+		if (pclustersize % erofs_blksiz()) {
 			erofs_warn("invalid physical clustersize %u, "
 				   "use default pclusterblks %u",
 				   pclustersize, cfg.c_pclusterblks_def);
 			continue;
 		}
 		erofs_insert_compress_hints(pattern,
-					    pclustersize / EROFS_BLKSIZ, ccfg);
+					    pclustersize / erofs_blksiz(), ccfg);
 
 		if (pclustersize > max_pclustersize)
 			max_pclustersize = pclustersize;
 	}
 
-	if (cfg.c_pclusterblks_max * EROFS_BLKSIZ < max_pclustersize) {
-		cfg.c_pclusterblks_max = max_pclustersize / EROFS_BLKSIZ;
+	if (cfg.c_pclusterblks_max * erofs_blksiz() < max_pclustersize) {
+		cfg.c_pclusterblks_max = max_pclustersize / erofs_blksiz();
 		erofs_warn("update max pclusterblks to %u", cfg.c_pclusterblks_max);
 	}
 out:

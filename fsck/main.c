@@ -259,7 +259,7 @@ static void erofsfsck_set_attributes(struct erofs_inode *inode, char *path)
 static int erofs_check_sb_chksum(void)
 {
 	int ret;
-	u8 buf[EROFS_BLKSIZ];
+	u8 buf[EROFS_MAX_BLOCK_SIZE];
 	u32 crc;
 	struct erofs_super_block *sb;
 
@@ -273,7 +273,7 @@ static int erofs_check_sb_chksum(void)
 	sb = (struct erofs_super_block *)(buf + EROFS_SUPER_OFFSET);
 	sb->checksum = 0;
 
-	crc = erofs_crc32c(~0, (u8 *)sb, EROFS_BLKSIZ - EROFS_SUPER_OFFSET);
+	crc = erofs_crc32c(~0, (u8 *)sb, erofs_blksiz() - EROFS_SUPER_OFFSET);
 	if (crc != sbi.checksum) {
 		erofs_err("superblock chksum doesn't match: saved(%08xh) calculated(%08xh)",
 			  sbi.checksum, crc);
@@ -292,7 +292,7 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	struct erofs_xattr_ibody_header *ih;
 	struct erofs_xattr_entry *entry;
 	int i, remaining = inode->xattr_isize, ret = 0;
-	char buf[EROFS_BLKSIZ];
+	char buf[EROFS_MAX_BLOCK_SIZE];
 
 	if (inode->xattr_isize == xattr_hdr_size) {
 		erofs_err("xattr_isize %d of nid %llu is not supported yet",
@@ -322,8 +322,8 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	addr += xattr_hdr_size;
 	remaining -= xattr_hdr_size;
 	for (i = 0; i < xattr_shared_count; ++i) {
-		if (ofs >= EROFS_BLKSIZ) {
-			if (ofs != EROFS_BLKSIZ) {
+		if (ofs >= erofs_blksiz()) {
+			if (ofs != erofs_blksiz()) {
 				erofs_err("unaligned xattr entry in xattr shared area @ nid %llu",
 					  inode->nid | 0ULL);
 				ret = -EFSCORRUPTED;

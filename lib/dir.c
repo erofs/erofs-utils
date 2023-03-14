@@ -125,7 +125,7 @@ int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck)
 	struct erofs_inode *dir = ctx->dir;
 	int err = 0;
 	erofs_off_t pos;
-	char buf[EROFS_BLKSIZ];
+	char buf[EROFS_MAX_BLOCK_SIZE];
 
 	if (!S_ISDIR(dir->i_mode))
 		return -ENOTDIR;
@@ -135,7 +135,7 @@ int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck)
 	while (pos < dir->i_size) {
 		erofs_blk_t lblk = erofs_blknr(pos);
 		erofs_off_t maxsize = min_t(erofs_off_t,
-					dir->i_size - pos, EROFS_BLKSIZ);
+					dir->i_size - pos, erofs_blksiz());
 		const struct erofs_dirent *de = (const void *)buf;
 		unsigned int nameoff;
 
@@ -148,7 +148,7 @@ int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck)
 
 		nameoff = le16_to_cpu(de->nameoff);
 		if (nameoff < sizeof(struct erofs_dirent) ||
-		    nameoff >= EROFS_BLKSIZ) {
+		    nameoff >= erofs_blksiz()) {
 			erofs_err("invalid de[0].nameoff %u @ nid %llu, lblk %u",
 				  nameoff, dir->nid | 0ULL, lblk);
 			return -EFSCORRUPTED;

@@ -82,7 +82,7 @@ int dev_open(const char *dev)
 			close(fd);
 			return ret;
 		}
-		erofs_devsz = round_down(erofs_devsz, EROFS_BLKSIZ);
+		erofs_devsz = round_down(erofs_devsz, erofs_blksiz());
 		break;
 	case S_IFREG:
 		ret = ftruncate(fd, 0);
@@ -192,7 +192,7 @@ int dev_write(const void *buf, u64 offset, size_t len)
 
 int dev_fillzero(u64 offset, size_t len, bool padding)
 {
-	static const char zero[EROFS_BLKSIZ] = {0};
+	static const char zero[EROFS_MAX_BLOCK_SIZE] = {0};
 	int ret;
 
 	if (cfg.c_dry_run)
@@ -203,12 +203,12 @@ int dev_fillzero(u64 offset, size_t len, bool padding)
 				  FALLOC_FL_KEEP_SIZE, offset, len) >= 0)
 		return 0;
 #endif
-	while (len > EROFS_BLKSIZ) {
-		ret = dev_write(zero, offset, EROFS_BLKSIZ);
+	while (len > erofs_blksiz()) {
+		ret = dev_write(zero, offset, erofs_blksiz());
 		if (ret)
 			return ret;
-		len -= EROFS_BLKSIZ;
-		offset += EROFS_BLKSIZ;
+		len -= erofs_blksiz();
+		offset += erofs_blksiz();
 	}
 	return dev_write(zero, offset, len);
 }
@@ -240,7 +240,7 @@ int dev_resize(unsigned int blocks)
 		return -errno;
 	}
 
-	length = (u64)blocks * EROFS_BLKSIZ;
+	length = (u64)blocks * erofs_blksiz();
 	if (st.st_size == length)
 		return 0;
 	if (st.st_size > length)

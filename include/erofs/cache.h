@@ -55,7 +55,7 @@ struct erofs_buffer_block {
 static inline const int get_alignsize(int type, int *type_ret)
 {
 	if (type == DATA)
-		return EROFS_BLKSIZ;
+		return erofs_blksiz();
 
 	if (type == INODE) {
 		*type_ret = META;
@@ -84,7 +84,7 @@ static inline erofs_off_t erofs_btell(struct erofs_buffer_head *bh, bool end)
 	if (bb->blkaddr == NULL_ADDR)
 		return NULL_ADDR_UL;
 
-	return blknr_to_addr(bb->blkaddr) +
+	return erofs_pos(bb->blkaddr) +
 		(end ? list_next_entry(bh, list)->off : bh->off);
 }
 

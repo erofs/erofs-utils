@@ -154,7 +154,7 @@ static int __allocate_inode_bh_data(struct erofs_inode *inode,
 	}
 
 	/* allocate main data buffer */
-	bh = erofs_balloc(DATA, blknr_to_addr(nblocks), 0, 0);
+	bh = erofs_balloc(DATA, erofs_pos(nblocks), 0, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 
@@ -221,8 +221,8 @@ int erofs_prepare_dir_file(struct erofs_inode *dir, unsigned int nr_subdirs)
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
 		int len = strlen(d->name) + sizeof(struct erofs_dirent);
 
-		if (d_size % EROFS_BLKSIZ + len > EROFS_BLKSIZ)
-			d_size = round_up(d_size, EROFS_BLKSIZ);
+		if ((d_size & (erofs_blksiz() - 1)) + len > erofs_blksiz())
+			d_size = round_up(d_size, erofs_blksiz());
 		d_size += len;
 
 		i_nlink += (d->type == EROFS_FT_DIR);
@@ -247,7 +247,7 @@ int erofs_prepare_dir_file(struct erofs_inode *dir, unsigned int nr_subdirs)
 		return ret;
 
 	/* it will be used in erofs_prepare_inode_buffer */
-	dir->idata_size = d_size % EROFS_BLKSIZ;
+	dir->idata_size = d_size % erofs_blksiz();
 	return 0;
 }
 
@@ -278,9 +278,9 @@ static void fill_dirblock(char *buf, unsigned int size, unsigned int q,
 static int write_dirblock(unsigned int q, struct erofs_dentry *head,
 			  struct erofs_dentry *end, erofs_blk_t blkaddr)
 {
-	char buf[EROFS_BLKSIZ];
+	char buf[EROFS_MAX_BLOCK_SIZE];
 
-	fill_dirblock(buf, EROFS_BLKSIZ, q, head, end);
+	fill_dirblock(buf, erofs_blksiz(), q, head, end);
 	return blk_write(buf, blkaddr, 1);
 }
 
@@ -299,7 +299,7 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 		const unsigned int len = strlen(d->name) +
 			sizeof(struct erofs_dirent);
 
-		if (used + len > EROFS_BLKSIZ) {
+		if (used + len > erofs_blksiz()) {
 			ret = write_dirblock(q, head, d,
 					     dir->u.i_blkaddr + blkno);
 			if (ret)
@@ -313,13 +313,13 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 		q += sizeof(struct erofs_dirent);
 	}
 
-	DBG_BUGON(used > EROFS_BLKSIZ);
-	if (used == EROFS_BLKSIZ) {
-		DBG_BUGON(dir->i_size % EROFS_BLKSIZ);
+	DBG_BUGON(used > erofs_blksiz());
+	if (used == erofs_blksiz()) {
+		DBG_BUGON(dir->i_size % erofs_blksiz());
 		DBG_BUGON(dir->idata_size);
 		return write_dirblock(q, head, d, dir->u.i_blkaddr + blkno);
 	}
-	DBG_BUGON(used != dir->i_size % EROFS_BLKSIZ);
+	DBG_BUGON(used != dir->i_size % erofs_blksiz());
 	if (used) {
 		/* fill tail-end dir block */
 		dir->idata = malloc(used);
@@ -344,12 +344,12 @@ static int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 
 	if (nblocks)
 		blk_write(buf, inode->u.i_blkaddr, nblocks);
-	inode->idata_size = inode->i_size % EROFS_BLKSIZ;
+	inode->idata_size = inode->i_size % erofs_blksiz();
 	if (inode->idata_size) {
 		inode->idata = malloc(inode->idata_size);
 		if (!inode->idata)
 			return -ENOMEM;
-		memcpy(inode->idata, buf + blknr_to_addr(nblocks),
+		memcpy(inode->idata, buf + erofs_pos(nblocks),
 		       inode->idata_size);
 	}
 	return 0;
@@ -369,17 +369,17 @@ static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 	unsigned int nblocks, i;
 
 	inode->datalayout = EROFS_INODE_FLAT_INLINE;
-	nblocks = inode->i_size / EROFS_BLKSIZ;
+	nblocks = inode->i_size / erofs_blksiz();
 
 	ret = __allocate_inode_bh_data(inode, nblocks);
 	if (ret)
 		return ret;
 
 	for (i = 0; i < nblocks; ++i) {
-		char buf[EROFS_BLKSIZ];
+		char buf[EROFS_MAX_BLOCK_SIZE];
 
-		ret = read(fd, buf, EROFS_BLKSIZ);
-		if (ret != EROFS_BLKSIZ) {
+		ret = read(fd, buf, erofs_blksiz());
+		if (ret != erofs_blksiz()) {
 			if (ret < 0)
 				return -errno;
 			return -EAGAIN;
@@ -391,7 +391,7 @@ static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 	}
 
 	/* read the tail-end data */
-	inode->idata_size = inode->i_size % EROFS_BLKSIZ;
+	inode->idata_size = inode->i_size % erofs_blksiz();
 	if (inode->idata_size) {
 		inode->idata = malloc(inode->idata_size);
 		if (!inode->idata)
@@ -590,7 +590,7 @@ static int erofs_prepare_tail_block(struct erofs_inode *inode)
 
 	bh = inode->bh_data;
 	if (!bh) {
-		bh = erofs_balloc(DATA, EROFS_BLKSIZ, 0, 0);
+		bh = erofs_balloc(DATA, erofs_blksiz(), 0, 0);
 		if (IS_ERR(bh))
 			return PTR_ERR(bh);
 		bh->op = &erofs_skip_write_bhops;
@@ -604,8 +604,8 @@ static int erofs_prepare_tail_block(struct erofs_inode *inode)
 		return 0;
 	}
 	/* expend a block as the tail block (should be successful) */
-	ret = erofs_bh_balloon(bh, EROFS_BLKSIZ);
-	DBG_BUGON(ret != EROFS_BLKSIZ);
+	ret = erofs_bh_balloon(bh, erofs_blksiz());
+	DBG_BUGON(ret != erofs_blksiz());
 	return 0;
 }
 
@@ -729,12 +729,12 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		erofs_off_t pos, zero_pos;
 
 		erofs_mapbh(bh->block);
-		pos = erofs_btell(bh, true) - EROFS_BLKSIZ;
+		pos = erofs_btell(bh, true) - erofs_blksiz();
 
 		/* 0'ed data should be padded at head for 0padding conversion */
 		if (erofs_sb_has_lz4_0padding() && inode->compressed_idata) {
 			zero_pos = pos;
-			pos += EROFS_BLKSIZ - inode->idata_size;
+			pos += erofs_blksiz() - inode->idata_size;
 		} else {
 			/* pad 0'ed data for the other cases */
 			zero_pos = pos + inode->idata_size;
@@ -743,10 +743,10 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		if (ret)
 			return ret;
 
-		DBG_BUGON(inode->idata_size > EROFS_BLKSIZ);
-		if (inode->idata_size < EROFS_BLKSIZ) {
+		DBG_BUGON(inode->idata_size > erofs_blksiz());
+		if (inode->idata_size < erofs_blksiz()) {
 			ret = dev_fillzero(zero_pos,
-					   EROFS_BLKSIZ - inode->idata_size,
+					   erofs_blksiz() - inode->idata_size,
 					   false);
 			if (ret)
 				return ret;
@@ -996,7 +996,7 @@ static void erofs_fixup_meta_blkaddr(struct erofs_inode *rootdir)
 	off = erofs_btell(bh, false);
 
 	if (off > rootnid_maxoffset)
-		meta_offset = round_up(off - rootnid_maxoffset, EROFS_BLKSIZ);
+		meta_offset = round_up(off - rootnid_maxoffset, erofs_blksiz());
 	else
 		meta_offset = 0;
 	sbi.meta_blkaddr = erofs_blknr(meta_offset);
@@ -1014,7 +1014,7 @@ erofs_nid_t erofs_lookupnid(struct erofs_inode *inode)
 	erofs_mapbh(bh->block);
 	off = erofs_btell(bh, false);
 
-	meta_offset = blknr_to_addr(sbi.meta_blkaddr);
+	meta_offset = erofs_pos(sbi.meta_blkaddr);
 	DBG_BUGON(off < meta_offset);
 	return inode->nid = (off - meta_offset) >> EROFS_ISLOTBITS;
 }

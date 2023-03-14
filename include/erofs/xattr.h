@@ -27,12 +27,12 @@ static inline unsigned int inlinexattr_header_size(struct erofs_inode *vi)
 static inline erofs_blk_t xattrblock_addr(unsigned int xattr_id)
 {
 	return sbi.xattr_blkaddr +
-		xattr_id * sizeof(__u32) / EROFS_BLKSIZ;
+		((xattr_id * sizeof(__u32)) >> sbi.blkszbits);
 }
 
 static inline unsigned int xattrblock_offset(unsigned int xattr_id)
 {
-	return (xattr_id * sizeof(__u32)) % EROFS_BLKSIZ;
+	return (xattr_id * sizeof(__u32)) & (erofs_blksiz() - 1);
 }
 
 #define EROFS_INODE_XATTR_ICOUNT(_size)	({\

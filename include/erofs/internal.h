@@ -35,17 +35,7 @@ typedef unsigned short umode_t;
 #define PAGE_SIZE		(1U << PAGE_SHIFT)
 #endif
 
-/* no obvious reason to support explicit PAGE_SIZE != 4096 for now */
-#if PAGE_SIZE != 4096
-#warning EROFS may be incompatible on your platform
-#endif
-
-#ifndef PAGE_MASK
-#define PAGE_MASK		(~(PAGE_SIZE-1))
-#endif
-
-#define LOG_BLOCK_SIZE          (12)
-#define EROFS_BLKSIZ            (1U << LOG_BLOCK_SIZE)
+#define EROFS_MAX_BLOCK_SIZE	PAGE_SIZE
 
 #define EROFS_ISLOTBITS		5
 #define EROFS_SLOTSIZE		(1U << EROFS_ISLOTBITS)
@@ -58,11 +48,15 @@ typedef u32 erofs_blk_t;
 #define NULL_ADDR	((unsigned int)-1)
 #define NULL_ADDR_UL	((unsigned long)-1)
 
-#define erofs_blknr(addr)       ((addr) / EROFS_BLKSIZ)
-#define erofs_blkoff(addr)      ((addr) % EROFS_BLKSIZ)
-#define blknr_to_addr(nr)       ((erofs_off_t)(nr) * EROFS_BLKSIZ)
+/* global sbi */
+extern struct erofs_sb_info sbi;
 
-#define BLK_ROUND_UP(addr)	DIV_ROUND_UP(addr, EROFS_BLKSIZ)
+#define erofs_blksiz()		(1u << sbi.blkszbits)
+#define erofs_blknr(addr)       ((addr) >> sbi.blkszbits)
+#define erofs_blkoff(addr)      ((addr) & (erofs_blksiz() - 1))
+#define erofs_pos(nr)           ((erofs_off_t)(nr) << sbi.blkszbits)
+
+#define BLK_ROUND_UP(addr)	DIV_ROUND_UP(addr, 1u << sbi.blkszbits)
 
 struct erofs_buffer_head;
 
@@ -110,16 +104,12 @@ struct erofs_sb_info {
 	erofs_nid_t packed_nid;
 };
 
-
 /* make sure that any user of the erofs headers has atleast 64bit off_t type */
 extern int erofs_assert_largefile[sizeof(off_t)-8];
 
-/* global sbi */
-extern struct erofs_sb_info sbi;
-
 static inline erofs_off_t iloc(erofs_nid_t nid)
 {
-	return blknr_to_addr(sbi.meta_blkaddr) + (nid << sbi.islotbits);
+	return erofs_pos(sbi.meta_blkaddr) + (nid << sbi.islotbits);
 }
 
 #define EROFS_FEATURE_FUNCS(name, compat, feature) \
@@ -311,7 +301,7 @@ enum {
 #define EROFS_MAP_PARTIAL_REF	(1 << BH_Partialref)
 
 struct erofs_map_blocks {
-	char mpage[EROFS_BLKSIZ];
+	char mpage[EROFS_MAX_BLOCK_SIZE];
 
 	erofs_off_t m_pa, m_la;
 	u64 m_plen, m_llen;
@@ -355,7 +345,7 @@ int erofs_pread(struct erofs_inode *inode, char *buf,
 		erofs_off_t count, erofs_off_t offset);
 int erofs_map_blocks(struct erofs_inode *inode,
 		struct erofs_map_blocks *map, int flags);
-int erofs_map_dev(struct erofs_sb_info *sbi, struct erofs_map_dev *map);
+int erofs_map_dev(struct erofs_map_dev *map);
 int erofs_read_one_data(struct erofs_map_blocks *map, char *buffer, u64 offset,
 			size_t len);
 int z_erofs_read_one_data(struct erofs_inode *inode,
@@ -374,7 +364,7 @@ static inline int erofs_get_occupied_size(const struct erofs_inode *inode,
 		break;
 	case EROFS_INODE_FLAT_COMPRESSION_LEGACY:
 	case EROFS_INODE_FLAT_COMPRESSION:
-		*size = inode->u.i_blocks * EROFS_BLKSIZ;
+		*size = inode->u.i_blocks * erofs_blksiz();
 		break;
 	default:
 		return -ENOTSUP;

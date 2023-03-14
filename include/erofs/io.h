@@ -43,15 +43,13 @@ ssize_t erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
 static inline int blk_write(const void *buf, erofs_blk_t blkaddr,
 			    u32 nblocks)
 {
-	return dev_write(buf, blknr_to_addr(blkaddr),
-			 blknr_to_addr(nblocks));
+	return dev_write(buf, erofs_pos(blkaddr), erofs_pos(nblocks));
 }
 
 static inline int blk_read(int device_id, void *buf,
 			   erofs_blk_t start, u32 nblocks)
 {
-	return dev_read(device_id, buf, blknr_to_addr(start),
-			 blknr_to_addr(nblocks));
+	return dev_read(device_id, buf, erofs_pos(start), erofs_pos(nblocks));
 }
 
 #ifdef __cplusplus

@@ -32,7 +32,7 @@ struct erofs_blobchunk erofs_holechunk = {
 static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
 		erofs_off_t chunksize)
 {
-	static u8 zeroed[EROFS_BLKSIZ];
+	static u8 zeroed[EROFS_MAX_BLOCK_SIZE];
 	u8 *chunkdata, sha256[32];
 	int ret;
 	unsigned int hash;
@@ -72,7 +72,7 @@ static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
 	erofs_dbg("Writing chunk (%u bytes) to %u", chunksize, chunk->blkaddr);
 	ret = fwrite(chunkdata, chunksize, 1, blobfile);
 	if (ret == 1 && erofs_blkoff(chunksize))
-		ret = fwrite(zeroed, EROFS_BLKSIZ - erofs_blkoff(chunksize),
+		ret = fwrite(zeroed, erofs_blksiz() - erofs_blkoff(chunksize),
 			     1, blobfile);
 	if (ret < 1) {
 		struct hashmap_entry key;
@@ -181,15 +181,15 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode)
 	/* if the file is fully sparsed, use one big chunk instead */
 	if (lseek(fd, 0, SEEK_DATA) < 0 && errno == ENXIO) {
 		chunkbits = ilog2(inode->i_size - 1) + 1;
-		if (chunkbits < LOG_BLOCK_SIZE)
-			chunkbits = LOG_BLOCK_SIZE;
+		if (chunkbits < sbi.blkszbits)
+			chunkbits = sbi.blkszbits;
 	}
 #endif
-	if (chunkbits - LOG_BLOCK_SIZE > EROFS_CHUNK_FORMAT_BLKBITS_MASK)
-		chunkbits = EROFS_CHUNK_FORMAT_BLKBITS_MASK + LOG_BLOCK_SIZE;
+	if (chunkbits - sbi.blkszbits > EROFS_CHUNK_FORMAT_BLKBITS_MASK)
+		chunkbits = EROFS_CHUNK_FORMAT_BLKBITS_MASK + sbi.blkszbits;
 	chunksize = 1ULL << chunkbits;
 	count = DIV_ROUND_UP(inode->i_size, chunksize);
-	inode->u.chunkformat |= chunkbits - LOG_BLOCK_SIZE;
+	inode->u.chunkformat |= chunkbits - sbi.blkszbits;
 	if (multidev)
 		inode->u.chunkformat |= EROFS_CHUNK_FORMAT_INDEXES;
 

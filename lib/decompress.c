@@ -22,8 +22,8 @@ static int z_erofs_decompress_lzma(struct z_erofs_decompress_req *rq)
 	lzma_stream strm;
 	lzma_ret ret2;
 
-	while (!src[inputmargin & ~PAGE_MASK])
-		if (!(++inputmargin & ~PAGE_MASK))
+	while (!src[inputmargin & (erofs_blksiz() - 1)])
+		if (!(++inputmargin & (erofs_blksiz() - 1)))
 			break;
 
 	if (inputmargin >= rq->inputsize)
@@ -85,8 +85,8 @@ static int z_erofs_decompress_lz4(struct z_erofs_decompress_req *rq)
 	if (erofs_sb_has_lz4_0padding()) {
 		support_0padding = true;
 
-		while (!src[inputmargin & ~PAGE_MASK])
-			if (!(++inputmargin & ~PAGE_MASK))
+		while (!src[inputmargin & (erofs_blksiz() - 1)])
+			if (!(++inputmargin & (erofs_blksiz() - 1)))
 				break;
 
 		if (inputmargin >= rq->inputsize)
@@ -134,15 +134,15 @@ int z_erofs_decompress(struct z_erofs_decompress_req *rq)
 	if (rq->alg == Z_EROFS_COMPRESSION_INTERLACED) {
 		unsigned int count, rightpart, skip;
 
-		/* XXX: should support inputsize >= EROFS_BLKSIZ later */
-		if (rq->inputsize > EROFS_BLKSIZ)
+		/* XXX: should support inputsize >= erofs_blksiz() later */
+		if (rq->inputsize > erofs_blksiz())
 			return -EFSCORRUPTED;
 
-		DBG_BUGON(rq->decodedlength > EROFS_BLKSIZ);
+		DBG_BUGON(rq->decodedlength > erofs_blksiz());
 		DBG_BUGON(rq->decodedlength < rq->decodedskip);
 		count = rq->decodedlength - rq->decodedskip;
 		skip = erofs_blkoff(rq->interlaced_offset + rq->decodedskip);
-		rightpart = min(EROFS_BLKSIZ - skip, count);
+		rightpart = min(erofs_blksiz() - skip, count);
 		memcpy(rq->out, rq->in + skip, rightpart);
 		memcpy(rq->out + rightpart, rq->in, count - rightpart);
 		return 0;

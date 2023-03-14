@@ -619,8 +619,8 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 	erofs_mapbh(bh->block);
 	off = erofs_btell(bh, false);
 
-	sbi.xattr_blkaddr = off / EROFS_BLKSIZ;
-	off %= EROFS_BLKSIZ;
+	sbi.xattr_blkaddr = off / erofs_blksiz();
+	off %= erofs_blksiz();
 	p = 0;
 
 	sorted_n = malloc(shared_xattrs_count * sizeof(n));
@@ -716,7 +716,7 @@ char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size)
 }
 
 struct xattr_iter {
-	char page[EROFS_BLKSIZ];
+	char page[EROFS_MAX_BLOCK_SIZE];
 
 	void *kaddr;
 
@@ -775,9 +775,9 @@ static int init_inode_xattrs(struct erofs_inode *vi)
 	it.ofs += sizeof(struct erofs_xattr_ibody_header);
 
 	for (i = 0; i < vi->xattr_shared_count; ++i) {
-		if (it.ofs >= EROFS_BLKSIZ) {
+		if (it.ofs >= erofs_blksiz()) {
 			/* cannot be unaligned */
-			DBG_BUGON(it.ofs != EROFS_BLKSIZ);
+			DBG_BUGON(it.ofs != erofs_blksiz());
 
 			ret = blk_read(0, it.page, ++it.blkaddr, 1);
 			if (ret < 0) {
@@ -819,7 +819,7 @@ static inline int xattr_iter_fixup(struct xattr_iter *it)
 {
 	int ret;
 
-	if (it->ofs < EROFS_BLKSIZ)
+	if (it->ofs < erofs_blksiz())
 		return 0;
 
 	it->blkaddr += erofs_blknr(it->ofs);
@@ -906,8 +906,8 @@ static int xattr_foreach(struct xattr_iter *it,
 	processed = 0;
 
 	while (processed < entry.e_name_len) {
-		if (it->ofs >= EROFS_BLKSIZ) {
-			DBG_BUGON(it->ofs > EROFS_BLKSIZ);
+		if (it->ofs >= erofs_blksiz()) {
+			DBG_BUGON(it->ofs > erofs_blksiz());
 
 			err = xattr_iter_fixup(it);
 			if (err)
@@ -915,7 +915,7 @@ static int xattr_foreach(struct xattr_iter *it,
 			it->ofs = 0;
 		}
 
-		slice = min_t(unsigned int, EROFS_BLKSIZ - it->ofs,
+		slice = min_t(unsigned int, erofs_blksiz() - it->ofs,
 			      entry.e_name_len - processed);
 
 		/* handle name */
@@ -941,8 +941,8 @@ static int xattr_foreach(struct xattr_iter *it,
 	}
 
 	while (processed < value_sz) {
-		if (it->ofs >= EROFS_BLKSIZ) {
-			DBG_BUGON(it->ofs > EROFS_BLKSIZ);
+		if (it->ofs >= erofs_blksiz()) {
+			DBG_BUGON(it->ofs > erofs_blksiz());
 
 			err = xattr_iter_fixup(it);
 			if (err)
@@ -950,7 +950,7 @@ static int xattr_foreach(struct xattr_iter *it,
 			it->ofs = 0;
 		}
 
-		slice = min_t(unsigned int, EROFS_BLKSIZ - it->ofs,
+		slice = min_t(unsigned int, erofs_blksiz() - it->ofs,
 			      value_sz - processed);
 		op->value(it, processed, it->kaddr + it->ofs, slice);
 		it->ofs += slice;

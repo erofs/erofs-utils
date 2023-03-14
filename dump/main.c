@@ -203,7 +203,7 @@ static int erofsdump_get_occupied_size(struct erofs_inode *inode,
 	case EROFS_INODE_FLAT_COMPRESSION_LEGACY:
 	case EROFS_INODE_FLAT_COMPRESSION:
 		stats.compressed_files++;
-		*size = inode->u.i_blocks * EROFS_BLKSIZ;
+		*size = inode->u.i_blocks * erofs_blksiz();
 		break;
 	default:
 		erofs_err("unknown datalayout");
@@ -448,7 +448,7 @@ static void erofsdump_show_fileinfo(bool show_extent)
 			.m_deviceid = map.m_deviceid,
 			.m_pa = map.m_pa,
 		};
-		err = erofs_map_dev(&sbi, &mdev);
+		err = erofs_map_dev(&mdev);
 		if (err) {
 			erofs_err("failed to map device");
 			return;

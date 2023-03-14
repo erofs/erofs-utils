@@ -95,7 +95,7 @@ static int erofsfuse_getattr(const char *path, struct stat *stbuf)
 	stbuf->st_mode  = vi.i_mode;
 	stbuf->st_nlink = vi.i_nlink;
 	stbuf->st_size  = vi.i_size;
-	stbuf->st_blocks = roundup(vi.i_size, EROFS_BLKSIZ) >> 9;
+	stbuf->st_blocks = roundup(vi.i_size, erofs_blksiz()) >> 9;
 	stbuf->st_uid = vi.i_uid;
 	stbuf->st_gid = vi.i_gid;
 	if (S_ISBLK(vi.i_mode) || S_ISCHR(vi.i_mode))

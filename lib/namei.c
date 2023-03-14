@@ -134,7 +134,7 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 				  vi->u.chunkformat, vi->nid | 0ULL);
 			return -EOPNOTSUPP;
 		}
-		vi->u.chunkbits = LOG_BLOCK_SIZE +
+		vi->u.chunkbits = sbi.blkszbits +
 			(vi->u.chunkformat & EROFS_CHUNK_FORMAT_BLKBITS_MASK);
 	} else if (erofs_inode_is_data_compressed(vi->datalayout))
 		return z_erofs_fill_inode(vi);
@@ -186,12 +186,11 @@ struct nameidata {
 	unsigned int	ftype;
 };
 
-int erofs_namei(struct nameidata *nd,
-		const char *name, unsigned int len)
+int erofs_namei(struct nameidata *nd, const char *name, unsigned int len)
 {
 	erofs_nid_t nid = nd->nid;
 	int ret;
-	char buf[EROFS_BLKSIZ];
+	char buf[EROFS_MAX_BLOCK_SIZE];
 	struct erofs_inode vi = { .nid = nid };
 	erofs_off_t offset;
 
@@ -202,7 +201,7 @@ int erofs_namei(struct nameidata *nd,
 	offset = 0;
 	while (offset < vi.i_size) {
 		erofs_off_t maxsize = min_t(erofs_off_t,
-					    vi.i_size - offset, EROFS_BLKSIZ);
+					    vi.i_size - offset, erofs_blksiz());
 		struct erofs_dirent *de = (void *)buf;
 		unsigned int nameoff;
 
@@ -212,7 +211,7 @@ int erofs_namei(struct nameidata *nd,
 
 		nameoff = le16_to_cpu(de->nameoff);
 		if (nameoff < sizeof(struct erofs_dirent) ||
-		    nameoff >= EROFS_BLKSIZ) {
+		    nameoff >= erofs_blksiz()) {
 			erofs_err("invalid de[0].nameoff %u @ nid %llu",
 				  nameoff, nid | 0ULL);
 			return -EFSCORRUPTED;

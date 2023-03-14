@@ -474,7 +474,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		}
 	}
 
-	if (cfg.c_blobdev_path && cfg.c_chunkbits < LOG_BLOCK_SIZE) {
+	if (cfg.c_blobdev_path && cfg.c_chunkbits < sbi.blkszbits) {
 		erofs_err("--blobdev must be used together with --chunksize");
 		return -EINVAL;
 	}
@@ -517,29 +517,29 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	}
 
 	if (pclustersize_max) {
-		if (pclustersize_max < EROFS_BLKSIZ ||
-		    pclustersize_max % EROFS_BLKSIZ) {
+		if (pclustersize_max < erofs_blksiz() ||
+		    pclustersize_max % erofs_blksiz()) {
 			erofs_err("invalid physical clustersize %u",
 				  pclustersize_max);
 			return -EINVAL;
 		}
-		cfg.c_pclusterblks_max = pclustersize_max / EROFS_BLKSIZ;
+		cfg.c_pclusterblks_max = pclustersize_max >> sbi.blkszbits;
 		cfg.c_pclusterblks_def = cfg.c_pclusterblks_max;
 	}
-	if (cfg.c_chunkbits && 1u << cfg.c_chunkbits < EROFS_BLKSIZ) {
+	if (cfg.c_chunkbits && cfg.c_chunkbits < sbi.blkszbits) {
 		erofs_err("chunksize %u must be larger than block size",
 			  1u << cfg.c_chunkbits);
 		return -EINVAL;
 	}
 
 	if (pclustersize_packed) {
-		if (pclustersize_max < EROFS_BLKSIZ ||
-		    pclustersize_max % EROFS_BLKSIZ) {
+		if (pclustersize_max < erofs_blksiz() ||
+		    pclustersize_max % erofs_blksiz()) {
 			erofs_err("invalid pcluster size for the packed file %u",
 				  pclustersize_packed);
 			return -EINVAL;
 		}
-		cfg.c_pclusterblks_packed = pclustersize_packed / EROFS_BLKSIZ;
+		cfg.c_pclusterblks_packed = pclustersize_packed >> sbi.blkszbits;
 	}
 	return 0;
 }
@@ -551,7 +551,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 {
 	struct erofs_super_block sb = {
 		.magic     = cpu_to_le32(EROFS_SUPER_MAGIC_V1),
-		.blkszbits = LOG_BLOCK_SIZE,
+		.blkszbits = sbi.blkszbits,
 		.inos   = cpu_to_le64(sbi.inos),
 		.build_time = cpu_to_le64(sbi.build_time),
 		.build_time_nsec = cpu_to_le32(sbi.build_time_nsec),
@@ -564,8 +564,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 		.extra_devices = cpu_to_le16(sbi.extra_devices),
 		.devt_slotoff = cpu_to_le16(sbi.devt_slotoff),
 	};
-	const unsigned int sb_blksize =
-		round_up(EROFS_SUPER_END, EROFS_BLKSIZ);
+	const u32 sb_blksize = round_up(EROFS_SUPER_END, erofs_blksiz());
 	char *buf;
 
 	*blocks         = erofs_mapbh(NULL);
@@ -596,7 +595,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 static int erofs_mkfs_superblock_csum_set(void)
 {
 	int ret;
-	u8 buf[EROFS_BLKSIZ];
+	u8 buf[EROFS_MAX_BLOCK_SIZE];
 	u32 crc;
 	struct erofs_super_block *sb;
 
@@ -621,7 +620,7 @@ static int erofs_mkfs_superblock_csum_set(void)
 	/* turn on checksum feature */
 	sb->feature_compat = cpu_to_le32(le32_to_cpu(sb->feature_compat) |
 					 EROFS_FEATURE_COMPAT_SB_CHKSUM);
-	crc = erofs_crc32c(~0, (u8 *)sb, EROFS_BLKSIZ - EROFS_SUPER_OFFSET);
+	crc = erofs_crc32c(~0, (u8 *)sb, erofs_blksiz() - EROFS_SUPER_OFFSET);
 
 	/* set up checksum field to erofs_super_block */
 	sb->checksum = cpu_to_le32(crc);
@@ -801,9 +800,9 @@ int main(int argc, char **argv)
 	if (cfg.c_dedupe) {
 		if (!cfg.c_compr_alg[0]) {
 			erofs_err("Compression is not enabled.  Turn on chunk-based data deduplication instead.");
-			cfg.c_chunkbits = LOG_BLOCK_SIZE;
+			cfg.c_chunkbits = sbi.blkszbits;
 		} else {
-			err = z_erofs_dedupe_init(EROFS_BLKSIZ);
+			err = z_erofs_dedupe_init(erofs_blksiz());
 			if (err) {
 				erofs_err("failed to initialize deduplication: %s",
 					  erofs_strerror(err));
