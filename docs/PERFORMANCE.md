@@ -36,7 +36,9 @@ Note that that dataset can be replaced regularly, and the SHA1 of the snapshot "
 
 ## Sequential data access
 
+```bash
 hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "tar cf - . | cat > /dev/null"
+```
 
 | Filesystem | Cluster size | Time                            |
 |------------|--------------|---------------------------------|
@@ -49,7 +51,9 @@ hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "tar cf - . | cat > /d
 
 ## Sequential metadata access
 
+```bash
 hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "tar cf /dev/null ."
+```
 
 | Filesystem | Cluster size | Time                            |
 |------------|--------------|---------------------------------|
@@ -64,8 +68,10 @@ hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "tar cf /dev/null ."
 
 ## Small random data access (~7%)
 
+```bash
 find mnt -type f -printf "%p\n" | sort -R | head -n 500 > list.txt
 hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "cat list.txt | xargs cat > /dev/null"
+```
 
 | Filesystem | Cluster size | Time                            |
 |------------|--------------|---------------------------------|
@@ -79,8 +85,10 @@ hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "cat list.txt | xargs 
 
 ## Small random metadata access (~7%)
 
+```bash
 find mnt -type f -printf "%p\n" | sort -R | head -n 500 > list.txt
 hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "cat list.txt | xargs stat"
+```
 
 | Filesystem | Cluster size | Time                            |
 |------------|--------------|---------------------------------|
@@ -93,8 +101,10 @@ hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "cat list.txt | xargs 
 
 ## Full random data access (~100%)
 
+```bash
 find mnt -type f -printf "%p\n" | sort -R > list.txt
 hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "cat list.txt | xargs cat > /dev/null"
+```
 
 | Filesystem | Cluster size | Time                            |
 |------------|--------------|---------------------------------|
@@ -107,8 +117,10 @@ hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "cat list.txt | xargs 
 
 ## Full random metadata access (~100%)
 
+```bash
 find mnt -type f -printf "%p\n" | sort -R > list.txt
 hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "cat list.txt | xargs stat"
+```
 
 | Filesystem | Cluster size | Time                            |
 |------------|--------------|---------------------------------|
@@ -130,7 +142,7 @@ hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "cat list.txt | xargs 
 |-----------|------------|--------------|-----------------------------------------------------------|
 | 114339840 | squashfs   | 4096         | -b 4096 -comp lz4 -Xhc -no-xattrs                         |
 | 104972288 | erofs      | 4096         | -zlz4hc,12 -C4096                                         |
-|  98033664 | squashfs   | 16384        | -b 4096 -comp lz4 -Xhc -no-xattrs                         |
+|  98033664 | squashfs   | 16384        | -b 16384 -comp lz4 -Xhc -no-xattrs                        |
 |  89571328 | erofs      | 16384        | -zlz4hc,12 -C16384                                        |
 |  85143552 | squashfs   | 65536        | -b 65536 -comp lz4 -Xhc -no-xattrs                        |
 |  81211392 | squashfs   | 131072       | -b 131072 -comp lz4 -Xhc -no-xattrs                       |
@@ -139,7 +151,9 @@ hyperfine -p "echo 3 > /proc/sys/vm/drop_caches; sleep 1" "cat list.txt | xargs 
 
 ## Sequential I/Os
 
+```bash
 fio -filename=silesia.tar -bs=4k -rw=read -name=job1
+```
 
 | Filesystem | Cluster size | Bandwidth |
 |------------|--------------|-----------|
@@ -154,7 +168,9 @@ fio -filename=silesia.tar -bs=4k -rw=read -name=job1
 
 ## Full Random I/Os
 
+```bash
 fio -filename=silesia.tar -bs=4k -rw=randread -name=job1
+```
 
 | Filesystem | Cluster size | Bandwidth |
 |------------|--------------|-----------|
@@ -169,7 +185,9 @@ fio -filename=silesia.tar -bs=4k -rw=randread -name=job1
 
 ## Small Random I/Os (~5%)
 
+```bash
 fio -filename=silesia.tar -bs=4k -rw=randread --io_size=10m -name=job1
+```
 
 | Filesystem | Cluster size | Bandwidth |
 |------------|--------------|-----------|
