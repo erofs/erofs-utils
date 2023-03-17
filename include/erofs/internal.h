@@ -147,6 +147,8 @@ struct erofs_inode {
 		unsigned int flags;
 		/* (mkfs.erofs) device ID containing source file */
 		u32 dev;
+		/* (mkfs.erofs) queued sub-directories blocking dump */
+		u32 subdirs_queued;
 	};
 	unsigned int i_count;
 	struct erofs_inode *i_parent;

@@ -288,7 +288,10 @@ struct erofs_buffer_head *erofs_balloc(int type, erofs_off_t size,
 		bb->blkaddr = NULL_ADDR;
 		bb->buffers.off = 0;
 		init_list_head(&bb->buffers.list);
-		list_add_tail(&bb->list, &blkh.list);
+		if (type == DATA)
+			list_add(&bb->list, &last_mapped_block->list);
+		else
+			list_add_tail(&bb->list, &blkh.list);
 		init_list_head(&bb->mapped_list);
 
 		bh = malloc(sizeof(struct erofs_buffer_head));

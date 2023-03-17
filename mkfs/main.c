@@ -856,7 +856,7 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
-	root_inode = erofs_mkfs_build_tree_from_path(NULL, cfg.c_src_path);
+	root_inode = erofs_mkfs_build_tree_from_path(cfg.c_src_path);
 	if (IS_ERR(root_inode)) {
 		err = PTR_ERR(root_inode);
 		goto exit;
