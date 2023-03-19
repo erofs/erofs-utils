@@ -182,7 +182,7 @@ static int comp_subdir(const void *a, const void *b)
 int erofs_prepare_dir_file(struct erofs_inode *dir, unsigned int nr_subdirs)
 {
 	struct erofs_dentry *d, *n, **sorted_d;
-	unsigned int d_size, i_nlink, i;
+	unsigned int d_size, i;
 
 	/* dot is pointed to the current dir inode */
 	d = erofs_d_alloc(dir, ".");
@@ -214,28 +214,16 @@ int erofs_prepare_dir_file(struct erofs_inode *dir, unsigned int nr_subdirs)
 		list_add_tail(&sorted_d[i]->d_child, &dir->i_subdirs);
 	free(sorted_d);
 
-	/* let's calculate dir size and update i_nlink */
+	/* let's calculate dir size */
 	d_size = 0;
-	i_nlink = 0;
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
 		int len = strlen(d->name) + sizeof(struct erofs_dirent);
 
 		if ((d_size & (erofs_blksiz() - 1)) + len > erofs_blksiz())
 			d_size = round_up(d_size, erofs_blksiz());
 		d_size += len;
-
-		i_nlink += (d->type == EROFS_FT_DIR);
 	}
 	dir->i_size = d_size;
-	/*
-	 * if there're too many subdirs as compact form, set nlink=1
-	 * rather than upgrade to use extented form instead.
-	 */
-	if (i_nlink > USHRT_MAX &&
-	    dir->inode_isize == sizeof(struct erofs_inode_compact))
-		dir->i_nlink = 1;
-	else
-		dir->i_nlink = i_nlink;
 
 	/* no compression for all dirs */
 	dir->datalayout = EROFS_INODE_FLAT_INLINE;
@@ -1039,7 +1027,7 @@ static int erofs_mkfs_build_tree(struct erofs_inode *dir, struct list_head *dirs
 	DIR *_dir;
 	struct dirent *dp;
 	struct erofs_dentry *d;
-	unsigned int nr_subdirs;
+	unsigned int nr_subdirs, i_nlink;
 
 	ret = erofs_prepare_xattr_ibody(dir);
 	if (ret < 0)
@@ -1100,10 +1088,6 @@ static int erofs_mkfs_build_tree(struct erofs_inode *dir, struct list_head *dirs
 			goto err_closedir;
 		}
 		nr_subdirs++;
-
-		/* to count i_nlink for directories */
-		d->type = (dp->d_type == DT_DIR ?
-			EROFS_FT_DIR : EROFS_FT_UNKNOWN);
 	}
 
 	if (errno) {
@@ -1124,13 +1108,16 @@ static int erofs_mkfs_build_tree(struct erofs_inode *dir, struct list_head *dirs
 	if (IS_ROOT(dir))
 		erofs_fixup_meta_blkaddr(dir);
 
+	i_nlink = 0;
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
 		char buf[PATH_MAX];
 		unsigned char ftype;
 		struct erofs_inode *inode;
 
-		if (is_dot_dotdot(d->name))
+		if (is_dot_dotdot(d->name)) {
+			++i_nlink;
 			continue;
+		}
 
 		ret = snprintf(buf, PATH_MAX, "%s/%s",
 			       dir->i_srcpath, d->name);
@@ -1159,12 +1146,21 @@ fail:
 			++dir->subdirs_queued;
 		}
 		ftype = erofs_mode_to_ftype(inode->i_mode);
-		DBG_BUGON(ftype == EROFS_FT_DIR && d->type != ftype);
+		i_nlink += (ftype == EROFS_FT_DIR);
 		d->inode = inode;
 		d->type = ftype;
 		erofs_info("file %s/%s dumped (type %u)",
 			   dir->i_srcpath, d->name, d->type);
 	}
+	/*
+	 * if there're too many subdirs as compact form, set nlink=1
+	 * rather than upgrade to use extented form instead.
+	 */
+	if (i_nlink > USHRT_MAX &&
+	    dir->inode_isize == sizeof(struct erofs_inode_compact))
+		dir->i_nlink = 1;
+	else
+		dir->i_nlink = i_nlink;
 	return 0;
 
 err_closedir:
