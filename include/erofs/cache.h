@@ -22,10 +22,12 @@ struct erofs_buffer_block;
 #define META		1
 /* including inline xattrs, extent */
 #define INODE		2
+/* directory data */
+#define DIRA		3
 /* shared xattrs */
-#define XATTR		3
+#define XATTR		4
 /* device table */
-#define DEVT		4
+#define DEVT		5
 
 struct erofs_bhops {
 	bool (*preflush)(struct erofs_buffer_head *bh);
@@ -60,6 +62,9 @@ static inline const int get_alignsize(int type, int *type_ret)
 	if (type == INODE) {
 		*type_ret = META;
 		return sizeof(struct erofs_inode_compact);
+	} else if (type == DIRA) {
+		*type_ret = META;
+		return erofs_blksiz();
 	} else if (type == XATTR) {
 		*type_ret = META;
 		return sizeof(struct erofs_xattr_entry);

@@ -802,6 +802,13 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
+	/* make sure that the super block should be the very first blocks */
+	(void)erofs_mapbh(sb_bh->block);
+	if (erofs_btell(sb_bh, false) != 0) {
+		erofs_err("failed to reserve erofs_super_block");
+		goto exit;
+	}
+
 	err = erofs_load_compress_hints();
 	if (err) {
 		erofs_err("failed to load compress hints %s",
