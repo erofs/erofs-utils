@@ -614,7 +614,7 @@ static int erofs_mkfs_superblock_csum_set(void)
 	unsigned int len;
 	struct erofs_super_block *sb;
 
-	ret = blk_read(0, buf, 0, erofs_blknr(sizeof(buf)));
+	ret = blk_read(0, buf, 0, erofs_blknr(EROFS_SUPER_END) + 1);
 	if (ret) {
 		erofs_err("failed to read superblock to set checksum: %s",
 			  erofs_strerror(ret));
