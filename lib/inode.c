@@ -608,7 +608,12 @@ static int erofs_prepare_tail_block(struct erofs_inode *inode)
 	if (bh) {
 		/* expend a block as the tail block (should be successful) */
 		ret = erofs_bh_balloon(bh, erofs_blksiz());
-		DBG_BUGON(ret != erofs_blksiz());
+		if (ret != erofs_blksiz()) {
+			DBG_BUGON(1);
+			return -EIO;
+		}
+	} else {
+		inode->lazy_tailblock = true;
 	}
 	return 0;
 }
@@ -743,6 +748,15 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 			inode->u.i_blkaddr = bh->block->blkaddr;
 			inode->bh_data = bh;
 		} else {
+			if (inode->lazy_tailblock) {
+				/* expend a tail block (should be successful) */
+				ret = erofs_bh_balloon(bh, erofs_blksiz());
+				if (ret != erofs_blksiz()) {
+					DBG_BUGON(1);
+					return -EIO;
+				}
+				inode->lazy_tailblock = false;
+			}
 			ret = erofs_mapbh(bh->block);
 		}
 		DBG_BUGON(ret < 0);

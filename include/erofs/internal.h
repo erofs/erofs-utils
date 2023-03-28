@@ -180,6 +180,7 @@ struct erofs_inode {
 	/* inline tail-end packing size */
 	unsigned short idata_size;
 	bool compressed_idata;
+	bool lazy_tailblock;
 
 	unsigned int xattr_isize;
 	unsigned int extent_isize;
