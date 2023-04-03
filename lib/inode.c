@@ -272,7 +272,7 @@ erofs_nid_t erofs_lookupnid(struct erofs_inode *inode)
 	struct erofs_buffer_head *const bh = inode->bh;
 	erofs_off_t off, meta_offset;
 
-	if (!bh || inode->nid)
+	if (!bh || (long long)inode->nid > 0)
 		return inode->nid;
 
 	erofs_mapbh(bh->block);
