@@ -41,7 +41,7 @@ static unsigned int shared_xattrs_count, shared_xattrs_size;
 
 static struct xattr_prefix {
 	const char *prefix;
-	u16 prefix_len;
+	u8 prefix_len;
 } xattr_types[] = {
 	[EROFS_XATTR_INDEX_USER] = {
 		XATTR_USER_PREFIX,
