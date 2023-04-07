@@ -712,6 +712,7 @@ int main(int argc, char **argv)
 	erofs_blk_t nblocks;
 	struct timeval t;
 	char uuid_str[37] = "not available";
+	FILE *packedfile = NULL;
 
 	erofs_init_configure();
 	erofs_mkfs_default_options();
@@ -771,7 +772,13 @@ int main(int argc, char **argv)
 		if (!cfg.c_pclusterblks_packed)
 			cfg.c_pclusterblks_packed = cfg.c_pclusterblks_def;
 
-		err = erofs_fragments_init();
+		packedfile = erofs_packedfile_init();
+		if (IS_ERR(packedfile)) {
+			erofs_err("failed to initialize packedfile");
+			return 1;
+		}
+
+		err = z_erofs_fragments_init();
 		if (err) {
 			erofs_err("failed to initialize fragments");
 			return 1;
@@ -879,7 +886,7 @@ int main(int argc, char **argv)
 	packed_nid = 0;
 	if (cfg.c_fragments && erofs_sb_has_fragments()) {
 		erofs_update_progressinfo("Handling packed_file ...");
-		packed_inode = erofs_mkfs_build_fragments();
+		packed_inode = erofs_mkfs_build_packedfile();
 		if (IS_ERR(packed_inode)) {
 			err = PTR_ERR(packed_inode);
 			goto exit;
@@ -913,7 +920,8 @@ exit:
 	if (cfg.c_chunkbits)
 		erofs_blob_exit();
 	if (cfg.c_fragments)
-		erofs_fragments_exit();
+		z_erofs_fragments_exit();
+	erofs_packedfile_exit();
 	erofs_exit_configure();
 
 	if (err) {

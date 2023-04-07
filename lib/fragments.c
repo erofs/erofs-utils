@@ -38,9 +38,8 @@ struct erofs_fragment_dedupe_item {
 #define FRAGMENT_HASH(c)		((c) & (FRAGMENT_HASHSIZE - 1))
 
 static struct list_head dupli_frags[FRAGMENT_HASHSIZE];
-
 static FILE *packedfile;
-const char *frags_packedname = "packed_file";
+const char *erofs_frags_packedname = "packed_file";
 
 #ifndef HAVE_LSEEK64
 #define erofs_lseek64 lseek
@@ -195,15 +194,16 @@ static int z_erofs_fragments_dedupe_insert(void *data, unsigned int len,
 	return 0;
 }
 
-static void z_erofs_fragments_dedupe_init(void)
+int z_erofs_fragments_init(void)
 {
 	unsigned int i;
 
 	for (i = 0; i < FRAGMENT_HASHSIZE; ++i)
 		init_list_head(&dupli_frags[i]);
+	return 0;
 }
 
-static void z_erofs_fragments_dedupe_exit(void)
+void z_erofs_fragments_exit(void)
 {
 	struct erofs_fragment_dedupe_item *di, *n;
 	struct list_head *head;
@@ -324,23 +324,21 @@ int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
 	return len;
 }
 
-struct erofs_inode *erofs_mkfs_build_fragments(void)
+struct erofs_inode *erofs_mkfs_build_packedfile(void)
 {
 	fflush(packedfile);
 
 	return erofs_mkfs_build_special_from_fd(fileno(packedfile),
-						frags_packedname);
+						EROFS_PACKED_INODE);
 }
 
-void erofs_fragments_exit(void)
+void erofs_packedfile_exit(void)
 {
 	if (packedfile)
 		fclose(packedfile);
-
-	z_erofs_fragments_dedupe_exit();
 }
 
-int erofs_fragments_init(void)
+FILE *erofs_packedfile_init(void)
 {
 #ifdef HAVE_TMPFILE64
 	packedfile = tmpfile64();
@@ -348,8 +346,6 @@ int erofs_fragments_init(void)
 	packedfile = tmpfile();
 #endif
 	if (!packedfile)
-		return -ENOMEM;
-
-	z_erofs_fragments_dedupe_init();
-	return 0;
+		return ERR_PTR(-ENOMEM);
+	return packedfile;
 }
