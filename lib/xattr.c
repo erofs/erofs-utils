@@ -37,7 +37,7 @@ struct inode_xattr_node {
 static DECLARE_HASHTABLE(ea_hashtable, EA_HASHTABLE_BITS);
 
 static LIST_HEAD(shared_xattrs_list);
-static unsigned int shared_xattrs_count, shared_xattrs_size;
+static unsigned int shared_xattrs_count;
 
 static struct xattr_prefix {
 	const char *prefix;
@@ -269,10 +269,6 @@ static int shared_xattr_add(struct xattr_item *item)
 	init_list_head(&node->list);
 	node->item = item;
 	list_add(&node->list, &shared_xattrs_list);
-
-	shared_xattrs_size += sizeof(struct erofs_xattr_entry);
-	shared_xattrs_size = EROFS_XATTR_ALIGN(shared_xattrs_size +
-					       item->len[0] + item->len[1]);
 	return ++shared_xattrs_count;
 }
 
@@ -543,23 +539,8 @@ static void erofs_cleanxattrs(bool sharedxattrs)
 	if (sharedxattrs)
 		return;
 
-	shared_xattrs_size = shared_xattrs_count = 0;
+	shared_xattrs_count = 0;
 }
-
-static bool erofs_bh_flush_write_shared_xattrs(struct erofs_buffer_head *bh)
-{
-	void *buf = bh->fsprivate;
-	int err = dev_write(buf, erofs_btell(bh, false), shared_xattrs_size);
-
-	if (err)
-		return false;
-	free(buf);
-	return erofs_bh_flush_generic_end(bh);
-}
-
-static struct erofs_bhops erofs_write_shared_xattrs_bhops = {
-	.flush = erofs_bh_flush_write_shared_xattrs,
-};
 
 static int comp_xattr_item(const void *a, const void *b)
 {
@@ -587,13 +568,14 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 	char *buf;
 	unsigned int p, i;
 	erofs_off_t off;
+	erofs_off_t shared_xattrs_size = 0;
 
 	/* check if xattr or shared xattr is disabled */
 	if (cfg.c_inline_xattr_tolerance < 0 ||
 	    cfg.c_inline_xattr_tolerance == INT_MAX)
 		return 0;
 
-	if (shared_xattrs_size || shared_xattrs_count) {
+	if (shared_xattrs_count) {
 		DBG_BUGON(1);
 		return -EINVAL;
 	}
@@ -602,8 +584,25 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 	if (ret)
 		return ret;
 
-	if (!shared_xattrs_size)
+	if (!shared_xattrs_count)
 		goto out;
+
+	sorted_n = malloc(shared_xattrs_count * sizeof(n));
+	if (!sorted_n)
+		return -ENOMEM;
+
+	i = 0;
+	list_for_each_entry_safe(node, n, &shared_xattrs_list, list) {
+		list_del(&node->list);
+		sorted_n[i++] = node;
+
+		shared_xattrs_size += sizeof(struct erofs_xattr_entry);
+		shared_xattrs_size = EROFS_XATTR_ALIGN(shared_xattrs_size +
+				node->item->len[0] + node->item->len[1]);
+
+	}
+	DBG_BUGON(i != shared_xattrs_count);
+	qsort(sorted_n, shared_xattrs_count, sizeof(n), comp_xattr_item);
 
 	buf = calloc(1, shared_xattrs_size);
 	if (!buf)
@@ -622,18 +621,6 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 	sbi.xattr_blkaddr = off / erofs_blksiz();
 	off %= erofs_blksiz();
 	p = 0;
-
-	sorted_n = malloc(shared_xattrs_count * sizeof(n));
-	if (!sorted_n)
-		return -ENOMEM;
-	i = 0;
-	list_for_each_entry_safe(node, n, &shared_xattrs_list, list) {
-		list_del(&node->list);
-		sorted_n[i++] = node;
-	}
-	DBG_BUGON(i != shared_xattrs_count);
-	qsort(sorted_n, shared_xattrs_count, sizeof(n), comp_xattr_item);
-
 	for (i = 0; i < shared_xattrs_count; i++) {
 		struct inode_xattr_node *const tnode = sorted_n[i];
 		struct xattr_item *const item = tnode->item;
@@ -654,11 +641,13 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 	}
 
 	free(sorted_n);
-	bh->fsprivate = buf;
-	bh->op = &erofs_write_shared_xattrs_bhops;
+	bh->op = &erofs_drop_directly_bhops;
+	ret = dev_write(buf, erofs_btell(bh, false), shared_xattrs_size);
+	free(buf);
+	erofs_bdrop(bh, false);
 out:
 	erofs_cleanxattrs(true);
-	return 0;
+	return ret;
 }
 
 char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size)
