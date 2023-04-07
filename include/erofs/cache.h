@@ -80,7 +80,6 @@ static inline const int get_alignsize(int type, int *type_ret)
 
 extern const struct erofs_bhops erofs_drop_directly_bhops;
 extern const struct erofs_bhops erofs_skip_write_bhops;
-extern const struct erofs_bhops erofs_buf_write_bhops;
 
 static inline erofs_off_t erofs_btell(struct erofs_buffer_head *bh, bool end)
 {

@@ -39,29 +39,6 @@ const struct erofs_bhops erofs_skip_write_bhops = {
 	.flush = erofs_bh_flush_skip_write,
 };
 
-int erofs_bh_flush_generic_write(struct erofs_buffer_head *bh, void *buf)
-{
-	struct erofs_buffer_head *nbh = list_next_entry(bh, list);
-	erofs_off_t offset = erofs_btell(bh, false);
-
-	DBG_BUGON(nbh->off < bh->off);
-	return dev_write(buf, offset, nbh->off - bh->off);
-}
-
-static bool erofs_bh_flush_buf_write(struct erofs_buffer_head *bh)
-{
-	int err = erofs_bh_flush_generic_write(bh, bh->fsprivate);
-
-	if (err)
-		return false;
-	free(bh->fsprivate);
-	return erofs_bh_flush_generic_end(bh);
-}
-
-const struct erofs_bhops erofs_buf_write_bhops = {
-	.flush = erofs_bh_flush_buf_write,
-};
-
 /* return buffer_head of erofs super block (with size 0) */
 struct erofs_buffer_head *erofs_buffer_init(void)
 {

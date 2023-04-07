@@ -580,6 +580,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	};
 	const u32 sb_blksize = round_up(EROFS_SUPER_END, erofs_blksiz());
 	char *buf;
+	int ret;
 
 	*blocks         = erofs_mapbh(NULL);
 	sb.blocks       = cpu_to_le32(*blocks);
@@ -601,9 +602,10 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	}
 	memcpy(buf + EROFS_SUPER_OFFSET, &sb, sizeof(sb));
 
-	bh->fsprivate = buf;
-	bh->op = &erofs_buf_write_bhops;
-	return 0;
+	ret = dev_write(buf, erofs_btell(bh, false), EROFS_SUPER_END);
+	free(buf);
+	erofs_bdrop(bh, false);
+	return ret;
 }
 
 static int erofs_mkfs_superblock_csum_set(void)
