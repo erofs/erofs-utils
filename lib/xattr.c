@@ -22,6 +22,7 @@
 #define EA_HASHTABLE_BITS 16
 
 struct xattr_item {
+	struct xattr_item *next_shared_xattr;
 	const char *kvbuf;
 	unsigned int hash[2], len[2], count;
 	int shared_xattr_id;
@@ -36,7 +37,7 @@ struct inode_xattr_node {
 
 static DECLARE_HASHTABLE(ea_hashtable, EA_HASHTABLE_BITS);
 
-static LIST_HEAD(shared_xattrs_list);
+static struct xattr_item *shared_xattrs_list;
 static unsigned int shared_xattrs_count;
 
 static struct xattr_prefix {
@@ -261,14 +262,8 @@ static int inode_xattr_add(struct list_head *hlist, struct xattr_item *item)
 
 static int shared_xattr_add(struct xattr_item *item)
 {
-	struct inode_xattr_node *node = malloc(sizeof(*node));
-
-	if (!node)
-		return -ENOMEM;
-
-	init_list_head(&node->list);
-	node->item = item;
-	list_add(&node->list, &shared_xattrs_list);
+	item->next_shared_xattr = shared_xattrs_list;
+	shared_xattrs_list = item;
 	return ++shared_xattrs_count;
 }
 
@@ -542,14 +537,14 @@ static void erofs_cleanxattrs(bool sharedxattrs)
 	shared_xattrs_count = 0;
 }
 
-static int comp_xattr_item(const void *a, const void *b)
+static int comp_shared_xattr_item(const void *a, const void *b)
 {
 	const struct xattr_item *ia, *ib;
 	unsigned int la, lb;
 	int ret;
 
-	ia = (*((const struct inode_xattr_node **)a))->item;
-	ib = (*((const struct inode_xattr_node **)b))->item;
+	ia = *((const struct xattr_item **)a);
+	ib = *((const struct xattr_item **)b);
 	la = ia->len[0] + ia->len[1];
 	lb = ib->len[0] + ib->len[1];
 
@@ -564,7 +559,7 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 {
 	int ret;
 	struct erofs_buffer_head *bh;
-	struct inode_xattr_node *node, *n, **sorted_n;
+	struct xattr_item *n, **sorted_n;
 	char *buf;
 	unsigned int p, i;
 	erofs_off_t off;
@@ -587,22 +582,23 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 	if (!shared_xattrs_count)
 		goto out;
 
-	sorted_n = malloc(shared_xattrs_count * sizeof(n));
+	sorted_n = malloc((shared_xattrs_count + 1) * sizeof(n));
 	if (!sorted_n)
 		return -ENOMEM;
 
 	i = 0;
-	list_for_each_entry_safe(node, n, &shared_xattrs_list, list) {
-		list_del(&node->list);
-		sorted_n[i++] = node;
+	while (shared_xattrs_list) {
+		struct xattr_item *item = shared_xattrs_list;
 
+		sorted_n[i++] = item;
+		shared_xattrs_list = item->next_shared_xattr;
 		shared_xattrs_size += sizeof(struct erofs_xattr_entry);
 		shared_xattrs_size = EROFS_XATTR_ALIGN(shared_xattrs_size +
-				node->item->len[0] + node->item->len[1]);
-
+				item->len[0] + item->len[1]);
 	}
 	DBG_BUGON(i != shared_xattrs_count);
-	qsort(sorted_n, shared_xattrs_count, sizeof(n), comp_xattr_item);
+	sorted_n[i] = NULL;
+	qsort(sorted_n, shared_xattrs_count, sizeof(n), comp_shared_xattr_item);
 
 	buf = calloc(1, shared_xattrs_size);
 	if (!buf)
@@ -622,14 +618,14 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 	off %= erofs_blksiz();
 	p = 0;
 	for (i = 0; i < shared_xattrs_count; i++) {
-		struct inode_xattr_node *const tnode = sorted_n[i];
-		struct xattr_item *const item = tnode->item;
+		struct xattr_item *item = sorted_n[i];
 		const struct erofs_xattr_entry entry = {
 			.e_name_index = item->prefix,
 			.e_name_len = item->len[0],
 			.e_value_size = cpu_to_le16(item->len[1])
 		};
 
+		item->next_shared_xattr = sorted_n[i + 1];
 		item->shared_xattr_id = (off + p) /
 			sizeof(struct erofs_xattr_entry);
 
@@ -637,9 +633,8 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 		p += sizeof(struct erofs_xattr_entry);
 		memcpy(buf + p, item->kvbuf, item->len[0] + item->len[1]);
 		p = EROFS_XATTR_ALIGN(p + item->len[0] + item->len[1]);
-		free(tnode);
 	}
-
+	shared_xattrs_list = sorted_n[0];
 	free(sorted_n);
 	bh->op = &erofs_drop_directly_bhops;
 	ret = dev_write(buf, erofs_btell(bh, false), shared_xattrs_size);
