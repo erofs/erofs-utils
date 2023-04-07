@@ -52,6 +52,7 @@ struct erofs_configure {
 	bool c_dedupe;
 	bool c_ignore_mtime;
 	bool c_showprogress;
+	bool c_extra_ea_name_prefixes;
 
 #ifdef HAVE_LIBSELINUX
 	struct selabel_handle *sehnd;

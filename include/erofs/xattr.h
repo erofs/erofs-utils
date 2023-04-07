@@ -76,6 +76,10 @@ int erofs_prepare_xattr_ibody(struct erofs_inode *inode);
 char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size);
 int erofs_build_shared_xattrs_from_path(const char *path);
 
+int erofs_xattr_insert_name_prefix(const char *prefix);
+void erofs_xattr_cleanup_name_prefixes(void);
+int erofs_xattr_write_name_prefixes(FILE *f);
+
 #ifdef __cplusplus
 }
 #endif

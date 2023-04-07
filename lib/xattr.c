@@ -17,6 +17,7 @@
 #include "erofs/xattr.h"
 #include "erofs/cache.h"
 #include "erofs/io.h"
+#include "erofs/fragments.h"
 #include "liberofs_private.h"
 
 #define EA_HASHTABLE_BITS 16
@@ -61,6 +62,14 @@ static struct xattr_prefix {
 		XATTR_SECURITY_PREFIX_LEN
 	}
 };
+
+struct ea_type_node {
+	struct list_head list;
+	struct xattr_prefix type;
+	u8 index;
+};
+static LIST_HEAD(ea_name_prefixes);
+static unsigned int ea_prefix_count;
 
 static unsigned int BKDRHash(char *str, unsigned int len)
 {
@@ -131,7 +140,16 @@ static struct xattr_item *get_xattritem(u8 prefix, char *kvbuf,
 static bool match_prefix(const char *key, u8 *index, u16 *len)
 {
 	struct xattr_prefix *p;
+	struct ea_type_node *tnode;
 
+	list_for_each_entry(tnode, &ea_name_prefixes, list) {
+		p = &tnode->type;
+		if (p->prefix && !strncmp(p->prefix, key, p->prefix_len)) {
+			*len = p->prefix_len;
+			*index = tnode->index;
+			return true;
+		}
+	}
 	for (p = xattr_types; p < xattr_types + ARRAY_SIZE(xattr_types); ++p) {
 		if (p->prefix && !strncmp(p->prefix, key, p->prefix_len)) {
 			*len = p->prefix_len;
@@ -565,6 +583,72 @@ static int comp_shared_xattr_item(const void *a, const void *b)
 		return ret;
 
 	return la > lb;
+}
+
+static inline int erofs_xattr_index_by_prefix(const char *prefix, int *len)
+{
+	if (!strncmp(prefix, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN)){
+		*len = XATTR_USER_PREFIX_LEN;
+		return EROFS_XATTR_INDEX_USER;
+	} else if (!strncmp(prefix, XATTR_TRUSTED_PREFIX, XATTR_TRUSTED_PREFIX_LEN)) {
+		*len = XATTR_TRUSTED_PREFIX_LEN;
+		return EROFS_XATTR_INDEX_TRUSTED;
+	} else if (!strncmp(prefix, XATTR_SECURITY_PREFIX, XATTR_SECURITY_PREFIX_LEN)) {
+		*len = XATTR_SECURITY_PREFIX_LEN;
+		return EROFS_XATTR_INDEX_SECURITY;
+	}
+	return -ENODATA;
+}
+
+int erofs_xattr_write_name_prefixes(FILE *f)
+{
+	struct ea_type_node *tnode;
+	struct xattr_prefix *p;
+	off_t offset;
+
+	if (!ea_prefix_count)
+		return 0;
+	offset = ftello(f);
+	if (offset < 0)
+		return -errno;
+	if (offset > UINT32_MAX)
+		return -EOVERFLOW;
+
+	offset = round_up(offset, 4);
+	if (fseek(f, offset, SEEK_SET))
+		return -errno;
+	sbi.xattr_prefix_start = (u32)offset >> 2;
+	sbi.xattr_prefix_count = ea_prefix_count;
+
+	list_for_each_entry(tnode, &ea_name_prefixes, list) {
+		union {
+			struct {
+				__le16 size;
+				struct erofs_xattr_long_prefix prefix;
+			} s;
+			u8 data[EROFS_NAME_LEN + 2 +
+				sizeof(struct erofs_xattr_long_prefix)];
+		} u;
+		int ret, len;
+
+		p = &tnode->type;
+		ret = erofs_xattr_index_by_prefix(p->prefix, &len);
+		if (ret < 0)
+			return ret;
+		u.s.prefix.base_index = ret;
+		memcpy(u.s.prefix.infix, p->prefix + len, p->prefix_len - len);
+		len = sizeof(struct erofs_xattr_long_prefix) +
+			p->prefix_len - len;
+		u.s.size = cpu_to_le16(len);
+		if (fwrite(&u.s, sizeof(__le16) + len, 1, f) != 1)
+			return -EIO;
+		offset = round_up(offset + sizeof(__le16) + len, 4);
+		if (fseek(f, offset, SEEK_SET))
+			return -errno;
+	}
+	erofs_sb_set_fragments();
+	erofs_sb_set_xattr_prefixes();
+	return 0;
 }
 
 int erofs_build_shared_xattrs_from_path(const char *path)
@@ -1217,4 +1301,54 @@ int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size)
 	if (ret < 0 && ret != -ENOATTR)
 		return ret;
 	return shared_listxattr(vi, &it);
+}
+
+int erofs_xattr_insert_name_prefix(const char *prefix)
+{
+	struct ea_type_node *tnode;
+	struct xattr_prefix *p;
+	bool matched = false;
+	char *s;
+
+	if (ea_prefix_count >= 0x80 || strlen(prefix) > UINT8_MAX)
+		return -EOVERFLOW;
+
+	for (p = xattr_types; p < xattr_types + ARRAY_SIZE(xattr_types); ++p) {
+		if (!strncmp(p->prefix, prefix, p->prefix_len)) {
+			matched = true;
+			break;
+		}
+	}
+	if (!matched)
+		return -ENODATA;
+
+	s = strdup(prefix);
+	if (!s)
+		return -ENOMEM;
+
+	tnode = malloc(sizeof(*tnode));
+	if (!tnode) {
+		free(s);
+		return -ENOMEM;
+	}
+
+	tnode->type.prefix = s;
+	tnode->type.prefix_len = strlen(prefix);
+
+	tnode->index = EROFS_XATTR_LONG_PREFIX | ea_prefix_count;
+	ea_prefix_count++;
+	init_list_head(&tnode->list);
+	list_add_tail(&tnode->list, &ea_name_prefixes);
+	return 0;
+}
+
+void erofs_xattr_cleanup_name_prefixes(void)
+{
+	struct ea_type_node *tnode, *n;
+
+	list_for_each_entry_safe(tnode, n, &ea_name_prefixes, list) {
+		list_del(&tnode->list);
+		free((void *)tnode->type.prefix);
+		free(tnode);
+	}
 }
