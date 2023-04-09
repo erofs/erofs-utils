@@ -278,11 +278,6 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				  long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'z':
-			if (!optarg) {
-				cfg.c_compr_alg[0] = "(default)";
-				cfg.c_compr_level[0] = -1;
-				break;
-			}
 			i = mkfs_parse_compress_algs(optarg);
 			if (i)
 				return i;
