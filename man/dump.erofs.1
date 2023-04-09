@@ -9,18 +9,28 @@ or overall disk statistics information from an EROFS-formatted image.
 .SH DESCRIPTION
 .B dump.erofs
 is used to retrieve erofs metadata from \fIIMAGE\fP and demonstrate
+.br
 1) overall disk statistics,
+.br
 2) superblock information,
+.br
 3) file information of the given inode NID,
+.br
 4) file extent information of the given inode NID.
 .SH OPTIONS
 .TP
 .BI "\-\-device=" path
 Specify an extra device to be used together.
-You may give multiple `--device' options in the correct order.
+You may give multiple
+.B --device
+options in the correct order.
 .TP
 .BI "\-\-ls"
-List directory contents. An inode should be specified together.
+List directory contents.
+.I NID
+or
+.I path
+required.
 .TP
 .BI "\-\-nid=" NID
 Specify an inode NID in order to print its file information.
@@ -29,16 +39,21 @@ Specify an inode NID in order to print its file information.
 Specify an inode path in order to print its file information.
 .TP
 .BI \-e
-Show the file extent information. An inode should be specified together.
+Show the file extent information.
+.I NID
+or
+.I path
+required.
 .TP
 .BI \-V
 Print the version number and exit.
 .TP
 .BI \-s
-Show superblock information of the an EROFS-formatted image.
+Show superblock information.
+This is the default if no options are specified.
 .TP
 .BI \-S
-Show EROFS disk statistics, including file type/size distribution, number of (un)compressed files, compression ratio of the whole image, etc.
+Show image statistics, including file type/size distribution, number of (un)compressed files, compression ratio, etc.
 .SH AUTHOR
 Initial code was written by Wang Qi <mpiglet@outlook.com>, Guo Xuenan <guoxuenan@huawei.com>.
 .PP
