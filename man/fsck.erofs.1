@@ -2,7 +2,7 @@
 .\"
 .TH FSCK.EROFS 1
 .SH NAME
-fsck.erofs \- tool to check the EROFS filesystem's integrity
+fsck.erofs \- tool to check an EROFS filesystem's integrity
 .SH SYNOPSIS
 \fBfsck.erofs\fR [\fIOPTIONS\fR] \fIIMAGE\fR
 .SH DESCRIPTION
@@ -22,15 +22,18 @@ Print total compression ratio of all files including compressed and
 non-compressed files.
 .TP
 .BI "\-\-device=" path
-Specify an extra device to be used together.
-You may give multiple `--device' options in the correct order.
+Specify an extra blob device to be used together.
+You may give multiple
+.B --device
+options in the correct order.
 .TP
 .B \-\-extract
-Check if all files are well encoded. This will induce more I/Os to read
-compressed file data, so it might take too much time depending on the image.
+Check if all files are well encoded. This read all compressed files,
+and hence create more I/O load,
+so it might take too much time depending on the image.
 .TP
 .B \-\-help
-Display this help and exit.
+Display help string and exit.
 .SH AUTHOR
 This version of \fBfsck.erofs\fR is written by
 Daeho Jeong <daehojeong@google.com>.
