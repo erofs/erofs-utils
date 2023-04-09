@@ -93,7 +93,7 @@ int             rb_tree_remove_with_cb  (struct rb_tree *self, void *value, rb_t
 int             rb_tree_test            (struct rb_tree *self, struct rb_node *root);
 
 struct rb_iter *rb_iter_alloc           ();
-struct rb_iter *rb_iter_init            ();
+struct rb_iter *rb_iter_init            (struct rb_iter *self);
 struct rb_iter *rb_iter_create          ();
 void            rb_iter_dealloc         (struct rb_iter *self);
 void           *rb_iter_first           (struct rb_iter *self, struct rb_tree *tree);
