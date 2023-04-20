@@ -288,6 +288,18 @@ static bool erofs_is_skipped_xattr(const char *key)
 	if (cfg.sehnd && !strcmp(key, XATTR_SECURITY_PREFIX "selinux"))
 		return true;
 #endif
+
+	/* skip xattrs with unidentified "system." prefix */
+	if (!strncmp(key, XATTR_SYSTEM_PREFIX, XATTR_SYSTEM_PREFIX_LEN)) {
+		if (!strcmp(key, XATTR_NAME_POSIX_ACL_ACCESS) ||
+		    !strcmp(key, XATTR_NAME_POSIX_ACL_DEFAULT)) {
+			return false;
+		} else {
+			erofs_warn("skip unidentified xattr: %s", key);
+			return true;
+		}
+	}
+
 	return false;
 }
 

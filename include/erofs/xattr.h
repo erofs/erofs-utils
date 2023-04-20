@@ -41,6 +41,12 @@ static inline unsigned int xattrblock_offset(unsigned int xattr_id)
 	(_size - sizeof(struct erofs_xattr_ibody_header)) / \
 	sizeof(struct erofs_xattr_entry) + 1; })
 
+#ifndef XATTR_SYSTEM_PREFIX
+#define XATTR_SYSTEM_PREFIX	"system."
+#endif
+#ifndef XATTR_SYSTEM_PREFIX_LEN
+#define XATTR_SYSTEM_PREFIX_LEN (sizeof(XATTR_SYSTEM_PREFIX) - 1)
+#endif
 #ifndef XATTR_USER_PREFIX
 #define XATTR_USER_PREFIX	"user."
 #endif
