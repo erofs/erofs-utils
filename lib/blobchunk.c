@@ -16,6 +16,7 @@
 struct erofs_blobchunk {
 	struct hashmap_entry ent;
 	char		sha256[32];
+	unsigned int	device_id;
 	erofs_off_t	chunksize;
 	erofs_blk_t	blkaddr;
 };
@@ -64,6 +65,7 @@ static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
 	chunk->chunksize = chunksize;
 	blkpos = ftell(blobfile);
 	DBG_BUGON(erofs_blkoff(blkpos));
+	chunk->device_id = 0;
 	chunk->blkaddr = erofs_blknr(blkpos);
 	memcpy(chunk->sha256, sha256, sizeof(sha256));
 	hashmap_entry_init(&chunk->ent, hash);
@@ -75,10 +77,7 @@ static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
 		ret = fwrite(zeroed, erofs_blksiz() - erofs_blkoff(chunksize),
 			     1, blobfile);
 	if (ret < 1) {
-		struct hashmap_entry key;
-
-		hashmap_entry_init(&key, hash);
-		hashmap_remove(&blob_hashmap, &key, sha256);
+		hashmap_remove(&blob_hashmap, &chunk->ent);
 		free(chunk);
 		chunk = ERR_PTR(-ENOSPC);
 		goto out;
@@ -110,14 +109,6 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 	erofs_blk_t extent_end, extents_blks;
 	unsigned int dst, src, unit;
 	bool first_extent = true;
-	erofs_blk_t base_blkaddr = 0;
-
-	if (multidev) {
-		idx.device_id = 1;
-		DBG_BUGON(!(inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES));
-	} else {
-		base_blkaddr = remapped_base;
-	}
 
 	if (inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES)
 		unit = sizeof(struct erofs_inode_chunk_index);
@@ -130,10 +121,15 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 
 		chunk = *(void **)(inode->chunkindexes + src);
 
-		if (chunk->blkaddr != EROFS_NULL_ADDR)
-			idx.blkaddr = base_blkaddr + chunk->blkaddr;
-		else
+		if (chunk->blkaddr == EROFS_NULL_ADDR) {
 			idx.blkaddr = EROFS_NULL_ADDR;
+		} else if (chunk->device_id) {
+			DBG_BUGON(!(inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES));
+			idx.blkaddr = chunk->blkaddr;
+			extent_start = EROFS_NULL_ADDR;
+		} else {
+			idx.blkaddr = remapped_base + chunk->blkaddr;
+		}
 
 		if (extent_start != EROFS_NULL_ADDR &&
 		    idx.blkaddr == extent_end + 1) {
@@ -149,6 +145,9 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 			extent_start = idx.blkaddr;
 			extent_end = idx.blkaddr;
 		}
+		idx.device_id = cpu_to_le16(chunk->device_id);
+		idx.blkaddr = cpu_to_le32(idx.blkaddr);
+
 		if (unit == EROFS_BLOCK_MAP_ENTRY_SIZE)
 			memcpy(inode->chunkindexes + dst, &idx.blkaddr, unit);
 		else
@@ -237,6 +236,8 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode)
 			ret = PTR_ERR(chunk);
 			goto err;
 		}
+		if (multidev)
+			chunk->device_id = 1;
 		*(void **)idx++ = chunk;
 	}
 	inode->datalayout = EROFS_INODE_CHUNK_BASED;
@@ -293,10 +294,21 @@ int erofs_blob_remap(void)
 
 void erofs_blob_exit(void)
 {
+	struct hashmap_iter iter;
+	struct hashmap_entry *e;
+
 	if (blobfile)
 		fclose(blobfile);
 
-	hashmap_free(&blob_hashmap, 1);
+	while ((e = hashmap_iter_first(&blob_hashmap, &iter))) {
+		struct erofs_blobchunk *bc =
+			container_of((struct hashmap_entry *)e,
+				     struct erofs_blobchunk, ent);
+
+		DBG_BUGON(hashmap_remove(&blob_hashmap, e) != e);
+		free(bc);
+	}
+	DBG_BUGON(hashmap_free(&blob_hashmap));
 }
 
 int erofs_blob_init(const char *blobfile_path)

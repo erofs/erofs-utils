@@ -149,20 +149,21 @@ void hashmap_init(struct hashmap *map, hashmap_cmp_fn equals_function,
 	alloc_table(map, size);
 }
 
-void hashmap_free(struct hashmap *map, int free_entries)
+int hashmap_free(struct hashmap *map)
 {
-	if (!map || !map->table)
-		return;
-	if (free_entries) {
+	if (map && map->table) {
 		struct hashmap_iter iter;
 		struct hashmap_entry *e;
 
 		hashmap_iter_init(map, &iter);
-		while ((e = hashmap_iter_next(&iter)))
-			free(e);
+		e = hashmap_iter_next(&iter);
+		if (e)
+			return -EBUSY;
+
+		free(map->table);
+		memset(map, 0, sizeof(*map));
 	}
-	free(map->table);
-	memset(map, 0, sizeof(*map));
+	return 0;
 }
 
 void *hashmap_get(const struct hashmap *map, const void *key, const void *keydata)
@@ -194,10 +195,13 @@ void hashmap_add(struct hashmap *map, void *entry)
 		rehash(map, map->tablesize << HASHMAP_RESIZE_BITS);
 }
 
-void *hashmap_remove(struct hashmap *map, const void *key, const void *keydata)
+void *hashmap_remove(struct hashmap *map, const void *entry)
 {
 	struct hashmap_entry *old;
-	struct hashmap_entry **e = find_entry_ptr(map, key, keydata);
+	struct hashmap_entry **e = &map->table[bucket(map, entry)];
+
+	while (*e && *e != entry)
+		e = &(*e)->next;
 
 	if (!*e)
 		return NULL;
@@ -211,14 +215,6 @@ void *hashmap_remove(struct hashmap *map, const void *key, const void *keydata)
 	map->size--;
 	if (map->size < map->shrink_at)
 		rehash(map, map->tablesize >> HASHMAP_RESIZE_BITS);
-	return old;
-}
-
-void *hashmap_put(struct hashmap *map, void *entry)
-{
-	struct hashmap_entry *old = hashmap_remove(map, entry, NULL);
-
-	hashmap_add(map, entry);
 	return old;
 }
 

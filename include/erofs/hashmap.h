@@ -61,7 +61,7 @@ struct hashmap_iter {
 /* hashmap functions */
 void hashmap_init(struct hashmap *map, hashmap_cmp_fn equals_function,
 		  size_t initial_size);
-void hashmap_free(struct hashmap *map, int free_entries);
+int hashmap_free(struct hashmap *map);
 
 /* hashmap_entry functions */
 static inline void hashmap_entry_init(void *entry, unsigned int hash)
@@ -75,8 +75,7 @@ static inline void hashmap_entry_init(void *entry, unsigned int hash)
 void *hashmap_get(const struct hashmap *map, const void *key, const void *keydata);
 void *hashmap_get_next(const struct hashmap *map, const void *entry);
 void hashmap_add(struct hashmap *map, void *entry);
-void *hashmap_put(struct hashmap *map, void *entry);
-void *hashmap_remove(struct hashmap *map, const void *key, const void *keydata);
+void *hashmap_remove(struct hashmap *map, const void *key);
 
 static inline void *hashmap_get_from_hash(const struct hashmap *map,
 					  unsigned int hash,
