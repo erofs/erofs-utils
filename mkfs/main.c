@@ -903,7 +903,8 @@ int main(int argc, char **argv)
 	}
 
 	packed_nid = 0;
-	if (erofs_sb_has_fragments()) {
+	if ((cfg.c_fragments || cfg.c_extra_ea_name_prefixes) &&
+	    erofs_sb_has_fragments()) {
 		erofs_update_progressinfo("Handling packed_file ...");
 		packed_inode = erofs_mkfs_build_packedfile();
 		if (IS_ERR(packed_inode)) {
