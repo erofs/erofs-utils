@@ -322,7 +322,7 @@ static int unpack_compacted_index(struct z_erofs_maprecorder *m,
 					nblk += lo & ~Z_EROFS_VLE_DI_D0_CBLKCNT;
 					continue;
 				}
-				if (lo == 1) {
+				if (lo <= 1) {
 					DBG_BUGON(1);
 					/* --i; ++nblk;	continue; */
 					return -EFSCORRUPTED;
