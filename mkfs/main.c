@@ -577,8 +577,8 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 		.build_time = cpu_to_le64(sbi.build_time),
 		.build_time_nsec = cpu_to_le32(sbi.build_time_nsec),
 		.blocks = 0,
-		.meta_blkaddr  = sbi.meta_blkaddr,
-		.xattr_blkaddr = sbi.xattr_blkaddr,
+		.meta_blkaddr  = cpu_to_le32(sbi.meta_blkaddr),
+		.xattr_blkaddr = cpu_to_le32(sbi.xattr_blkaddr),
 		.xattr_prefix_count = sbi.xattr_prefix_count,
 		.xattr_prefix_start = cpu_to_le32(sbi.xattr_prefix_start),
 		.feature_incompat = cpu_to_le32(sbi.feature_incompat),
@@ -599,7 +599,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	memcpy(sb.volume_name, sbi.volume_name, sizeof(sb.volume_name));
 
 	if (erofs_sb_has_compr_cfgs())
-		sb.u1.available_compr_algs = sbi.available_compr_algs;
+		sb.u1.available_compr_algs = cpu_to_le16(sbi.available_compr_algs);
 	else
 		sb.u1.lz4_max_distance = cpu_to_le16(sbi.lz4_max_distance);
 
