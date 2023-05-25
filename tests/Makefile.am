@@ -97,6 +97,9 @@ TESTS += erofs/020
 # 021 - check extended attributes crossing block boundary
 TESTS += erofs/021
 
+# 022 - check long extended attribute name prefixes
+TESTS += erofs/022
+
 EXTRA_DIST = common/rc erofs
 
 clean-local: clean-local-check
