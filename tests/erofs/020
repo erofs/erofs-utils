@@ -1,0 +1,77 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# 020 - check extended attributes in different layouts
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_xattr
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# set random xattrs
+
+# preapre key/value of shared xattrs
+s_key_1=$(_srandom)
+s_key_2=$(_srandom)
+s_val=$(_srandom)
+
+# file1: one inline xattr
+touch $localdir/file1
+setfattr -n user.p$(_srandom) -v $(_srandom) $localdir/file1
+
+# file2: one share xattr
+touch $localdir/file2
+setfattr -n user.s$s_key_1 -v $s_val $localdir/file2
+
+# file3: multiple inline xattrs
+touch $localdir/file3
+setfattr -n user.p$(_srandom) -v $(_srandom) $localdir/file3
+setfattr -n user.p$(_srandom) -v $(_srandom) $localdir/file3
+
+# file4: multiple share xattrs
+touch $localdir/file4
+setfattr -n user.s$s_key_1 -v $s_val $localdir/file4
+setfattr -n user.s$s_key_2 -v $s_val $localdir/file4
+
+# file5: mixed inline and share xattrs
+touch $localdir/file5
+setfattr -n user.p$(_srandom) -v $(_srandom) $localdir/file5
+setfattr -n user.s$s_key_1 -v $s_val $localdir/file5
+
+MKFS_OPTIONS="$MKFS_OPTIONS -x1"
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+_scratch_mount 2>>$seqres.full
+
+# check xattrs
+_check_xattrs $localdir $SCRATCH_MNT
+
+_scratch_unmount
+
+echo Silence is golden
+status=0
+exit 0
