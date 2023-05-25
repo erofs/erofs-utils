@@ -1,0 +1,60 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# 021 - check extended attributes crossing block boundary
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_xattr
+_require_mkfs_blksize
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# set inline xattr (large name/value crossing block boundary)
+# given blksize will be set to 512 later, it is ensured that xattr values
+# cross the block boundary; besides set three xattrs to ensure at least
+# one xattr name crosses the block boundary
+touch $localdir/file1
+for i in {1..3}; do
+	setfattr -n user.p$(_random 249) -v $(_random 512) $localdir/file1 \
+		|| _notrun "no space for xattrs"
+done
+
+# specify 512 blocksize explicitly so that the large name/value of file1
+# could cross the block boundary
+MKFS_OPTIONS="$MKFS_OPTIONS -b512"
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+_scratch_mount 2>>$seqres.full
+
+# check xattrs
+_check_xattrs $localdir $SCRATCH_MNT
+
+_scratch_unmount
+
+echo Silence is golden
+status=0
+exit 0
