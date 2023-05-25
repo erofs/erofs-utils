@@ -98,6 +98,12 @@ _require_mkfs_blksize()
 		_notrun "-b# feature needed for mkfs.erofs"
 }
 
+_require_mkfs_long_prefix()
+{
+	"$MKFS_EROFS_PROG" --help 2>&1 | grep -q -- '--xattr-prefix' ||
+		_notrun "long name prefix feature needed for mkfs.erofs"
+}
+
 # this test requires erofs kernel support
 _require_erofs()
 {
