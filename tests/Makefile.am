@@ -88,6 +88,9 @@ TESTS += erofs/017
 # 018 - verify microlzma compressed image
 TESTS += erofs/018
 
+# 019 - check extended attribute functionality
+TESTS += erofs/019
+
 EXTRA_DIST = common/rc erofs
 
 clean-local: clean-local-check
