@@ -92,6 +92,12 @@ _require_xattr()
 		_notrun "attr isn't installed, skipped."
 }
 
+_require_mkfs_blksize()
+{
+	"$MKFS_EROFS_PROG" --help 2>&1 | grep -q -- '-b#' ||
+		_notrun "-b# feature needed for mkfs.erofs"
+}
+
 # this test requires erofs kernel support
 _require_erofs()
 {

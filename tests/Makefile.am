@@ -94,6 +94,9 @@ TESTS += erofs/019
 # 020 - check extended attributes in different layouts
 TESTS += erofs/020
 
+# 021 - check extended attributes crossing block boundary
+TESTS += erofs/021
+
 EXTRA_DIST = common/rc erofs
 
 clean-local: clean-local-check
