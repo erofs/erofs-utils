@@ -86,6 +86,12 @@ _require_root()
 	[ "$(id -u)" = "0" ] || _notrun "must be run as root"
 }
 
+_require_xattr()
+{
+	which setfattr >/dev/null 2>&1 ||
+		_notrun "attr isn't installed, skipped."
+}
+
 # this test requires erofs kernel support
 _require_erofs()
 {
@@ -313,6 +319,32 @@ _require_fssum()
 {
 	FSSUM_PROG=${PWD}/src/fssum
 	[ -x $FSSUM_PROG ] || _notrun "fssum not built"
+}
+
+# generate random string with maximum $1 length
+_random()
+{
+	head -20 /dev/urandom | base64 -w0 | head -c $1
+}
+
+# generate short random string
+_srandom()
+{
+	_random 16
+}
+
+# check xattrs of same files under two directories
+_check_xattrs()
+{
+	local dir1="$1"
+	local dir2="$2"
+	local entries="`find $dir1 -mindepth 1 -type f -printf '%P\n'`"
+
+	for entry in $entries; do
+		xattr1=`getfattr --absolute-names -d $dir1/$entry | tail -n+2`
+		xattr2=`getfattr --absolute-names -d $dir2/$entry | tail -n+2`
+		[ "x$xattr1" = "x$xattr2" ] || _fail "-->check xattrs FAILED"
+	done
 }
 
 _check_results()
