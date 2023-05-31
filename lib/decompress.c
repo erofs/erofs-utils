@@ -138,8 +138,12 @@ int z_erofs_decompress(struct z_erofs_decompress_req *rq)
 		if (rq->inputsize > erofs_blksiz())
 			return -EFSCORRUPTED;
 
-		DBG_BUGON(rq->decodedlength > erofs_blksiz());
-		DBG_BUGON(rq->decodedlength < rq->decodedskip);
+		if (rq->decodedlength > erofs_blksiz())
+			return -EFSCORRUPTED;
+
+		if (rq->decodedlength < rq->decodedskip)
+			return -EFSCORRUPTED;
+
 		count = rq->decodedlength - rq->decodedskip;
 		skip = erofs_blkoff(rq->interlaced_offset + rq->decodedskip);
 		rightpart = min(erofs_blksiz() - skip, count);
