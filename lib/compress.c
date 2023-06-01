@@ -684,9 +684,19 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 
 	if (logical_clusterbits < sbi.blkszbits || sbi.blkszbits < 12)
 		return -EINVAL;
-	if (logical_clusterbits > 14)	/* currently not supported */
+	if (logical_clusterbits > 14) {
+		erofs_err("compact format is unsupported for lcluster size %u",
+			  1 << logical_clusterbits);
 		return -EOPNOTSUPP;
-	if (logical_clusterbits == 12) {
+	}
+
+	if (inode->z_advise & Z_EROFS_ADVISE_COMPACTED_2B) {
+		if (logical_clusterbits != 12) {
+			erofs_err("compact 2B is unsupported for lcluster size %u",
+				  1 << logical_clusterbits);
+			return -EINVAL;
+		}
+
 		compacted_4b_initial = (32 - mpos % 32) / 4;
 		if (compacted_4b_initial == 32 / 4)
 			compacted_4b_initial = 0;
@@ -847,8 +857,10 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 
 	/* initialize per-file compression setting */
 	inode->z_advise = 0;
-	if (!cfg.c_legacy_compress) {
-		inode->z_advise |= Z_EROFS_ADVISE_COMPACTED_2B;
+	inode->z_logical_clusterbits = sbi.blkszbits;
+	if (!cfg.c_legacy_compress && inode->z_logical_clusterbits <= 14) {
+		if (inode->z_logical_clusterbits <= 12)
+			inode->z_advise |= Z_EROFS_ADVISE_COMPACTED_2B;
 		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION;
 	} else {
 		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION_LEGACY;
@@ -875,7 +887,6 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 	ctx.ccfg = &erofs_ccfg[inode->z_algorithmtype[0]];
 	inode->z_algorithmtype[0] = ctx.ccfg[0].algorithmtype;
 	inode->z_algorithmtype[1] = 0;
-	inode->z_logical_clusterbits = sbi.blkszbits;
 
 	inode->idata_size = 0;
 	inode->fragment_size = 0;
