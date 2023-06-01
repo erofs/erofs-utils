@@ -27,15 +27,9 @@ typedef unsigned short umode_t;
 #define PATH_MAX        4096    /* # chars in a path name including nul */
 #endif
 
-#ifndef PAGE_SHIFT
-#define PAGE_SHIFT		(12)
+#ifndef EROFS_MAX_BLOCK_SIZE
+#define EROFS_MAX_BLOCK_SIZE	4096
 #endif
-
-#ifndef PAGE_SIZE
-#define PAGE_SIZE		(1U << PAGE_SHIFT)
-#endif
-
-#define EROFS_MAX_BLOCK_SIZE	PAGE_SIZE
 
 #define EROFS_ISLOTBITS		5
 #define EROFS_SLOTSIZE		(1U << EROFS_ISLOTBITS)
