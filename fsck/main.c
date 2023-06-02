@@ -831,7 +831,7 @@ int main(int argc, char **argv)
 		goto exit_put_super;
 	}
 
-	if (erofs_sb_has_fragments()) {
+	if (erofs_sb_has_fragments() && sbi.packed_nid > 0) {
 		err = erofsfsck_check_inode(sbi.packed_nid, sbi.packed_nid);
 		if (err) {
 			erofs_err("failed to verify packed file");
