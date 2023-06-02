@@ -359,8 +359,9 @@ static bool z_erofs_fixup_deduped_fragment(struct z_erofs_vle_compress_ctx *ctx,
 
 	/* try to fix again if it gets larger (should be rare) */
 	if (inode->fragment_size < newsize) {
-		ctx->pclustersize = roundup(newsize - inode->fragment_size,
-					    erofs_blksiz());
+		ctx->pclustersize = min(z_erofs_get_max_pclusterblks(inode) * erofs_blksiz(),
+					roundup(newsize - inode->fragment_size,
+						erofs_blksiz()));
 		return false;
 	}
 
