@@ -99,6 +99,7 @@ static struct erofsdump_feature feature_lists[] = {
 	{ false, EROFS_FEATURE_INCOMPAT_DEVICE_TABLE, "device_table" },
 	{ false, EROFS_FEATURE_INCOMPAT_ZTAILPACKING, "ztailpacking" },
 	{ false, EROFS_FEATURE_INCOMPAT_FRAGMENTS, "fragments" },
+	{ false, EROFS_FEATURE_INCOMPAT_DEDUPE, "dedupe" },
 };
 
 static int erofsdump_readdir(struct erofs_dir_context *ctx);
@@ -273,7 +274,7 @@ static int erofsdump_read_packed_inode(void)
 	erofs_off_t occupied_size = 0;
 	struct erofs_inode vi = { .nid = sbi.packed_nid };
 
-	if (!erofs_sb_has_fragments())
+	if (!(erofs_sb_has_fragments() && sbi.packed_nid > 0))
 		return 0;
 
 	err = erofs_read_inode_from_disk(&vi);
@@ -605,7 +606,7 @@ static void erofsdump_show_superblock(void)
 			sbi.xattr_blkaddr);
 	fprintf(stdout, "Filesystem root nid:                          %llu\n",
 			sbi.root_nid | 0ULL);
-	if (erofs_sb_has_fragments())
+	if (erofs_sb_has_fragments() && sbi.packed_nid > 0)
 		fprintf(stdout, "Filesystem packed nid:                        %llu\n",
 			sbi.packed_nid | 0ULL);
 	fprintf(stdout, "Filesystem inode count:                       %llu\n",
