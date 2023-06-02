@@ -680,28 +680,35 @@ again:
 static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 {
 	int ret;
-	size_t prev_pos = fsckcfg.extract_pos;
+	size_t prev_pos, curr_pos;
 
 	if (ctx->dot_dotdot)
 		return 0;
 
-	if (fsckcfg.extract_path) {
-		size_t curr_pos = prev_pos;
+	prev_pos = fsckcfg.extract_pos;
+	curr_pos = prev_pos;
 
+	if (prev_pos + ctx->de_namelen >= PATH_MAX) {
+		erofs_err("unable to fsck since the path is too long (%u)",
+			  curr_pos + ctx->de_namelen);
+		return -EOPNOTSUPP;
+	}
+
+	if (fsckcfg.extract_path) {
 		fsckcfg.extract_path[curr_pos++] = '/';
 		strncpy(fsckcfg.extract_path + curr_pos, ctx->dname,
 			ctx->de_namelen);
 		curr_pos += ctx->de_namelen;
 		fsckcfg.extract_path[curr_pos] = '\0';
-		fsckcfg.extract_pos = curr_pos;
+	} else {
+		curr_pos += ctx->de_namelen;
 	}
-
+	fsckcfg.extract_pos = curr_pos;
 	ret = erofsfsck_check_inode(ctx->dir->nid, ctx->de_nid);
 
-	if (fsckcfg.extract_path) {
+	if (fsckcfg.extract_path)
 		fsckcfg.extract_path[prev_pos] = '\0';
-		fsckcfg.extract_pos = prev_pos;
-	}
+	fsckcfg.extract_pos = prev_pos;
 	return ret;
 }
 
