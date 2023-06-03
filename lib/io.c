@@ -289,7 +289,7 @@ int dev_read(int device_id, void *buf, u64 offset, size_t len)
 				erofs_info("Reach EOF of device - %s:[%" PRIu64 ", %zd].",
 					   erofs_devname, offset, len);
 				memset(buf, 0, len);
-				read_count = len;
+				return 0;
 			} else if (errno != EINTR) {
 				erofs_err("Failed to read data from device - %s:[%" PRIu64 ", %zd].",
 					  erofs_devname, offset, len);
