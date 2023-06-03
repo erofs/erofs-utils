@@ -88,15 +88,14 @@ int erofs_read_superblock(void)
 	sbi.feature_compat = le32_to_cpu(dsb->feature_compat);
 
 	sbi.blkszbits = dsb->blkszbits;
-	/* 9(512 bytes) + LOG_SECTORS_PER_BLOCK == LOG_BLOCK_SIZE */
-	if (sbi.blkszbits < 9) {
-		erofs_err("blksize %d isn't supported on this platform",
-			  erofs_blksiz());
+	if (sbi.blkszbits < 9 ||
+	    sbi.blkszbits > ilog2(EROFS_MAX_BLOCK_SIZE)) {
+		erofs_err("blksize %llu isn't supported on this platform",
+			  erofs_blksiz() | 0ULL);
+		return ret;
+	} else if (!check_layout_compatibility(&sbi, dsb)) {
 		return ret;
 	}
-
-	if (!check_layout_compatibility(&sbi, dsb))
-		return ret;
 
 	sbi.primarydevice_blocks = le32_to_cpu(dsb->blocks);
 	sbi.meta_blkaddr = le32_to_cpu(dsb->meta_blkaddr);
