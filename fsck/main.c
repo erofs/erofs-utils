@@ -263,10 +263,11 @@ static void erofsfsck_set_attributes(struct erofs_inode *inode, char *path)
 
 static int erofs_check_sb_chksum(void)
 {
-	int ret;
+#ifndef FUZZING
 	u8 buf[EROFS_MAX_BLOCK_SIZE];
 	u32 crc;
 	struct erofs_super_block *sb;
+	int ret;
 
 	ret = blk_read(0, buf, 0, 1);
 	if (ret) {
@@ -285,6 +286,7 @@ static int erofs_check_sb_chksum(void)
 		fsckcfg.corrupted = true;
 		return -1;
 	}
+#endif
 	return 0;
 }
 
@@ -792,7 +794,11 @@ out:
 	return ret;
 }
 
-int main(int argc, char **argv)
+#ifdef FUZZING
+int erofsfsck_fuzz_one(int argc, char *argv[])
+#else
+int main(int argc, char *argv[])
+#endif
 {
 	int err;
 
@@ -818,6 +824,10 @@ int main(int argc, char **argv)
 			usage();
 		goto exit;
 	}
+
+#ifdef FUZZING
+	cfg.c_dbg_lvl = -1;
+#endif
 
 	err = dev_open_ro(cfg.c_img_path);
 	if (err) {
@@ -875,3 +885,28 @@ exit:
 	erofs_exit_configure();
 	return err ? 1 : 0;
 }
+
+#ifdef FUZZING
+int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size)
+{
+	int fd, ret;
+	char filename[] = "/tmp/erofsfsck_libfuzzer_XXXXXX";
+	char *argv[] = {
+		"fsck.erofs",
+		"--extract",
+		filename,
+	};
+
+	fd = mkstemp(filename);
+	if (fd < 0)
+		return -errno;
+	if (write(fd, Data, Size) != Size) {
+		close(fd);
+		return -EIO;
+	}
+	close(fd);
+	ret = erofsfsck_fuzz_one(ARRAY_SIZE(argv), argv);
+	unlink(filename);
+	return ret ? -1 : 0;
+}
+#endif
