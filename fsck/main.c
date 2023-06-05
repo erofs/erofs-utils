@@ -131,6 +131,11 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 				while (len > 1 && optarg[len - 1] == '/')
 					len--;
 
+				if (len >= PATH_MAX) {
+					erofs_err("target directory name too long!");
+					return -ENAMETOOLONG;
+				}
+
 				fsckcfg.extract_path = malloc(PATH_MAX);
 				if (!fsckcfg.extract_path)
 					return -ENOMEM;
