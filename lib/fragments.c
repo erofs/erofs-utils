@@ -226,7 +226,7 @@ void z_erofs_fragments_commit(struct erofs_inode *inode)
 	 * will be recorded by switching to the noncompact layout anyway.
 	 */
 	if (inode->fragmentoff >> 32)
-		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION_LEGACY;
+		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
 
 	inode->z_advise |= Z_EROFS_ADVISE_FRAGMENT_PCLUSTER;
 	erofs_sb_set_fragments();

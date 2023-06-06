@@ -356,8 +356,8 @@ int erofs_pread(struct erofs_inode *inode, char *buf,
 	case EROFS_INODE_FLAT_INLINE:
 	case EROFS_INODE_CHUNK_BASED:
 		return erofs_read_raw_data(inode, buf, count, offset);
-	case EROFS_INODE_FLAT_COMPRESSION_LEGACY:
-	case EROFS_INODE_FLAT_COMPRESSION:
+	case EROFS_INODE_COMPRESSED_FULL:
+	case EROFS_INODE_COMPRESSED_COMPACT:
 		return z_erofs_read_data(inode, buf, count, offset);
 	default:
 		break;

@@ -578,7 +578,7 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 				return false;
 		} else {
 			/* write compression metadata */
-			off = Z_EROFS_VLE_EXTENT_ALIGN(off);
+			off = roundup(off, 8);
 			ret = dev_write(inode->compressmeta, off,
 					inode->extent_isize);
 			if (ret)
@@ -627,8 +627,7 @@ static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 
 	inodesize = inode->inode_isize + inode->xattr_isize;
 	if (inode->extent_isize)
-		inodesize = Z_EROFS_VLE_EXTENT_ALIGN(inodesize) +
-			    inode->extent_isize;
+		inodesize = roundup(inodesize, 8) + inode->extent_isize;
 
 	/* TODO: tailpacking inline of chunk-based format isn't finalized */
 	if (inode->datalayout == EROFS_INODE_CHUNK_BASED)

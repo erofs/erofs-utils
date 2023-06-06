@@ -93,7 +93,7 @@ struct erofsdump_feature {
 static struct erofsdump_feature feature_lists[] = {
 	{ true, EROFS_FEATURE_COMPAT_SB_CHKSUM, "sb_csum" },
 	{ true, EROFS_FEATURE_COMPAT_MTIME, "mtime" },
-	{ false, EROFS_FEATURE_INCOMPAT_LZ4_0PADDING, "0padding" },
+	{ false, EROFS_FEATURE_INCOMPAT_ZERO_PADDING, "0padding" },
 	{ false, EROFS_FEATURE_INCOMPAT_BIG_PCLUSTER, "big_pcluster" },
 	{ false, EROFS_FEATURE_INCOMPAT_CHUNKED_FILE, "chunked_file" },
 	{ false, EROFS_FEATURE_INCOMPAT_DEVICE_TABLE, "device_table" },
@@ -201,8 +201,8 @@ static int erofsdump_get_occupied_size(struct erofs_inode *inode,
 		stats.uncompressed_files++;
 		*size = inode->i_size;
 		break;
-	case EROFS_INODE_FLAT_COMPRESSION_LEGACY:
-	case EROFS_INODE_FLAT_COMPRESSION:
+	case EROFS_INODE_COMPRESSED_FULL:
+	case EROFS_INODE_COMPRESSED_COMPACT:
 		stats.compressed_files++;
 		*size = inode->u.i_blocks * erofs_blksiz();
 		break;

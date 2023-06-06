@@ -389,8 +389,8 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	case EROFS_INODE_CHUNK_BASED:
 		compressed = false;
 		break;
-	case EROFS_INODE_FLAT_COMPRESSION_LEGACY:
-	case EROFS_INODE_FLAT_COMPRESSION:
+	case EROFS_INODE_COMPRESSED_FULL:
+	case EROFS_INODE_COMPRESSED_COMPACT:
 		compressed = true;
 		break;
 	default:

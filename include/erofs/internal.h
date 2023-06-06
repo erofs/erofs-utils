@@ -123,7 +123,7 @@ static inline void erofs_sb_clear_##name(void) \
 	sbi.feature_##compat &= ~EROFS_FEATURE_##feature; \
 }
 
-EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_LZ4_0PADDING)
+EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_ZERO_PADDING)
 EROFS_FEATURE_FUNCS(compr_cfgs, incompat, INCOMPAT_COMPR_CFGS)
 EROFS_FEATURE_FUNCS(big_pcluster, incompat, INCOMPAT_BIG_PCLUSTER)
 EROFS_FEATURE_FUNCS(chunked_file, incompat, INCOMPAT_CHUNKED_FILE)
@@ -363,12 +363,12 @@ static inline int erofs_get_occupied_size(const struct erofs_inode *inode,
 	case EROFS_INODE_CHUNK_BASED:
 		*size = inode->i_size;
 		break;
-	case EROFS_INODE_FLAT_COMPRESSION_LEGACY:
-	case EROFS_INODE_FLAT_COMPRESSION:
+	case EROFS_INODE_COMPRESSED_FULL:
+	case EROFS_INODE_COMPRESSED_COMPACT:
 		*size = inode->u.i_blocks * erofs_blksiz();
 		break;
 	default:
-		return -ENOTSUP;
+		return -EOPNOTSUPP;
 	}
 	return 0;
 }

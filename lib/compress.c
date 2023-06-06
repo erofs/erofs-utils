@@ -47,28 +47,27 @@ struct z_erofs_vle_compress_ctx {
 	bool fragemitted;
 };
 
-#define Z_EROFS_LEGACY_MAP_HEADER_SIZE	\
-	(sizeof(struct z_erofs_map_header) + Z_EROFS_VLE_LEGACY_HEADER_PADDING)
+#define Z_EROFS_LEGACY_MAP_HEADER_SIZE	Z_EROFS_FULL_INDEX_ALIGN(0)
 
 static unsigned int vle_compressmeta_capacity(erofs_off_t filesize)
 {
 	const unsigned int indexsize = BLK_ROUND_UP(filesize) *
-		sizeof(struct z_erofs_vle_decompressed_index);
+		sizeof(struct z_erofs_lcluster_index);
 
 	return Z_EROFS_LEGACY_MAP_HEADER_SIZE + indexsize;
 }
 
 static void z_erofs_write_indexes_final(struct z_erofs_vle_compress_ctx *ctx)
 {
-	const unsigned int type = Z_EROFS_VLE_CLUSTER_TYPE_PLAIN;
-	struct z_erofs_vle_decompressed_index di;
+	const unsigned int type = Z_EROFS_LCLUSTER_TYPE_PLAIN;
+	struct z_erofs_lcluster_index di;
 
 	if (!ctx->clusterofs)
 		return;
 
 	di.di_clusterofs = cpu_to_le16(ctx->clusterofs);
 	di.di_u.blkaddr = 0;
-	di.di_advise = cpu_to_le16(type << Z_EROFS_VLE_DI_CLUSTER_TYPE_BIT);
+	di.di_advise = cpu_to_le16(type << Z_EROFS_LI_LCLUSTER_TYPE_BIT);
 
 	memcpy(ctx->metacur, &di, sizeof(di));
 	ctx->metacur += sizeof(di);
@@ -80,7 +79,7 @@ static void z_erofs_write_indexes(struct z_erofs_vle_compress_ctx *ctx)
 	unsigned int clusterofs = ctx->clusterofs;
 	unsigned int count = ctx->e.length;
 	unsigned int d0 = 0, d1 = (clusterofs + count) / erofs_blksiz();
-	struct z_erofs_vle_decompressed_index di;
+	struct z_erofs_lcluster_index di;
 	unsigned int type, advise;
 
 	if (!count)
@@ -97,12 +96,12 @@ static void z_erofs_write_indexes(struct z_erofs_vle_compress_ctx *ctx)
 		 */
 		DBG_BUGON(!ctx->e.raw && !cfg.c_ztailpacking && !cfg.c_fragments);
 		DBG_BUGON(ctx->e.partial);
-		type = ctx->e.raw ? Z_EROFS_VLE_CLUSTER_TYPE_PLAIN :
-			Z_EROFS_VLE_CLUSTER_TYPE_HEAD;
-		advise = type << Z_EROFS_VLE_DI_CLUSTER_TYPE_BIT;
+		type = ctx->e.raw ? Z_EROFS_LCLUSTER_TYPE_PLAIN :
+			Z_EROFS_LCLUSTER_TYPE_HEAD1;
+		advise = type << Z_EROFS_LI_LCLUSTER_TYPE_BIT;
 		di.di_advise = cpu_to_le16(advise);
 
-		if (inode->datalayout == EROFS_INODE_FLAT_COMPRESSION_LEGACY &&
+		if (inode->datalayout == EROFS_INODE_COMPRESSED_FULL &&
 		    !ctx->e.compressedblks)
 			di.di_u.blkaddr = cpu_to_le32(inode->fragmentoff >> 32);
 		else
@@ -119,12 +118,12 @@ static void z_erofs_write_indexes(struct z_erofs_vle_compress_ctx *ctx)
 		advise = 0;
 		/* XXX: big pcluster feature should be per-inode */
 		if (d0 == 1 && erofs_sb_has_big_pcluster()) {
-			type = Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD;
+			type = Z_EROFS_LCLUSTER_TYPE_NONHEAD;
 			di.di_u.delta[0] = cpu_to_le16(ctx->e.compressedblks |
-					Z_EROFS_VLE_DI_D0_CBLKCNT);
+						       Z_EROFS_LI_D0_CBLKCNT);
 			di.di_u.delta[1] = cpu_to_le16(d1);
 		} else if (d0) {
-			type = Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD;
+			type = Z_EROFS_LCLUSTER_TYPE_NONHEAD;
 
 			/*
 			 * If the |Z_EROFS_VLE_DI_D0_CBLKCNT| bit is set, parser
@@ -137,17 +136,17 @@ static void z_erofs_write_indexes(struct z_erofs_vle_compress_ctx *ctx)
 			 * To solve this, we replace d0 with
 			 * Z_EROFS_VLE_DI_D0_CBLKCNT-1.
 			 */
-			if (d0 >= Z_EROFS_VLE_DI_D0_CBLKCNT)
+			if (d0 >= Z_EROFS_LI_D0_CBLKCNT)
 				di.di_u.delta[0] = cpu_to_le16(
-						Z_EROFS_VLE_DI_D0_CBLKCNT - 1);
+						Z_EROFS_LI_D0_CBLKCNT - 1);
 			else
 				di.di_u.delta[0] = cpu_to_le16(d0);
 			di.di_u.delta[1] = cpu_to_le16(d1);
 		} else {
-			type = ctx->e.raw ? Z_EROFS_VLE_CLUSTER_TYPE_PLAIN :
-				Z_EROFS_VLE_CLUSTER_TYPE_HEAD;
+			type = ctx->e.raw ? Z_EROFS_LCLUSTER_TYPE_PLAIN :
+				Z_EROFS_LCLUSTER_TYPE_HEAD1;
 
-			if (inode->datalayout == EROFS_INODE_FLAT_COMPRESSION_LEGACY &&
+			if (inode->datalayout == EROFS_INODE_COMPRESSED_FULL &&
 			    !ctx->e.compressedblks)
 				di.di_u.blkaddr = cpu_to_le32(inode->fragmentoff >> 32);
 			else
@@ -155,10 +154,10 @@ static void z_erofs_write_indexes(struct z_erofs_vle_compress_ctx *ctx)
 
 			if (ctx->e.partial) {
 				DBG_BUGON(ctx->e.raw);
-				advise |= Z_EROFS_VLE_DI_PARTIAL_REF;
+				advise |= Z_EROFS_LI_PARTIAL_REF;
 			}
 		}
-		advise |= type << Z_EROFS_VLE_DI_CLUSTER_TYPE_BIT;
+		advise |= type << Z_EROFS_LI_LCLUSTER_TYPE_BIT;
 		di.di_advise = cpu_to_le16(advise);
 
 		memcpy(ctx->metacur, &di, sizeof(di));
@@ -218,7 +217,7 @@ static int z_erofs_compress_dedupe(struct z_erofs_vle_compress_ctx *ctx,
 
 		/* fall back to noncompact indexes for deduplication */
 		inode->z_advise &= ~Z_EROFS_ADVISE_COMPACTED_2B;
-		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION_LEGACY;
+		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
 		erofs_sb_set_dedupe();
 
 		if (delta) {
@@ -575,18 +574,18 @@ struct z_erofs_compressindex_vec {
 static void *parse_legacy_indexes(struct z_erofs_compressindex_vec *cv,
 				  unsigned int nr, void *metacur)
 {
-	struct z_erofs_vle_decompressed_index *const db = metacur;
+	struct z_erofs_lcluster_index *const db = metacur;
 	unsigned int i;
 
 	for (i = 0; i < nr; ++i, ++cv) {
-		struct z_erofs_vle_decompressed_index *const di = db + i;
+		struct z_erofs_lcluster_index *const di = db + i;
 		const unsigned int advise = le16_to_cpu(di->di_advise);
 
-		cv->clustertype = (advise >> Z_EROFS_VLE_DI_CLUSTER_TYPE_BIT) &
-			((1 << Z_EROFS_VLE_DI_CLUSTER_TYPE_BITS) - 1);
+		cv->clustertype = (advise >> Z_EROFS_LI_LCLUSTER_TYPE_BIT) &
+			((1 << Z_EROFS_LI_LCLUSTER_TYPE_BITS) - 1);
 		cv->clusterofs = le16_to_cpu(di->di_clusterofs);
 
-		if (cv->clustertype == Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD) {
+		if (cv->clustertype == Z_EROFS_LCLUSTER_TYPE_NONHEAD) {
 			cv->u.delta[0] = le16_to_cpu(di->di_u.delta[0]);
 			cv->u.delta[1] = le16_to_cpu(di->di_u.delta[1]);
 		} else {
@@ -622,9 +621,9 @@ static void *write_compacted_indexes(u8 *out,
 		unsigned int offset, v;
 		u8 ch, rem;
 
-		if (cv[i].clustertype == Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD) {
-			if (cv[i].u.delta[0] & Z_EROFS_VLE_DI_D0_CBLKCNT) {
-				cblks = cv[i].u.delta[0] & ~Z_EROFS_VLE_DI_D0_CBLKCNT;
+		if (cv[i].clustertype == Z_EROFS_LCLUSTER_TYPE_NONHEAD) {
+			if (cv[i].u.delta[0] & Z_EROFS_LI_D0_CBLKCNT) {
+				cblks = cv[i].u.delta[0] & ~Z_EROFS_LI_D0_CBLKCNT;
 				offset = cv[i].u.delta[0];
 				blkaddr += cblks;
 				*dummy_head = false;
@@ -669,12 +668,12 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 					unsigned int legacymetasize,
 					void *compressmeta)
 {
-	const unsigned int mpos = Z_EROFS_VLE_EXTENT_ALIGN(inode->inode_isize +
-							   inode->xattr_isize) +
+	const unsigned int mpos = roundup(inode->inode_isize +
+					  inode->xattr_isize, 8) +
 				  sizeof(struct z_erofs_map_header);
 	const unsigned int totalidx = (legacymetasize -
 			Z_EROFS_LEGACY_MAP_HEADER_SIZE) /
-				sizeof(struct z_erofs_vle_decompressed_index);
+				sizeof(struct z_erofs_lcluster_index);
 	const unsigned int logical_clusterbits = inode->z_logical_clusterbits;
 	u8 *out, *in;
 	struct z_erofs_compressindex_vec cv[16];
@@ -792,7 +791,7 @@ static void z_erofs_write_mapheader(struct erofs_inode *inode,
 
 void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 {
-	const unsigned int type = Z_EROFS_VLE_CLUSTER_TYPE_PLAIN;
+	const unsigned int type = Z_EROFS_LCLUSTER_TYPE_PLAIN;
 	struct z_erofs_map_header *h = inode->compressmeta;
 
 	h->h_advise = cpu_to_le16(le16_to_cpu(h->h_advise) &
@@ -803,15 +802,15 @@ void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 	DBG_BUGON(inode->compressed_idata != true);
 
 	/* patch the EOF lcluster to uncompressed type first */
-	if (inode->datalayout == EROFS_INODE_FLAT_COMPRESSION_LEGACY) {
-		struct z_erofs_vle_decompressed_index *di =
+	if (inode->datalayout == EROFS_INODE_COMPRESSED_FULL) {
+		struct z_erofs_lcluster_index *di =
 			(inode->compressmeta + inode->extent_isize) -
-			sizeof(struct z_erofs_vle_decompressed_index);
+			sizeof(struct z_erofs_lcluster_index);
 		__le16 advise =
-			cpu_to_le16(type << Z_EROFS_VLE_DI_CLUSTER_TYPE_BIT);
+			cpu_to_le16(type << Z_EROFS_LI_LCLUSTER_TYPE_BIT);
 
 		di->di_advise = advise;
-	} else if (inode->datalayout == EROFS_INODE_FLAT_COMPRESSION) {
+	} else if (inode->datalayout == EROFS_INODE_COMPRESSED_COMPACT) {
 		/* handle the last compacted 4B pack */
 		unsigned int eofs, base, pos, v, lo;
 		u8 *out;
@@ -862,14 +861,14 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 	if (!cfg.c_legacy_compress && inode->z_logical_clusterbits <= 14) {
 		if (inode->z_logical_clusterbits <= 12)
 			inode->z_advise |= Z_EROFS_ADVISE_COMPACTED_2B;
-		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION;
+		inode->datalayout = EROFS_INODE_COMPRESSED_COMPACT;
 	} else {
-		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION_LEGACY;
+		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
 	}
 
 	if (erofs_sb_has_big_pcluster()) {
 		inode->z_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_1;
-		if (inode->datalayout == EROFS_INODE_FLAT_COMPRESSION)
+		if (inode->datalayout == EROFS_INODE_COMPRESSED_COMPACT)
 			inode->z_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_2;
 	}
 	if (cfg.c_fragments && !cfg.c_dedupe)
@@ -971,7 +970,7 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 		DBG_BUGON(inode->fragmentoff >> 63);
 		*(__le64 *)compressmeta =
 			cpu_to_le64(inode->fragmentoff | 1ULL << 63);
-		inode->datalayout = EROFS_INODE_FLAT_COMPRESSION_LEGACY;
+		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
 		legacymetasize = Z_EROFS_LEGACY_MAP_HEADER_SIZE;
 	}
 
@@ -996,7 +995,7 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 
 	inode->u.i_blocks = compressed_blocks;
 
-	if (inode->datalayout == EROFS_INODE_FLAT_COMPRESSION_LEGACY) {
+	if (inode->datalayout == EROFS_INODE_COMPRESSED_FULL) {
 		inode->extent_isize = legacymetasize;
 	} else {
 		ret = z_erofs_convert_to_compacted_format(inode, blkaddr,
