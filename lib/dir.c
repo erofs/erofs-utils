@@ -41,7 +41,7 @@ static int traverse_dirents(struct erofs_dir_context *ctx,
 			break;
 		}
 
-		if (nameoff + de_namelen > maxsize ||
+		if (nameoff + de_namelen > maxsize || !de_namelen ||
 				de_namelen > EROFS_NAME_LEN) {
 			errmsg = "bogus dirent namelen";
 			break;
