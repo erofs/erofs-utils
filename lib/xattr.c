@@ -722,8 +722,7 @@ int erofs_build_shared_xattrs_from_path(const char *path)
 		};
 
 		item->next_shared_xattr = sorted_n[i + 1];
-		item->shared_xattr_id = (off + p) /
-			sizeof(struct erofs_xattr_entry);
+		item->shared_xattr_id = (off + p) / sizeof(__le32);
 
 		memcpy(buf + p, &entry, sizeof(entry));
 		p += sizeof(struct erofs_xattr_entry);
