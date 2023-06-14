@@ -100,6 +100,9 @@ TESTS += erofs/021
 # 022 - check long extended attribute name prefixes
 TESTS += erofs/022
 
+# 023 - check extended attributes in random layouts
+TESTS += erofs/023
+
 EXTRA_DIST = common/rc erofs
 
 clean-local: clean-local-check

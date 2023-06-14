@@ -1,0 +1,103 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0+
+#
+# 023 - check extended attributes in random layouts
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_erofs
+_require_xattr
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+# feed random seed
+RANDOM=$$
+
+# build file list of all descendant files under the directory
+cp -nR ../ $localdir
+entries=`find $localdir -mindepth 1 -type f -not -path '*git*' -printf '%P\n'`
+i=0
+for file in $entries; do
+	files[$i]="$file"
+	i=$((i+1))
+done
+num_files=${#files[*]}
+[ $num_files -eq 0 ] && _notrun "empty file list"
+
+# set random xattrs
+for file in ${files[*]}; do
+	while true; do
+		key=$(_random $(($RANDOM%32)))
+		val=$(_random $(($RANDOM%32)))
+
+		# allow of xattrs with empty value
+		VAL_OPTIONS=""
+		if [ -n "$val" ]; then
+			VAL_OPTIONS="-v $val"
+		fi
+
+		# move to next file if the disk space for xattr has been consumed
+		# for the current file
+		setfattr -n user.$key $VAL_OPTIONS $localdir/$file >>$seqres.full 2>&1 \
+			|| break
+
+		# share this xattr or not?
+		if [ $(($RANDOM%2)) -ne 0 ]; then
+			# tag this xattr to other files to build shared xattrs
+			# generate a random step in [1, 64]
+			step=$(($(($RANDOM%64))+1))
+			i=0
+			while true; do
+				i=$(($i+$step))
+				if [ $i -lt $num_files ]; then
+					setfattr -n user.$key $VAL_OPTIONS $localdir/${files[$i]} \
+						>>$seqres.full 2>&1
+				else
+					break
+				fi
+			done
+		fi
+	done
+done
+
+# round 1: test mixed of inline and shared xattrs (default)
+MKFS_OPTIONS="$MKFS_OPTIONS"
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+_scratch_mount 2>>$seqres.full
+_check_xattrs $localdir $SCRATCH_MNT
+
+# round 2: test shared xattrs
+_scratch_unmount
+MKFS_OPTIONS="$MKFS_OPTIONS -x1"
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+_scratch_mount 2>>$seqres.full
+_check_xattrs $localdir $SCRATCH_MNT
+
+_scratch_unmount
+
+echo Silence is golden
+status=0
+exit 0
