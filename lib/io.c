@@ -387,7 +387,7 @@ ssize_t erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
 			      length, 0);
 	if (ret >= 0)
 		goto out;
-	if (errno != ENOSYS) {
+	if (errno != ENOSYS && errno != EXDEV) {
 		ret = -errno;
 out:
 		*off_in = off64_in;
