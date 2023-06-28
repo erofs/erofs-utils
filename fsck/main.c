@@ -49,6 +49,16 @@ static struct option long_options[] = {
 	{0, 0, 0, 0},
 };
 
+#define NR_HARDLINK_HASHTABLE	16384
+
+struct erofsfsck_hardlink_entry {
+	struct list_head list;
+	erofs_nid_t nid;
+	char *path;
+};
+
+static struct list_head erofsfsck_link_hashtable[NR_HARDLINK_HASHTABLE];
+
 static void print_available_decompressors(FILE *f, const char *delim)
 {
 	unsigned int i = 0;
@@ -550,6 +560,61 @@ static inline int erofs_extract_dir(struct erofs_inode *inode)
 	return 0;
 }
 
+static char *erofsfsck_hardlink_find(erofs_nid_t nid)
+{
+	struct list_head *head =
+			&erofsfsck_link_hashtable[nid % NR_HARDLINK_HASHTABLE];
+	struct erofsfsck_hardlink_entry *entry;
+
+	list_for_each_entry(entry, head, list)
+		if (entry->nid == nid)
+			return entry->path;
+	return NULL;
+}
+
+static int erofsfsck_hardlink_insert(erofs_nid_t nid, const char *path)
+{
+	struct erofsfsck_hardlink_entry *entry;
+
+	entry = malloc(sizeof(*entry));
+	if (!entry)
+		return -ENOMEM;
+
+	entry->nid = nid;
+	entry->path = strdup(path);
+	if (!entry->path)
+		return -ENOMEM;
+
+	list_add_tail(&entry->list,
+		      &erofsfsck_link_hashtable[nid % NR_HARDLINK_HASHTABLE]);
+	return 0;
+}
+
+static void erofsfsck_hardlink_init(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < NR_HARDLINK_HASHTABLE; ++i)
+		init_list_head(&erofsfsck_link_hashtable[i]);
+}
+
+static void erofsfsck_hardlink_exit(void)
+{
+	struct erofsfsck_hardlink_entry *entry, *n;
+	struct list_head *head;
+	unsigned int i;
+
+	for (i = 0; i < NR_HARDLINK_HASHTABLE; ++i) {
+		head = &erofsfsck_link_hashtable[i];
+
+		list_for_each_entry_safe(entry, n, head, list) {
+			if (entry->path)
+				free(entry->path);
+			free(entry);
+		}
+	}
+}
+
 static inline int erofs_extract_file(struct erofs_inode *inode)
 {
 	bool tryagain = true;
@@ -719,6 +784,59 @@ static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 	return ret;
 }
 
+static int erofsfsck_extract_inode(struct erofs_inode *inode)
+{
+	int ret;
+	char *oldpath;
+
+	if (!fsckcfg.extract_path) {
+verify:
+		/* verify data chunk layout */
+		return erofs_verify_inode_data(inode, -1);
+	}
+
+	oldpath = erofsfsck_hardlink_find(inode->nid);
+	if (oldpath) {
+		if (link(oldpath, fsckcfg.extract_path) == -1) {
+			erofs_err("failed to extract hard link: %s (%s)",
+				  fsckcfg.extract_path, strerror(errno));
+			return -errno;
+		}
+		return 0;
+	}
+
+	switch (inode->i_mode & S_IFMT) {
+	case S_IFDIR:
+		ret = erofs_extract_dir(inode);
+		break;
+	case S_IFREG:
+		if (erofs_is_packed_inode(inode))
+			goto verify;
+		ret = erofs_extract_file(inode);
+		break;
+	case S_IFLNK:
+		ret = erofs_extract_symlink(inode);
+		break;
+	case S_IFCHR:
+	case S_IFBLK:
+	case S_IFIFO:
+	case S_IFSOCK:
+		ret = erofs_extract_special(inode);
+		break;
+	default:
+		/* TODO */
+		goto verify;
+	}
+	if (ret && ret != -ECANCELED)
+		return ret;
+
+	/* record nid and old path for hardlink */
+	if (inode->i_nlink > 1 && !S_ISDIR(inode->i_mode))
+		ret = erofsfsck_hardlink_insert(inode->nid,
+						fsckcfg.extract_path);
+	return ret;
+}
+
 static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 {
 	int ret;
@@ -740,34 +858,7 @@ static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 	if (ret)
 		goto out;
 
-	if (fsckcfg.extract_path) {
-		switch (inode.i_mode & S_IFMT) {
-		case S_IFDIR:
-			ret = erofs_extract_dir(&inode);
-			break;
-		case S_IFREG:
-			if (erofs_is_packed_inode(&inode))
-				goto verify;
-			ret = erofs_extract_file(&inode);
-			break;
-		case S_IFLNK:
-			ret = erofs_extract_symlink(&inode);
-			break;
-		case S_IFCHR:
-		case S_IFBLK:
-		case S_IFIFO:
-		case S_IFSOCK:
-			ret = erofs_extract_special(&inode);
-			break;
-		default:
-			/* TODO */
-			goto verify;
-		}
-	} else {
-verify:
-		/* verify data chunk layout */
-		ret = erofs_verify_inode_data(&inode, -1);
-	}
+	ret = erofsfsck_extract_inode(&inode);
 	if (ret && ret != -ECANCELED)
 		goto out;
 
@@ -846,11 +937,14 @@ int main(int argc, char *argv[])
 		goto exit_put_super;
 	}
 
+	if (fsckcfg.extract_path)
+		erofsfsck_hardlink_init();
+
 	if (erofs_sb_has_fragments() && sbi.packed_nid > 0) {
 		err = erofsfsck_check_inode(sbi.packed_nid, sbi.packed_nid);
 		if (err) {
 			erofs_err("failed to verify packed file");
-			goto exit_put_super;
+			goto exit_hardlink;
 		}
 	}
 
@@ -876,6 +970,9 @@ int main(int argc, char *argv[])
 		}
 	}
 
+exit_hardlink:
+	if (fsckcfg.extract_path)
+		erofsfsck_hardlink_exit();
 exit_put_super:
 	erofs_put_super();
 exit_dev_close:
