@@ -17,10 +17,8 @@
 #include "erofs/compress.h"
 #include "erofs/fragments.h"
 #include "../lib/liberofs_private.h"
+#include "../lib/liberofs_uuid.h"
 
-#ifdef HAVE_LIBUUID
-#include <uuid.h>
-#endif
 
 struct erofsdump_cfg {
 	unsigned int totalshow;
@@ -593,7 +591,7 @@ static void erofsdump_print_statistic(void)
 static void erofsdump_show_superblock(void)
 {
 	time_t time = sbi.build_time;
-	char uuid_str[37] = "not available";
+	char uuid_str[37];
 	int i = 0;
 
 	fprintf(stdout, "Filesystem magic number:                      0x%04X\n",
@@ -621,9 +619,7 @@ static void erofsdump_show_superblock(void)
 		if (feat & feature_lists[i].flag)
 			fprintf(stdout, "%s ", feature_lists[i].name);
 	}
-#ifdef HAVE_LIBUUID
-	uuid_unparse_lower(sbi.uuid, uuid_str);
-#endif
+	erofs_uuid_unparse_lower(sbi.uuid, uuid_str);
 	fprintf(stdout, "\nFilesystem UUID:                              %s\n",
 			uuid_str);
 }

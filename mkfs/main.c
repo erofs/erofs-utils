@@ -26,10 +26,7 @@
 #include "erofs/blobchunk.h"
 #include "erofs/fragments.h"
 #include "../lib/liberofs_private.h"
-
-#ifdef HAVE_LIBUUID
-#include <uuid.h>
-#endif
+#include "../lib/liberofs_uuid.h"
 
 #define EROFS_SUPER_END (EROFS_SUPER_OFFSET + sizeof(struct erofs_super_block))
 
@@ -92,9 +89,7 @@ static void usage(void)
 	      " -EX[,...]             X=extended options\n"
 	      " -L volume-label       set the volume label (maximum 16)\n"
 	      " -T#                   set a fixed UNIX timestamp # to all files\n"
-#ifdef HAVE_LIBUUID
 	      " -UX                   use a given filesystem UUID\n"
-#endif
 	      " --all-root            make all files owned by root\n"
 	      " --blobdev=X           specify an extra device X to store chunked data\n"
 	      " --chunksize=#         generate chunk-based files with #-byte chunks\n"
@@ -336,14 +331,12 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			}
 			cfg.c_timeinherit = TIMESTAMP_FIXED;
 			break;
-#ifdef HAVE_LIBUUID
 		case 'U':
-			if (uuid_parse(optarg, sbi.uuid)) {
+			if (erofs_uuid_parse(optarg, sbi.uuid)) {
 				erofs_err("invalid UUID %s", optarg);
 				return -EINVAL;
 			}
 			break;
-#endif
 		case 2:
 			opt = erofs_parse_exclude_path(optarg, false);
 			if (opt) {
@@ -676,11 +669,7 @@ static void erofs_mkfs_default_options(void)
 			     EROFS_FEATURE_COMPAT_MTIME;
 
 	/* generate a default uuid first */
-#ifdef HAVE_LIBUUID
-	do {
-		uuid_generate(sbi.uuid);
-	} while (uuid_is_null(sbi.uuid));
-#endif
+	erofs_uuid_generate(sbi.uuid);
 }
 
 /* https://reproducible-builds.org/specs/source-date-epoch/ for more details */
@@ -725,7 +714,7 @@ int main(int argc, char **argv)
 	struct stat st;
 	erofs_blk_t nblocks;
 	struct timeval t;
-	char uuid_str[37] = "not available";
+	char uuid_str[37];
 	FILE *packedfile = NULL;
 
 	erofs_init_configure();
@@ -869,9 +858,7 @@ int main(int argc, char **argv)
 			  erofs_strerror(err));
 		goto exit;
 	}
-#ifdef HAVE_LIBUUID
-	uuid_unparse_lower(sbi.uuid, uuid_str);
-#endif
+	erofs_uuid_unparse_lower(sbi.uuid, uuid_str);
 	erofs_info("filesystem UUID: %s", uuid_str);
 
 	erofs_inode_manager_init();
