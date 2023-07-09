@@ -17,8 +17,6 @@ extern "C"
 
 typedef unsigned short umode_t;
 
-#define __packed __attribute__((__packed__))
-
 #include "erofs_fs.h"
 #include <fcntl.h>
 #include <sys/types.h> /* for off_t definition */

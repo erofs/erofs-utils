@@ -11,12 +11,14 @@
 unsigned long erofs_memcmp2(const u8 *s1, const u8 *s2,
 			    unsigned long sz)
 {
+	const unsigned long *a1, *a2;
 	unsigned long n = sz;
 
-	if (sz >= sizeof(long) && ((long)s1 & (sizeof(long) - 1)) ==
-			((long)s2 & (sizeof(long) - 1))) {
-		const unsigned long *a1, *a2;
+	if (sz < sizeof(long))
+		goto out_bytes;
 
+	if (((long)s1 & (sizeof(long) - 1)) ==
+			((long)s2 & (sizeof(long) - 1))) {
 		while ((long)s1 & (sizeof(long) - 1)) {
 			if (*s1 != *s2)
 				break;
@@ -34,9 +36,20 @@ unsigned long erofs_memcmp2(const u8 *s1, const u8 *s2,
 			++a2;
 			sz -= sizeof(long);
 		}
-		s1 = (const u8 *)a1;
-		s2 = (const u8 *)a2;
+	} else {
+		a1 = (const unsigned long *)s1;
+		a2 = (const unsigned long *)s2;
+		do {
+			if (get_unaligned(a1) != get_unaligned(a2))
+				break;
+			++a1;
+			++a2;
+			sz -= sizeof(long);
+		} while (sz >= sizeof(long));
 	}
+	s1 = (const u8 *)a1;
+	s2 = (const u8 *)a2;
+out_bytes:
 	while (sz) {
 		if (*s1 != *s2)
 			break;
