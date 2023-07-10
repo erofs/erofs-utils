@@ -1026,6 +1026,8 @@ static int erofs_get_compress_algorithm_id(const char *name)
 		return Z_EROFS_COMPRESSION_LZ4;
 	if (!strcmp(name, "lzma"))
 		return Z_EROFS_COMPRESSION_LZMA;
+	if (!strcmp(name, "deflate"))
+		return Z_EROFS_COMPRESSION_DEFLATE;
 	return -ENOTSUP;
 }
 
@@ -1080,6 +1082,28 @@ int z_erofs_build_compr_cfgs(struct erofs_buffer_head *sb_bh)
 		bh->op = &erofs_drop_directly_bhops;
 	}
 #endif
+	if (sbi.available_compr_algs & (1 << Z_EROFS_COMPRESSION_DEFLATE)) {
+		struct {
+			__le16 size;
+			struct z_erofs_deflate_cfgs z;
+		} __packed zalg = {
+			.size = cpu_to_le16(sizeof(struct z_erofs_deflate_cfgs)),
+			.z = {
+				.windowbits =
+					cpu_to_le32(ilog2(cfg.c_dict_size)),
+			}
+		};
+
+		bh = erofs_battach(bh, META, sizeof(zalg));
+		if (IS_ERR(bh)) {
+			DBG_BUGON(1);
+			return PTR_ERR(bh);
+		}
+		erofs_mapbh(bh->block);
+		ret = dev_write(&zalg, erofs_btell(bh, false),
+				sizeof(zalg));
+		bh->op = &erofs_drop_directly_bhops;
+	}
 	return ret;
 }
 
