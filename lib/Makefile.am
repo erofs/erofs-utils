@@ -45,3 +45,6 @@ liberofs_la_SOURCES += compressor_liblzma.c
 endif
 
 liberofs_la_SOURCES += kite_deflate.c compressor_deflate.c
+if ENABLE_LIBDEFLATE
+liberofs_la_SOURCES += compressor_libdeflate.c
+endif

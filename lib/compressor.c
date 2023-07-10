@@ -21,6 +21,9 @@ static const struct erofs_compressor *compressors[] = {
 		&erofs_compressor_lzma,
 #endif
 		&erofs_compressor_deflate,
+#if HAVE_LIBDEFLATE
+		&erofs_compressor_libdeflate,
+#endif
 };
 
 int erofs_compress_destsize(const struct erofs_compress *c,

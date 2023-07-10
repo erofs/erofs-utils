@@ -1026,7 +1026,7 @@ static int erofs_get_compress_algorithm_id(const char *name)
 		return Z_EROFS_COMPRESSION_LZ4;
 	if (!strcmp(name, "lzma"))
 		return Z_EROFS_COMPRESSION_LZMA;
-	if (!strcmp(name, "deflate"))
+	if (!strcmp(name, "deflate") || !strcmp(name, "libdeflate"))
 		return Z_EROFS_COMPRESSION_DEFLATE;
 	return -ENOTSUP;
 }
