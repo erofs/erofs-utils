@@ -33,6 +33,12 @@ static inline long PTR_ERR(const void *ptr)
 	return (long) ptr;
 }
 
+static inline void * ERR_CAST(const void *ptr)
+{
+	/* cast away the const */
+	return (void *) ptr;
+}
+
 #ifdef __cplusplus
 }
 #endif
