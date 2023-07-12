@@ -9,6 +9,149 @@
 #include "erofs/err.h"
 #include "erofs/print.h"
 
+#ifdef HAVE_LIBDEFLATE
+/* if libdeflate is available, use libdeflate instead. */
+#include <libdeflate.h>
+
+static int z_erofs_decompress_deflate(struct z_erofs_decompress_req *rq)
+{
+	u8 *dest = (u8 *)rq->out;
+	u8 *src = (u8 *)rq->in;
+	u8 *buff = NULL;
+	size_t actual_out;
+	unsigned int inputmargin = 0;
+	struct libdeflate_decompressor *inf;
+	enum libdeflate_result ret;
+
+	while (!src[inputmargin & (erofs_blksiz() - 1)])
+		if (!(++inputmargin & (erofs_blksiz() - 1)))
+			break;
+
+	if (inputmargin >= rq->inputsize)
+		return -EFSCORRUPTED;
+
+	if (rq->decodedskip) {
+		buff = malloc(rq->decodedlength);
+		if (!buff)
+			return -ENOMEM;
+		dest = buff;
+	}
+
+	inf = libdeflate_alloc_decompressor();
+	if (!inf)
+		return -ENOMEM;
+
+	if (rq->partial_decoding) {
+		ret = libdeflate_deflate_decompress(inf, src + inputmargin,
+				rq->inputsize - inputmargin, dest,
+				rq->decodedlength, &actual_out);
+		if (ret && ret != LIBDEFLATE_INSUFFICIENT_SPACE) {
+			ret = -EIO;
+			goto out_inflate_end;
+		}
+
+		if (actual_out != rq->decodedlength) {
+			ret = -EIO;
+			goto out_inflate_end;
+		}
+	} else {
+		ret = libdeflate_deflate_decompress(inf, src + inputmargin,
+				rq->inputsize - inputmargin, dest,
+				rq->decodedlength, NULL);
+		if (ret) {
+			ret = -EIO;
+			goto out_inflate_end;
+		}
+	}
+
+	if (rq->decodedskip)
+		memcpy(rq->out, dest + rq->decodedskip,
+		       rq->decodedlength - rq->decodedskip);
+
+out_inflate_end:
+	libdeflate_free_decompressor(inf);
+	if (buff)
+		free(buff);
+	return ret;
+}
+#elif defined(HAVE_ZLIB)
+#include <zlib.h>
+
+/* report a zlib or i/o error */
+static int zerr(int ret)
+{
+	switch (ret) {
+	case Z_STREAM_ERROR:
+		return -EINVAL;
+	case Z_DATA_ERROR:
+		return -EIO;
+	case Z_MEM_ERROR:
+		return -ENOMEM;
+	case Z_ERRNO:
+	case Z_VERSION_ERROR:
+	default:
+		return -EFAULT;
+	}
+}
+
+static int z_erofs_decompress_deflate(struct z_erofs_decompress_req *rq)
+{
+	int ret = 0;
+	u8 *dest = (u8 *)rq->out;
+	u8 *src = (u8 *)rq->in;
+	u8 *buff = NULL;
+	unsigned int inputmargin = 0;
+	z_stream strm;
+
+	while (!src[inputmargin & (erofs_blksiz() - 1)])
+		if (!(++inputmargin & (erofs_blksiz() - 1)))
+			break;
+
+	if (inputmargin >= rq->inputsize)
+		return -EFSCORRUPTED;
+
+	if (rq->decodedskip) {
+		buff = malloc(rq->decodedlength);
+		if (!buff)
+			return -ENOMEM;
+		dest = buff;
+	}
+
+	/* allocate inflate state */
+	strm.zalloc = Z_NULL;
+	strm.zfree = Z_NULL;
+	strm.opaque = Z_NULL;
+	strm.avail_in = 0;
+	strm.next_in = Z_NULL;
+	ret = inflateInit2(&strm, -15);
+	if (ret != Z_OK)
+		return zerr(ret);
+
+	strm.next_in = src + inputmargin;
+	strm.avail_in = rq->inputsize - inputmargin;
+	strm.next_out = dest;
+	strm.avail_out = rq->decodedlength;
+
+	ret = inflate(&strm, rq->partial_decoding ? Z_SYNC_FLUSH : Z_FINISH);
+	if (ret != Z_STREAM_END || strm.total_out != rq->decodedlength) {
+		if (ret != Z_OK || !rq->partial_decoding) {
+			ret = zerr(ret);
+			goto out_inflate_end;
+		}
+	}
+
+	if (rq->decodedskip)
+		memcpy(rq->out, dest + rq->decodedskip,
+		       rq->decodedlength - rq->decodedskip);
+
+out_inflate_end:
+	inflateEnd(&strm);
+	if (buff)
+		free(buff);
+	return ret;
+}
+#endif
+
 #ifdef HAVE_LIBLZMA
 #include <lzma.h>
 
@@ -167,6 +310,10 @@ int z_erofs_decompress(struct z_erofs_decompress_req *rq)
 #ifdef HAVE_LIBLZMA
 	if (rq->alg == Z_EROFS_COMPRESSION_LZMA)
 		return z_erofs_decompress_lzma(rq);
+#endif
+#if defined(HAVE_ZLIB) || defined(HAVE_LIBDEFLATE)
+	if (rq->alg == Z_EROFS_COMPRESSION_DEFLATE)
+		return z_erofs_decompress_deflate(rq);
 #endif
 	return -EOPNOTSUPP;
 }

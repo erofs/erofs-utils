@@ -122,6 +122,15 @@ AC_ARG_ENABLE(lzma,
    [AS_HELP_STRING([--enable-lzma], [enable LZMA compression support @<:@default=no@:>@])],
    [enable_lzma="$enableval"], [enable_lzma="no"])
 
+AC_ARG_WITH(zlib,
+   [AS_HELP_STRING([--without-zlib],
+      [Ignore presence of zlib inflate support @<:@default=enabled@:>@])])
+
+AC_ARG_WITH(libdeflate,
+   [AS_HELP_STRING([--with-libdeflate],
+      [Enable and build with libdeflate inflate support @<:@default=disabled@:>@])], [],
+      [with_libdeflate="no"])
+
 AC_ARG_ENABLE(fuse,
    [AS_HELP_STRING([--enable-fuse], [enable erofsfuse @<:@default=no@:>@])],
    [enable_fuse="$enableval"], [enable_fuse="no"])
@@ -395,6 +404,34 @@ if test "x$enable_lzma" = "xyes"; then
   CPPFLAGS="${saved_CPPFLAGS}"
 fi
 
+# Configure zlib
+AS_IF([test "x$with_zlib" != "xno"], [
+  PKG_CHECK_MODULES([zlib], [zlib])
+  # Paranoia: don't trust the result reported by pkgconfig before trying out
+  saved_LIBS="$LIBS"
+  saved_CPPFLAGS=${CPPFLAGS}
+  CPPFLAGS="${zlib_CFLAGS} ${CPPFLAGS}"
+  LIBS="${zlib_LIBS} $LIBS"
+  AC_CHECK_LIB(z, inflate, [
+    have_zlib="yes" ], [
+    AC_MSG_ERROR([zlib doesn't work properly])])
+  LIBS="${saved_LIBS}"
+  CPPFLAGS="${saved_CPPFLAGS}"], [have_zlib="no"])
+
+# Configure libdeflate
+AS_IF([test "x$with_libdeflate" != "xno"], [
+  PKG_CHECK_MODULES([libdeflate], [libdeflate])
+  # Paranoia: don't trust the result reported by pkgconfig before trying out
+  saved_LIBS="$LIBS"
+  saved_CPPFLAGS=${CPPFLAGS}
+  CPPFLAGS="${libdeflate_CFLAGS} ${CPPFLAGS}"
+  LIBS="${libdeflate_LIBS} $LIBS"
+  AC_CHECK_LIB(deflate, libdeflate_deflate_decompress, [
+    have_libdeflate="yes" ], [
+    AC_MSG_ERROR([libdeflate doesn't work properly])])
+  LIBS="${saved_LIBS}"
+  CPPFLAGS="${saved_CPPFLAGS}"], [have_libdeflate="no"])
+
 # Enable 64-bit off_t
 CFLAGS+=" -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
 
@@ -448,6 +485,14 @@ if test "x${have_liblzma}" = "xyes"; then
     liblzma_CFLAGS="-I${with_liblzma_incdir}"
   AC_SUBST([liblzma_LIBS])
   AC_SUBST([liblzma_CFLAGS])
+fi
+
+if test "x$have_zlib" = "xyes"; then
+  AC_DEFINE([HAVE_ZLIB], 1, [Define to 1 if zlib is found])
+fi
+
+if test "x$have_libdeflate" = "xyes"; then
+  AC_DEFINE([HAVE_LIBDEFLATE], 1, [Define to 1 if libdeflate is found])
 fi
 
 # Dump maximum block size
