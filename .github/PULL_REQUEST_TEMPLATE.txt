@@ -1,0 +1,9 @@
+Please **do not** send pull-requests or open new issues on Github.
+
+Besides, the current erofs-utils repo is:
+git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git
+
+Github is not _the place_ for EROFS development, and some mirrors
+are actually unofficial and not frequently monitored.
+
+* Send bug reports and/or feedback to: linux-erofs@lists.ozlabs.org
