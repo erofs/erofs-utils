@@ -20,6 +20,7 @@ typedef unsigned short umode_t;
 #include "erofs_fs.h"
 #include <fcntl.h>
 #include <sys/types.h> /* for off_t definition */
+#include <stdio.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX        4096    /* # chars in a path name including nul */
@@ -170,13 +171,17 @@ struct erofs_inode {
 	} u;
 
 	char *i_srcpath;
-
+	union {
+		char *i_link;
+		FILE *i_tmpfile;
+	};
 	unsigned char datalayout;
 	unsigned char inode_isize;
 	/* inline tail-end packing size */
 	unsigned short idata_size;
 	bool compressed_idata;
 	bool lazy_tailblock;
+	bool with_tmpfile;
 
 	unsigned int xattr_isize;
 	unsigned int extent_isize;

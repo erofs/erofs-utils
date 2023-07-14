@@ -176,6 +176,7 @@ AC_CHECK_HEADERS(m4_flatten([
 	fcntl.h
 	getopt.h
 	inttypes.h
+	linux/aufs_type.h
 	linux/falloc.h
 	linux/fs.h
 	linux/types.h

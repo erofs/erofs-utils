@@ -14,7 +14,10 @@
 #include <unistd.h>
 
 struct erofs_blobchunk {
-	struct hashmap_entry ent;
+	union {
+		struct hashmap_entry ent;
+		struct list_head list;
+	};
 	char		sha256[32];
 	unsigned int	device_id;
 	erofs_off_t	chunksize;
@@ -29,6 +32,23 @@ static struct erofs_buffer_head *bh_devt;
 struct erofs_blobchunk erofs_holechunk = {
 	.blkaddr = EROFS_NULL_ADDR,
 };
+static LIST_HEAD(unhashed_blobchunks);
+
+struct erofs_blobchunk *erofs_get_unhashed_chunk(erofs_off_t chunksize,
+		unsigned int device_id, erofs_blk_t blkaddr)
+{
+	struct erofs_blobchunk *chunk;
+
+	chunk = calloc(1, sizeof(struct erofs_blobchunk));
+	if (!chunk)
+		return ERR_PTR(-ENOMEM);
+
+	chunk->chunksize = chunksize;
+	chunk->device_id = device_id;
+	chunk->blkaddr = blkaddr;
+	list_add_tail(&chunk->list, &unhashed_blobchunks);
+	return chunk;
+}
 
 static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
 		erofs_off_t chunksize)
@@ -165,17 +185,14 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 	return dev_write(inode->chunkindexes, off, inode->extent_isize);
 }
 
-int erofs_blob_write_chunked_file(struct erofs_inode *inode)
+int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd)
 {
 	unsigned int chunkbits = cfg.c_chunkbits;
 	unsigned int count, unit;
 	struct erofs_inode_chunk_index *idx;
 	erofs_off_t pos, len, chunksize;
-	int fd, ret;
+	int ret;
 
-	fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
-	if (fd < 0)
-		return -errno;
 #ifdef SEEK_DATA
 	/* if the file is fully sparsed, use one big chunk instead */
 	if (lseek(fd, 0, SEEK_DATA) < 0 && errno == ENXIO) {
@@ -199,10 +216,8 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode)
 
 	inode->extent_isize = count * unit;
 	idx = malloc(count * max(sizeof(*idx), sizeof(void *)));
-	if (!idx) {
-		close(fd);
+	if (!idx)
 		return -ENOMEM;
-	}
 	inode->chunkindexes = idx;
 
 	for (pos = 0; pos < inode->i_size; pos += len) {
@@ -241,10 +256,8 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode)
 		*(void **)idx++ = chunk;
 	}
 	inode->datalayout = EROFS_INODE_CHUNK_BASED;
-	close(fd);
 	return 0;
 err:
-	close(fd);
 	free(inode->chunkindexes);
 	inode->chunkindexes = NULL;
 	return ret;
@@ -296,19 +309,23 @@ void erofs_blob_exit(void)
 {
 	struct hashmap_iter iter;
 	struct hashmap_entry *e;
+	struct erofs_blobchunk *bc, *n;
 
 	if (blobfile)
 		fclose(blobfile);
 
 	while ((e = hashmap_iter_first(&blob_hashmap, &iter))) {
-		struct erofs_blobchunk *bc =
-			container_of((struct hashmap_entry *)e,
-				     struct erofs_blobchunk, ent);
-
+		bc = container_of((struct hashmap_entry *)e,
+				  struct erofs_blobchunk, ent);
 		DBG_BUGON(hashmap_remove(&blob_hashmap, e) != e);
 		free(bc);
 	}
 	DBG_BUGON(hashmap_free(&blob_hashmap));
+
+	list_for_each_entry_safe(bc, n, &unhashed_blobchunks, list) {
+		list_del(&bc->list);
+		free(bc);
+	}
 }
 
 int erofs_blob_init(const char *blobfile_path)

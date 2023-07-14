@@ -403,6 +403,38 @@ err:
 	return ret;
 }
 
+int erofs_setxattr(struct erofs_inode *inode, char *key,
+		   const void *value, size_t size)
+{
+	char *kvbuf;
+	unsigned int len[2];
+	struct xattr_item *item;
+	u8 prefix;
+	u16 prefixlen;
+
+	if (!match_prefix(key, &prefix, &prefixlen))
+		return -ENODATA;
+
+	len[1] = size;
+	/* allocate key-value buffer */
+	len[0] = strlen(key) - prefixlen;
+
+	kvbuf = malloc(len[0] + len[1]);
+	if (!kvbuf)
+		return -ENOMEM;
+
+	memcpy(kvbuf, key + prefixlen, len[0]);
+	memcpy(kvbuf + len[0], value, size);
+
+	item = get_xattritem(prefix, kvbuf, len);
+	if (IS_ERR(item))
+		return PTR_ERR(item);
+	if (!item)
+		return 0;
+
+	return erofs_xattr_add(&inode->i_xattrs, item);
+}
+
 #ifdef WITH_ANDROID
 static int erofs_droid_xattr_set_caps(struct erofs_inode *inode)
 {
@@ -445,10 +477,9 @@ static int erofs_droid_xattr_set_caps(struct erofs_inode *inode)
 }
 #endif
 
-int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
+int erofs_scan_file_xattrs(struct erofs_inode *inode)
 {
 	int ret;
-	struct inode_xattr_node *node;
 	struct list_head *ixattrs = &inode->i_xattrs;
 
 	/* check if xattr is disabled */
@@ -459,9 +490,14 @@ int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
 	if (ret < 0)
 		return ret;
 
-	ret = erofs_droid_xattr_set_caps(inode);
-	if (ret < 0)
-		return ret;
+	return erofs_droid_xattr_set_caps(inode);
+}
+
+int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
+{
+	int ret;
+	struct inode_xattr_node *node;
+	struct list_head *ixattrs = &inode->i_xattrs;
 
 	if (list_empty(ixattrs))
 		return 0;

@@ -75,12 +75,6 @@ void erofs_inode_manager_init(void)
 		init_list_head(&inode_hashtable[i]);
 }
 
-static struct erofs_inode *erofs_igrab(struct erofs_inode *inode)
-{
-	++inode->i_count;
-	return inode;
-}
-
 /* get the inode from the (source) inode # */
 struct erofs_inode *erofs_iget(dev_t dev, ino_t ino)
 {
@@ -121,6 +115,10 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 	list_del(&inode->i_hash);
 	if (inode->i_srcpath)
 		free(inode->i_srcpath);
+	if (inode->with_tmpfile)
+		fclose(inode->i_tmpfile);
+	else if (inode->i_link)
+		free(inode->i_link);
 	free(inode);
 	return 0;
 }
@@ -180,27 +178,13 @@ static int comp_subdir(const void *a, const void *b)
 	return strcmp(da->name, db->name);
 }
 
-int erofs_prepare_dir_file(struct erofs_inode *dir, unsigned int nr_subdirs)
+static int erofs_prepare_dir_layout(struct erofs_inode *dir,
+				    unsigned int nr_subdirs)
 {
 	struct erofs_dentry *d, *n, **sorted_d;
-	unsigned int d_size, i;
+	unsigned int i;
+	unsigned int d_size = 0;
 
-	/* dot is pointed to the current dir inode */
-	d = erofs_d_alloc(dir, ".");
-	if (IS_ERR(d))
-		return PTR_ERR(d);
-	d->inode = erofs_igrab(dir);
-	d->type = EROFS_FT_DIR;
-
-	/* dotdot is pointed to the parent dir */
-	d = erofs_d_alloc(dir, "..");
-	if (IS_ERR(d))
-		return PTR_ERR(d);
-	d->inode = erofs_igrab(dir->i_parent);
-	d->type = EROFS_FT_DIR;
-
-	/* sort subdirs */
-	nr_subdirs += 2;
 	sorted_d = malloc(nr_subdirs * sizeof(d));
 	if (!sorted_d)
 		return -ENOMEM;
@@ -216,7 +200,6 @@ int erofs_prepare_dir_file(struct erofs_inode *dir, unsigned int nr_subdirs)
 	free(sorted_d);
 
 	/* let's calculate dir size */
-	d_size = 0;
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
 		int len = strlen(d->name) + sizeof(struct erofs_dirent);
 
@@ -232,6 +215,39 @@ int erofs_prepare_dir_file(struct erofs_inode *dir, unsigned int nr_subdirs)
 	/* it will be used in erofs_prepare_inode_buffer */
 	dir->idata_size = d_size % erofs_blksiz();
 	return 0;
+}
+
+int erofs_init_empty_dir(struct erofs_inode *dir)
+{
+	struct erofs_dentry *d;
+
+	/* dot is pointed to the current dir inode */
+	d = erofs_d_alloc(dir, ".");
+	if (IS_ERR(d))
+		return PTR_ERR(d);
+	d->inode = erofs_igrab(dir);
+	d->type = EROFS_FT_DIR;
+
+	/* dotdot is pointed to the parent dir */
+	d = erofs_d_alloc(dir, "..");
+	if (IS_ERR(d))
+		return PTR_ERR(d);
+	d->inode = erofs_igrab(dir->i_parent);
+	d->type = EROFS_FT_DIR;
+	return 0;
+}
+
+int erofs_prepare_dir_file(struct erofs_inode *dir, unsigned int nr_subdirs)
+{
+	int ret;
+
+	ret = erofs_init_empty_dir(dir);
+	if (ret)
+		return ret;
+
+	/* sort subdirs */
+	nr_subdirs += 2;
+	return erofs_prepare_dir_layout(dir, nr_subdirs);
 }
 
 static void fill_dirblock(char *buf, unsigned int size, unsigned int q,
@@ -347,7 +363,7 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 	return 0;
 }
 
-static int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
+int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 {
 	const unsigned int nblocks = erofs_blknr(inode->i_size);
 	int ret;
@@ -424,14 +440,12 @@ static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 	return 0;
 }
 
-static int erofs_write_file(struct erofs_inode *inode)
+int erofs_write_file(struct erofs_inode *inode, int fd)
 {
-	int ret, fd;
+	int ret;
 
-	if (!inode->i_size) {
-		inode->datalayout = EROFS_INODE_FLAT_PLAIN;
+	if (!inode->i_size)
 		return 0;
-	}
 
 	if (cfg.c_chunkbits) {
 		inode->u.chunkbits = cfg.c_chunkbits;
@@ -439,28 +453,21 @@ static int erofs_write_file(struct erofs_inode *inode)
 		inode->u.chunkformat = 0;
 		if (cfg.c_force_chunkformat == FORCE_INODE_CHUNK_INDEXES)
 			inode->u.chunkformat = EROFS_CHUNK_FORMAT_INDEXES;
-		return erofs_blob_write_chunked_file(inode);
+		return erofs_blob_write_chunked_file(inode, fd);
 	}
 
 	if (cfg.c_compr_alg[0] && erofs_file_is_compressible(inode)) {
-		fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
-		if (fd < 0)
-			return -errno;
 		ret = erofs_write_compressed_file(inode, fd);
-		close(fd);
-
 		if (!ret || ret != -ENOSPC)
 			return ret;
+
+		ret = lseek(fd, 0, SEEK_SET);
+		if (ret < 0)
+			return -errno;
 	}
 
 	/* fallback to all data uncompressed */
-	fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
-	if (fd < 0)
-		return -errno;
-
-	ret = write_uncompressed_file_from_fd(inode, fd);
-	close(fd);
-	return ret;
+	return write_uncompressed_file_from_fd(inode, fd);
 }
 
 static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
@@ -821,7 +828,7 @@ static bool erofs_should_use_inode_extended(struct erofs_inode *inode)
 	return false;
 }
 
-static u32 erofs_new_encode_dev(dev_t dev)
+u32 erofs_new_encode_dev(dev_t dev)
 {
 	const unsigned int major = major(dev);
 	const unsigned int minor = minor(dev);
@@ -963,7 +970,7 @@ static int erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 	return 0;
 }
 
-static struct erofs_inode *erofs_new_inode(void)
+struct erofs_inode *erofs_new_inode(void)
 {
 	struct erofs_inode *inode;
 
@@ -973,7 +980,9 @@ static struct erofs_inode *erofs_new_inode(void)
 
 	inode->i_ino[0] = sbi.inos++;	/* inode serial number */
 	inode->i_count = 1;
+	inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 
+	init_list_head(&inode->i_hash);
 	init_list_head(&inode->i_subdirs);
 	init_list_head(&inode->i_xattrs);
 	return inode;
@@ -1043,6 +1052,10 @@ static int erofs_mkfs_build_tree(struct erofs_inode *dir, struct list_head *dirs
 	struct erofs_dentry *d;
 	unsigned int nr_subdirs, i_nlink;
 
+	ret = erofs_scan_file_xattrs(dir);
+	if (ret < 0)
+		return ret;
+
 	ret = erofs_prepare_xattr_ibody(dir);
 	if (ret < 0)
 		return ret;
@@ -1060,8 +1073,15 @@ static int erofs_mkfs_build_tree(struct erofs_inode *dir, struct list_head *dirs
 			}
 			ret = erofs_write_file_from_buffer(dir, symlink);
 			free(symlink);
+		} else if (dir->i_size) {
+			int fd = open(dir->i_srcpath, O_RDONLY | O_BINARY);
+			if (fd < 0)
+				return -errno;
+
+			ret = erofs_write_file(dir, fd);
+			close(fd);
 		} else {
-			ret = erofs_write_file(dir);
+			ret = 0;
 		}
 		if (ret)
 			return ret;
@@ -1283,4 +1303,84 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
 	erofs_prepare_inode_buffer(inode);
 	erofs_write_tail_end(inode);
 	return inode;
+}
+
+int tarerofs_dump_tree(struct erofs_inode *dir)
+{
+	struct erofs_dentry *d;
+	unsigned int nr_subdirs;
+	int ret;
+
+	if (erofs_should_use_inode_extended(dir)) {
+		if (cfg.c_force_inodeversion == FORCE_INODE_COMPACT) {
+			erofs_err("file %s cannot be in compact form",
+				  dir->i_srcpath);
+			return -EINVAL;
+		}
+		dir->inode_isize = sizeof(struct erofs_inode_extended);
+	} else {
+		dir->inode_isize = sizeof(struct erofs_inode_compact);
+	}
+
+	ret = erofs_prepare_xattr_ibody(dir);
+	if (ret < 0)
+		return ret;
+
+	if (!S_ISDIR(dir->i_mode)) {
+		if (dir->bh)
+			return 0;
+		if (S_ISLNK(dir->i_mode)) {
+			ret = erofs_write_file_from_buffer(dir, dir->i_link);
+			free(dir->i_link);
+			dir->i_link = NULL;
+		} else if (dir->i_tmpfile) {
+			ret = erofs_write_file(dir, fileno(dir->i_tmpfile));
+			fclose(dir->i_tmpfile);
+			dir->i_tmpfile = NULL;
+			dir->with_tmpfile = false;
+		} else {
+			ret = 0;
+		}
+		if (ret)
+			return ret;
+		ret = erofs_prepare_inode_buffer(dir);
+		if (ret)
+			return ret;
+		erofs_write_tail_end(dir);
+		return 0;
+	}
+
+	nr_subdirs = 0;
+	list_for_each_entry(d, &dir->i_subdirs, d_child)
+		++nr_subdirs;
+
+	ret = erofs_prepare_dir_layout(dir, nr_subdirs);
+	if (ret)
+		return ret;
+
+	ret = erofs_prepare_inode_buffer(dir);
+	if (ret)
+		return ret;
+	dir->bh->op = &erofs_skip_write_bhops;
+
+	if (IS_ROOT(dir))
+		erofs_fixup_meta_blkaddr(dir);
+
+	list_for_each_entry(d, &dir->i_subdirs, d_child) {
+		struct erofs_inode *inode;
+
+		if (is_dot_dotdot(d->name))
+			continue;
+
+		inode = erofs_igrab(d->inode);
+		ret = tarerofs_dump_tree(inode);
+		dir->i_nlink += (erofs_mode_to_ftype(inode->i_mode) == EROFS_FT_DIR);
+		erofs_iput(inode);
+		if (ret)
+			return ret;
+	}
+	erofs_write_dir_file(dir);
+	erofs_write_tail_end(dir);
+	dir->bh->op = &erofs_write_inode_bhops;
+	return 0;
 }

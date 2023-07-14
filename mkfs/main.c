@@ -16,6 +16,7 @@
 #include "erofs/print.h"
 #include "erofs/cache.h"
 #include "erofs/inode.h"
+#include "erofs/tar.h"
 #include "erofs/io.h"
 #include "erofs/compress.h"
 #include "erofs/dedupe.h"
@@ -53,6 +54,8 @@ static struct option long_options[] = {
 	{"preserve-mtime", no_argument, NULL, 15},
 	{"uid-offset", required_argument, NULL, 16},
 	{"gid-offset", required_argument, NULL, 17},
+	{"tar", optional_argument, NULL, 20},
+	{"aufs", no_argument, NULL, 21},
 	{"mount-point", required_argument, NULL, 512},
 	{"xattr-prefix", required_argument, NULL, 19},
 #ifdef WITH_ANDROID
@@ -107,6 +110,8 @@ static void usage(void)
 	      " --ignore-mtime        use build time instead of strict per-file modification time\n"
 	      " --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
 	      " --preserve-mtime      keep per-file modification time strictly\n"
+	      " --aufs                replace aufs special files with overlayfs metadata\n"
+	      " --tar=[fi]            generate an image from tarball(s)\n"
 	      " --quiet               quiet execution (do not write anything to standard output.)\n"
 #ifndef NDEBUG
 	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
@@ -125,6 +130,8 @@ static void usage(void)
 }
 
 static unsigned int pclustersize_packed, pclustersize_max;
+static struct erofs_tarfile erofstar;
+static bool tar_mode;
 
 static int parse_extended_opts(const char *opts)
 {
@@ -475,6 +482,15 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			}
 			cfg.c_extra_ea_name_prefixes = true;
 			break;
+		case 20:
+			if (optarg && (!strcmp(optarg, "i") ||
+					!strcmp(optarg, "0")))
+				erofstar.index_mode = true;
+			tar_mode = true;
+			break;
+		case 21:
+			erofstar.aufs = true;
+			break;
 		case 1:
 			usage();
 			exit(0);
@@ -506,20 +522,24 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		return -ENOMEM;
 
 	if (optind >= argc) {
-		erofs_err("missing argument: DIRECTORY");
-		return -EINVAL;
-	}
+		if (!tar_mode) {
+			erofs_err("missing argument: DIRECTORY");
+			return -EINVAL;
+		} else {
+			erofstar.fd = STDIN_FILENO;
+		}
+	}else {
+		cfg.c_src_path = realpath(argv[optind++], NULL);
+		if (!cfg.c_src_path) {
+			erofs_err("failed to parse source directory: %s",
+				  erofs_strerror(-errno));
+			return -ENOENT;
+		}
 
-	cfg.c_src_path = realpath(argv[optind++], NULL);
-	if (!cfg.c_src_path) {
-		erofs_err("failed to parse source directory: %s",
-			  erofs_strerror(-errno));
-		return -ENOENT;
-	}
-
-	if (optind < argc) {
-		erofs_err("unexpected argument: %s\n", argv[optind]);
-		return -EINVAL;
+		if (optind < argc) {
+			erofs_err("unexpected argument: %s\n", argv[optind]);
+			return -EINVAL;
+		}
 	}
 	if (quiet) {
 		cfg.c_dbg_lvl = EROFS_ERR;
@@ -734,14 +754,24 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	err = lstat(cfg.c_src_path, &st);
-	if (err)
-		return 1;
-	if (!S_ISDIR(st.st_mode)) {
-		erofs_err("root of the filesystem is not a directory - %s",
-			  cfg.c_src_path);
-		usage();
-		return 1;
+	if (!tar_mode) {
+		err = lstat(cfg.c_src_path, &st);
+		if (err)
+			return 1;
+		if (!S_ISDIR(st.st_mode)) {
+			erofs_err("root of the filesystem is not a directory - %s",
+				  cfg.c_src_path);
+			usage();
+			return 1;
+		}
+		erofs_set_fs_root(cfg.c_src_path);
+	} else if (cfg.c_src_path) {
+		erofstar.fd = open(cfg.c_src_path, O_RDONLY);
+		if (erofstar.fd < 0) {
+			erofs_err("failed to open file: %s", cfg.c_src_path);
+			usage();
+			return 1;
+		}
 	}
 
 	if (cfg.c_unix_timestamp != -1) {
@@ -792,11 +822,13 @@ int main(int argc, char **argv)
 	}
 	if (cfg.c_dedupe)
 		erofs_warn("EXPERIMENTAL data deduplication feature in use. Use at your own risk!");
-	erofs_set_fs_root(cfg.c_src_path);
+
 #ifndef NDEBUG
 	if (cfg.c_random_pclusterblks)
 		srand(time(NULL));
 #endif
+	if (tar_mode && erofstar.index_mode)
+		sbi.blkszbits = 9;
 	sb_bh = erofs_buffer_init();
 	if (IS_ERR(sb_bh)) {
 		err = PTR_ERR(sb_bh);
@@ -852,7 +884,10 @@ int main(int argc, char **argv)
 			return 1;
 	}
 
-	err = erofs_generate_devtable();
+	if (tar_mode && erofstar.index_mode)
+		err = tarerofs_reserve_devtable(1);
+	else
+		err = erofs_generate_devtable();
 	if (err) {
 		erofs_err("failed to generate device table: %s",
 			  erofs_strerror(err));
@@ -863,25 +898,52 @@ int main(int argc, char **argv)
 
 	erofs_inode_manager_init();
 
-	err = erofs_build_shared_xattrs_from_path(cfg.c_src_path);
-	if (err) {
-		erofs_err("failed to build shared xattrs: %s",
-			  erofs_strerror(err));
-		goto exit;
-	}
-
-	root_inode = erofs_mkfs_build_tree_from_path(cfg.c_src_path);
-	if (IS_ERR(root_inode)) {
-		err = PTR_ERR(root_inode);
-		goto exit;
-	}
-
 	if (cfg.c_extra_ea_name_prefixes)
 		erofs_xattr_write_name_prefixes(packedfile);
 
+	if (!tar_mode) {
+		err = erofs_build_shared_xattrs_from_path(cfg.c_src_path);
+		if (err) {
+			erofs_err("failed to build shared xattrs: %s",
+				  erofs_strerror(err));
+			goto exit;
+		}
+
+		if (cfg.c_extra_ea_name_prefixes)
+			erofs_xattr_write_name_prefixes(packedfile);
+
+		root_inode = erofs_mkfs_build_tree_from_path(cfg.c_src_path);
+		if (IS_ERR(root_inode)) {
+			err = PTR_ERR(root_inode);
+			goto exit;
+		}
+	} else {
+		root_inode = erofs_new_inode();
+		if (IS_ERR(root_inode)) {
+			err = PTR_ERR(root_inode);
+			goto exit;
+		}
+		root_inode->i_srcpath = strdup("/");
+		root_inode->i_mode = S_IFDIR | 0777;
+		root_inode->i_parent = root_inode;
+		root_inode->i_mtime = sbi.build_time;
+		root_inode->i_mtime_nsec = sbi.build_time_nsec;
+		tarerofs_init_empty_dir(root_inode);
+
+		while (!(err = tarerofs_parse_tar(root_inode, &erofstar)));
+
+		if (err < 0)
+			goto exit;
+
+		err = tarerofs_dump_tree(root_inode);
+		if (err < 0)
+			goto exit;
+	}
 	root_nid = erofs_lookupnid(root_inode);
 	erofs_iput(root_inode);
 
+	if (tar_mode)
+		tarerofs_write_devtable(&erofstar);
 	if (cfg.c_chunkbits) {
 		erofs_info("total metadata: %u blocks", erofs_mapbh(NULL));
 		err = erofs_blob_remap();
