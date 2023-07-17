@@ -570,6 +570,14 @@ restart:
 		if (ret)
 			goto out;
 		goto restart;
+	} else if (th.typeflag == 'L') {
+		free(eh.path);
+		eh.path = malloc(st.st_size + 1);
+		if (st.st_size != erofs_read_from_fd(tar->fd, eh.path,
+						     st.st_size))
+			goto invalid_tar;
+		eh.path[st.st_size] = '\0';
+		goto restart;
 	} else if (th.typeflag == 'K') {
 		free(eh.link);
 		eh.link = malloc(st.st_size + 1);
