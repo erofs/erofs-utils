@@ -63,7 +63,7 @@ static void erofs_bupdate_mapped(struct erofs_buffer_block *bb)
 	if (bb->blkaddr == NULL_ADDR)
 		return;
 
-	bkt = mapped_buckets[bb->type] + bb->buffers.off % erofs_blksiz();
+	bkt = mapped_buckets[bb->type] + bb->buffers.off % erofs_blksiz(&sbi);
 	list_del(&bb->mapped_list);
 	list_add_tail(&bb->mapped_list, bkt);
 }
@@ -76,10 +76,10 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 			   unsigned int extrasize,
 			   bool dryrun)
 {
+	const unsigned int blksiz = erofs_blksiz(&sbi);
 	const erofs_off_t alignedoffset = roundup(bb->buffers.off, alignsize);
-	const int oob = cmpsgn(roundup((bb->buffers.off - 1) % erofs_blksiz() + 1,
-				       alignsize) + incr + extrasize,
-			       erofs_blksiz());
+	const int oob = cmpsgn(roundup((bb->buffers.off - 1) % blksiz + 1,
+				       alignsize) + incr + extrasize, blksiz);
 	bool tailupdate = false;
 	erofs_blk_t blkaddr;
 
@@ -91,7 +91,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 		blkaddr = bb->blkaddr;
 		if (blkaddr != NULL_ADDR) {
 			tailupdate = (tail_blkaddr == blkaddr +
-				      BLK_ROUND_UP(bb->buffers.off));
+				      DIV_ROUND_UP(bb->buffers.off, blksiz));
 			if (oob && !tailupdate)
 				return -EINVAL;
 		}
@@ -106,10 +106,11 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 		bb->buffers.off = alignedoffset + incr;
 		/* need to update the tail_blkaddr */
 		if (tailupdate)
-			tail_blkaddr = blkaddr + BLK_ROUND_UP(bb->buffers.off);
+			tail_blkaddr = blkaddr +
+					DIV_ROUND_UP(bb->buffers.off, blksiz);
 		erofs_bupdate_mapped(bb);
 	}
-	return (alignedoffset + incr - 1) % erofs_blksiz() + 1;
+	return ((alignedoffset + incr - 1) & (blksiz - 1)) + 1;
 }
 
 int erofs_bh_balloon(struct erofs_buffer_head *bh, erofs_off_t incr)
@@ -129,16 +130,17 @@ static int erofs_bfind_for_attach(int type, erofs_off_t size,
 				  unsigned int alignsize,
 				  struct erofs_buffer_block **bbp)
 {
+	const unsigned int blksiz = erofs_blksiz(&sbi);
 	struct erofs_buffer_block *cur, *bb;
 	unsigned int used0, used_before, usedmax, used;
 	int ret;
 
-	used0 = (size + required_ext) % erofs_blksiz() + inline_ext;
+	used0 = ((size + required_ext) & (blksiz - 1)) + inline_ext;
 	/* inline data should be in the same fs block */
-	if (used0 > erofs_blksiz())
+	if (used0 > blksiz)
 		return -ENOSPC;
 
-	if (!used0 || alignsize == erofs_blksiz()) {
+	if (!used0 || alignsize == blksiz) {
 		*bbp = NULL;
 		return 0;
 	}
@@ -147,10 +149,10 @@ static int erofs_bfind_for_attach(int type, erofs_off_t size,
 	bb = NULL;
 
 	/* try to find a most-fit mapped buffer block first */
-	if (size + required_ext + inline_ext >= erofs_blksiz())
+	if (size + required_ext + inline_ext >= blksiz)
 		goto skip_mapped;
 
-	used_before = rounddown(erofs_blksiz() -
+	used_before = rounddown(blksiz -
 				(size + required_ext + inline_ext), alignsize);
 	for (; used_before; --used_before) {
 		struct list_head *bt = mapped_buckets[type] + used_before;
@@ -168,7 +170,7 @@ static int erofs_bfind_for_attach(int type, erofs_off_t size,
 
 		DBG_BUGON(cur->type != type);
 		DBG_BUGON(cur->blkaddr == NULL_ADDR);
-		DBG_BUGON(used_before != cur->buffers.off % erofs_blksiz());
+		DBG_BUGON(used_before != cur->buffers.off % blksiz);
 
 		ret = __erofs_battach(cur, NULL, size, alignsize,
 				      required_ext + inline_ext, true);
@@ -179,7 +181,7 @@ static int erofs_bfind_for_attach(int type, erofs_off_t size,
 
 		/* should contain all data in the current block */
 		used = ret + required_ext + inline_ext;
-		DBG_BUGON(used > erofs_blksiz());
+		DBG_BUGON(used > blksiz);
 
 		bb = cur;
 		usedmax = used;
@@ -192,7 +194,7 @@ skip_mapped:
 	if (cur == &blkh)
 		cur = list_next_entry(cur, list);
 	for (; cur != &blkh; cur = list_next_entry(cur, list)) {
-		used_before = cur->buffers.off % erofs_blksiz();
+		used_before = cur->buffers.off & (blksiz - 1);
 
 		/* skip if buffer block is just full */
 		if (!used_before)
@@ -207,10 +209,10 @@ skip_mapped:
 		if (ret < 0)
 			continue;
 
-		used = (ret + required_ext) % erofs_blksiz() + inline_ext;
+		used = ((ret + required_ext) & (blksiz - 1)) + inline_ext;
 
 		/* should contain inline data in current block */
-		if (used > erofs_blksiz())
+		if (used > blksiz)
 			continue;
 
 		/*
@@ -323,7 +325,7 @@ static erofs_blk_t __erofs_mapbh(struct erofs_buffer_block *bb)
 		erofs_bupdate_mapped(bb);
 	}
 
-	blkaddr = bb->blkaddr + BLK_ROUND_UP(bb->buffers.off);
+	blkaddr = bb->blkaddr + BLK_ROUND_UP(&sbi, bb->buffers.off);
 	if (blkaddr > tail_blkaddr)
 		tail_blkaddr = blkaddr;
 
@@ -349,6 +351,7 @@ erofs_blk_t erofs_mapbh(struct erofs_buffer_block *bb)
 
 bool erofs_bflush(struct erofs_buffer_block *bb)
 {
+	const unsigned int blksiz = erofs_blksiz(&sbi);
 	struct erofs_buffer_block *p, *n;
 	erofs_blk_t blkaddr;
 
@@ -376,9 +379,9 @@ bool erofs_bflush(struct erofs_buffer_block *bb)
 		if (skip)
 			continue;
 
-		padding = erofs_blksiz() - p->buffers.off % erofs_blksiz();
-		if (padding != erofs_blksiz())
-			dev_fillzero(erofs_pos(blkaddr) - padding,
+		padding = blksiz - (p->buffers.off & (blksiz - 1));
+		if (padding != blksiz)
+			dev_fillzero(&sbi, erofs_pos(&sbi, blkaddr) - padding,
 				     padding, true);
 
 		DBG_BUGON(!list_empty(&p->buffers.list));
@@ -400,7 +403,7 @@ void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke)
 
 	/* tail_blkaddr could be rolled back after revoking all bhs */
 	if (tryrevoke && blkaddr != NULL_ADDR &&
-	    tail_blkaddr == blkaddr + BLK_ROUND_UP(bb->buffers.off))
+	    tail_blkaddr == blkaddr + BLK_ROUND_UP(&sbi, bb->buffers.off))
 		rollback = true;
 
 	bh->op = &erofs_drop_directly_bhops;

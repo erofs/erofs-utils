@@ -229,7 +229,7 @@ void z_erofs_fragments_commit(struct erofs_inode *inode)
 		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
 
 	inode->z_advise |= Z_EROFS_ADVISE_FRAGMENT_PCLUSTER;
-	erofs_sb_set_fragments();
+	erofs_sb_set_fragments(inode->sbi);
 }
 
 int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd,

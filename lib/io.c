@@ -23,12 +23,7 @@
 #define EROFS_MODNAME	"erofs_io"
 #include "erofs/print.h"
 
-static const char *erofs_devname;
-int erofs_devfd = -1;
-static u64 erofs_devsz;
-static unsigned int erofs_nblobs, erofs_blobfd[256];
-
-int dev_get_blkdev_size(int fd, u64 *bytes)
+static int dev_get_blkdev_size(int fd, u64 *bytes)
 {
 	errno = ENOTSUP;
 #ifdef BLKGETSIZE64
@@ -48,15 +43,15 @@ int dev_get_blkdev_size(int fd, u64 *bytes)
 	return -errno;
 }
 
-void dev_close(void)
+void dev_close(struct erofs_sb_info *sbi)
 {
-	close(erofs_devfd);
-	erofs_devname = NULL;
-	erofs_devfd   = -1;
-	erofs_devsz   = 0;
+	close(sbi->devfd);
+	sbi->devname = NULL;
+	sbi->devfd   = -1;
+	sbi->devsz   = 0;
 }
 
-int dev_open(const char *dev)
+int dev_open(struct erofs_sb_info *sbi, const char *dev)
 {
 	struct stat st;
 	int fd, ret;
@@ -76,13 +71,13 @@ int dev_open(const char *dev)
 
 	switch (st.st_mode & S_IFMT) {
 	case S_IFBLK:
-		ret = dev_get_blkdev_size(fd, &erofs_devsz);
+		ret = dev_get_blkdev_size(fd, &sbi->devsz);
 		if (ret) {
 			erofs_err("failed to get block device size(%s).", dev);
 			close(fd);
 			return ret;
 		}
-		erofs_devsz = round_down(erofs_devsz, erofs_blksiz());
+		sbi->devsz = round_down(sbi->devsz, erofs_blksiz(sbi));
 		break;
 	case S_IFREG:
 		ret = ftruncate(fd, 0);
@@ -92,7 +87,7 @@ int dev_open(const char *dev)
 			return -errno;
 		}
 		/* INT64_MAX is the limit of kernel vfs */
-		erofs_devsz = INT64_MAX;
+		sbi->devsz = INT64_MAX;
 		break;
 	default:
 		erofs_err("bad file type (%s, %o).", dev, st.st_mode);
@@ -100,23 +95,23 @@ int dev_open(const char *dev)
 		return -EINVAL;
 	}
 
-	erofs_devname = dev;
-	erofs_devfd = fd;
+	sbi->devname = dev;
+	sbi->devfd = fd;
 
 	erofs_info("successfully to open %s", dev);
 	return 0;
 }
 
-void blob_closeall(void)
+void blob_closeall(struct erofs_sb_info *sbi)
 {
 	unsigned int i;
 
-	for (i = 0; i < erofs_nblobs; ++i)
-		close(erofs_blobfd[i]);
-	erofs_nblobs = 0;
+	for (i = 0; i < sbi->nblobs; ++i)
+		close(sbi->blobfd[i]);
+	sbi->nblobs = 0;
 }
 
-int blob_open_ro(const char *dev)
+int blob_open_ro(struct erofs_sb_info *sbi, const char *dev)
 {
 	int fd = open(dev, O_RDONLY | O_BINARY);
 
@@ -125,14 +120,14 @@ int blob_open_ro(const char *dev)
 		return -errno;
 	}
 
-	erofs_blobfd[erofs_nblobs] = fd;
-	erofs_info("successfully to open blob%u %s", erofs_nblobs, dev);
-	++erofs_nblobs;
+	sbi->blobfd[sbi->nblobs] = fd;
+	erofs_info("successfully to open blob%u %s", sbi->nblobs, dev);
+	++sbi->nblobs;
 	return 0;
 }
 
 /* XXX: temporary soluation. Disk I/O implementation needs to be refactored. */
-int dev_open_ro(const char *dev)
+int dev_open_ro(struct erofs_sb_info *sbi, const char *dev)
 {
 	int fd = open(dev, O_RDONLY | O_BINARY);
 
@@ -141,18 +136,13 @@ int dev_open_ro(const char *dev)
 		return -errno;
 	}
 
-	erofs_devfd = fd;
-	erofs_devname = dev;
-	erofs_devsz = INT64_MAX;
+	sbi->devfd = fd;
+	sbi->devname = dev;
+	sbi->devsz = INT64_MAX;
 	return 0;
 }
 
-u64 dev_length(void)
-{
-	return erofs_devsz;
-}
-
-int dev_write(const void *buf, u64 offset, size_t len)
+int dev_write(struct erofs_sb_info *sbi, const void *buf, u64 offset, size_t len)
 {
 	int ret;
 
@@ -164,33 +154,33 @@ int dev_write(const void *buf, u64 offset, size_t len)
 		return -EINVAL;
 	}
 
-	if (offset >= erofs_devsz || len > erofs_devsz ||
-	    offset > erofs_devsz - len) {
+	if (offset >= sbi->devsz || len > sbi->devsz ||
+	    offset > sbi->devsz - len) {
 		erofs_err("Write posion[%" PRIu64 ", %zd] is too large beyond the end of device(%" PRIu64 ").",
-			  offset, len, erofs_devsz);
+			  offset, len, sbi->devsz);
 		return -EINVAL;
 	}
 
 #ifdef HAVE_PWRITE64
-	ret = pwrite64(erofs_devfd, buf, len, (off64_t)offset);
+	ret = pwrite64(sbi->devfd, buf, len, (off64_t)offset);
 #else
-	ret = pwrite(erofs_devfd, buf, len, (off_t)offset);
+	ret = pwrite(sbi->devfd, buf, len, (off_t)offset);
 #endif
 	if (ret != (int)len) {
 		if (ret < 0) {
 			erofs_err("Failed to write data into device - %s:[%" PRIu64 ", %zd].",
-				  erofs_devname, offset, len);
+				  sbi->devname, offset, len);
 			return -errno;
 		}
 
 		erofs_err("Writing data into device - %s:[%" PRIu64 ", %zd] - was truncated.",
-			  erofs_devname, offset, len);
+			  sbi->devname, offset, len);
 		return -ERANGE;
 	}
 	return 0;
 }
 
-int dev_fillzero(u64 offset, size_t len, bool padding)
+int dev_fillzero(struct erofs_sb_info *sbi, u64 offset, size_t len, bool padding)
 {
 	static const char zero[EROFS_MAX_BLOCK_SIZE] = {0};
 	int ret;
@@ -199,25 +189,25 @@ int dev_fillzero(u64 offset, size_t len, bool padding)
 		return 0;
 
 #if defined(HAVE_FALLOCATE) && defined(FALLOC_FL_PUNCH_HOLE)
-	if (!padding && fallocate(erofs_devfd, FALLOC_FL_PUNCH_HOLE |
+	if (!padding && fallocate(sbi->devfd, FALLOC_FL_PUNCH_HOLE |
 				  FALLOC_FL_KEEP_SIZE, offset, len) >= 0)
 		return 0;
 #endif
-	while (len > erofs_blksiz()) {
-		ret = dev_write(zero, offset, erofs_blksiz());
+	while (len > erofs_blksiz(sbi)) {
+		ret = dev_write(sbi, zero, offset, erofs_blksiz(sbi));
 		if (ret)
 			return ret;
-		len -= erofs_blksiz();
-		offset += erofs_blksiz();
+		len -= erofs_blksiz(sbi);
+		offset += erofs_blksiz(sbi);
 	}
-	return dev_write(zero, offset, len);
+	return dev_write(sbi, zero, offset, len);
 }
 
-int dev_fsync(void)
+int dev_fsync(struct erofs_sb_info *sbi)
 {
 	int ret;
 
-	ret = fsync(erofs_devfd);
+	ret = fsync(sbi->devfd);
 	if (ret) {
 		erofs_err("Could not fsync device!!!");
 		return -EIO;
@@ -225,36 +215,37 @@ int dev_fsync(void)
 	return 0;
 }
 
-int dev_resize(unsigned int blocks)
+int dev_resize(struct erofs_sb_info *sbi, unsigned int blocks)
 {
 	int ret;
 	struct stat st;
 	u64 length;
 
-	if (cfg.c_dry_run || erofs_devsz != INT64_MAX)
+	if (cfg.c_dry_run || sbi->devsz != INT64_MAX)
 		return 0;
 
-	ret = fstat(erofs_devfd, &st);
+	ret = fstat(sbi->devfd, &st);
 	if (ret) {
 		erofs_err("failed to fstat.");
 		return -errno;
 	}
 
-	length = (u64)blocks * erofs_blksiz();
+	length = (u64)blocks * erofs_blksiz(sbi);
 	if (st.st_size == length)
 		return 0;
 	if (st.st_size > length)
-		return ftruncate(erofs_devfd, length);
+		return ftruncate(sbi->devfd, length);
 
 	length = length - st.st_size;
 #if defined(HAVE_FALLOCATE)
-	if (fallocate(erofs_devfd, 0, st.st_size, length) >= 0)
+	if (fallocate(sbi->devfd, 0, st.st_size, length) >= 0)
 		return 0;
 #endif
-	return dev_fillzero(st.st_size, length, true);
+	return dev_fillzero(sbi, st.st_size, length, true);
 }
 
-int dev_read(int device_id, void *buf, u64 offset, size_t len)
+int dev_read(struct erofs_sb_info *sbi, int device_id,
+	     void *buf, u64 offset, size_t len)
 {
 	int read_count, fd;
 
@@ -269,13 +260,13 @@ int dev_read(int device_id, void *buf, u64 offset, size_t len)
 	}
 
 	if (!device_id) {
-		fd = erofs_devfd;
+		fd = sbi->devfd;
 	} else {
-		if (device_id > erofs_nblobs) {
+		if (device_id > sbi->nblobs) {
 			erofs_err("invalid device id %d", device_id);
 			return -ENODEV;
 		}
-		fd = erofs_blobfd[device_id - 1];
+		fd = sbi->blobfd[device_id - 1];
 	}
 
 	while (len > 0) {
@@ -287,12 +278,12 @@ int dev_read(int device_id, void *buf, u64 offset, size_t len)
 		if (read_count < 1) {
 			if (!read_count) {
 				erofs_info("Reach EOF of device - %s:[%" PRIu64 ", %zd].",
-					   erofs_devname, offset, len);
+					   sbi->devname, offset, len);
 				memset(buf, 0, len);
 				return 0;
 			} else if (errno != EINTR) {
 				erofs_err("Failed to read data from device - %s:[%" PRIu64 ", %zd].",
-					  erofs_devname, offset, len);
+					  sbi->devname, offset, len);
 				return -errno;
 			}
 		}

@@ -27,6 +27,7 @@ struct erofs_compressor {
 };
 
 struct erofs_compress {
+	struct erofs_sb_info *sbi;
 	const struct erofs_compressor *alg;
 
 	unsigned int compress_threshold;
@@ -52,7 +53,8 @@ int erofs_compress_destsize(const struct erofs_compress *c,
 			    void *dst, unsigned int dstsize, bool inblocks);
 
 int erofs_compressor_setlevel(struct erofs_compress *c, int compression_level);
-int erofs_compressor_init(struct erofs_compress *c, char *alg_name);
+int erofs_compressor_init(struct erofs_sb_info *sbi,
+		struct erofs_compress *c, char *alg_name);
 int erofs_compressor_exit(struct erofs_compress *c);
 
 #endif

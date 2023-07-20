@@ -22,34 +22,36 @@ extern "C"
 #define O_BINARY	0
 #endif
 
-void blob_closeall(void);
-int blob_open_ro(const char *dev);
-int dev_open(const char *devname);
-int dev_open_ro(const char *dev);
-void dev_close(void);
-int dev_write(const void *buf, u64 offset, size_t len);
-int dev_read(int device_id, void *buf, u64 offset, size_t len);
-int dev_fillzero(u64 offset, size_t len, bool padding);
-int dev_fsync(void);
-int dev_resize(erofs_blk_t nblocks);
-u64 dev_length(void);
-
-extern int erofs_devfd;
+void blob_closeall(struct erofs_sb_info *sbi);
+int blob_open_ro(struct erofs_sb_info *sbi, const char *dev);
+int dev_open(struct erofs_sb_info *sbi, const char *devname);
+int dev_open_ro(struct erofs_sb_info *sbi, const char *dev);
+void dev_close(struct erofs_sb_info *sbi);
+int dev_write(struct erofs_sb_info *sbi, const void *buf,
+	      u64 offset, size_t len);
+int dev_read(struct erofs_sb_info *sbi, int device_id,
+	     void *buf, u64 offset, size_t len);
+int dev_fillzero(struct erofs_sb_info *sbi, u64 offset,
+		 size_t len, bool padding);
+int dev_fsync(struct erofs_sb_info *sbi);
+int dev_resize(struct erofs_sb_info *sbi, erofs_blk_t nblocks);
 
 ssize_t erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
 			      int fd_out, erofs_off_t *off_out,
 			      size_t length);
 
-static inline int blk_write(const void *buf, erofs_blk_t blkaddr,
-			    u32 nblocks)
+static inline int blk_write(struct erofs_sb_info *sbi, const void *buf,
+			    erofs_blk_t blkaddr, u32 nblocks)
 {
-	return dev_write(buf, erofs_pos(blkaddr), erofs_pos(nblocks));
+	return dev_write(sbi, buf, erofs_pos(sbi, blkaddr),
+			 erofs_pos(sbi, nblocks));
 }
 
-static inline int blk_read(int device_id, void *buf,
+static inline int blk_read(struct erofs_sb_info *sbi, int device_id, void *buf,
 			   erofs_blk_t start, u32 nblocks)
 {
-	return dev_read(device_id, buf, erofs_pos(start), erofs_pos(nblocks));
+	return dev_read(sbi, device_id, buf, erofs_pos(sbi, start),
+			erofs_pos(sbi, nblocks));
 }
 
 #ifdef __cplusplus

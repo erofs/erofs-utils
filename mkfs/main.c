@@ -189,7 +189,7 @@ static int parse_extended_opts(const char *opts)
 		if (MATCH_EXTENTED_OPT("nosbcrc", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
-			erofs_sb_clear_sb_chksum();
+			erofs_sb_clear_sb_chksum(&sbi);
 		}
 
 		if (MATCH_EXTENTED_OPT("noinline_data", token, keylen)) {
@@ -442,7 +442,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 					  optarg);
 				return -EINVAL;
 			}
-			erofs_sb_set_chunked_file();
+			erofs_sb_set_chunked_file(&sbi);
 			break;
 		case 12:
 			quiet = true;
@@ -545,14 +545,14 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		cfg.c_dbg_lvl = EROFS_ERR;
 		cfg.c_showprogress = false;
 	}
-	if (cfg.c_compr_alg[0] && erofs_blksiz() != EROFS_MAX_BLOCK_SIZE) {
+	if (cfg.c_compr_alg[0] && erofs_blksiz(&sbi) != EROFS_MAX_BLOCK_SIZE) {
 		erofs_err("compression is unsupported for now with block size %u",
-			  erofs_blksiz());
+			  erofs_blksiz(&sbi));
 		return -EINVAL;
 	}
 	if (pclustersize_max) {
-		if (pclustersize_max < erofs_blksiz() ||
-		    pclustersize_max % erofs_blksiz()) {
+		if (pclustersize_max < erofs_blksiz(&sbi) ||
+		    pclustersize_max % erofs_blksiz(&sbi)) {
 			erofs_err("invalid physical clustersize %u",
 				  pclustersize_max);
 			return -EINVAL;
@@ -567,8 +567,8 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	}
 
 	if (pclustersize_packed) {
-		if (pclustersize_max < erofs_blksiz() ||
-		    pclustersize_max % erofs_blksiz()) {
+		if (pclustersize_max < erofs_blksiz(&sbi) ||
+		    pclustersize_max % erofs_blksiz(&sbi)) {
 			erofs_err("invalid pcluster size for the packed file %u",
 				  pclustersize_packed);
 			return -EINVAL;
@@ -600,7 +600,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 		.extra_devices = cpu_to_le16(sbi.extra_devices),
 		.devt_slotoff = cpu_to_le16(sbi.devt_slotoff),
 	};
-	const u32 sb_blksize = round_up(EROFS_SUPER_END, erofs_blksiz());
+	const u32 sb_blksize = round_up(EROFS_SUPER_END, erofs_blksiz(&sbi));
 	char *buf;
 	int ret;
 
@@ -611,7 +611,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	memcpy(sb.uuid, sbi.uuid, sizeof(sb.uuid));
 	memcpy(sb.volume_name, sbi.volume_name, sizeof(sb.volume_name));
 
-	if (erofs_sb_has_compr_cfgs())
+	if (erofs_sb_has_compr_cfgs(&sbi))
 		sb.u1.available_compr_algs = cpu_to_le16(sbi.available_compr_algs);
 	else
 		sb.u1.lz4_max_distance = cpu_to_le16(sbi.lz4_max_distance);
@@ -624,7 +624,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	}
 	memcpy(buf + EROFS_SUPER_OFFSET, &sb, sizeof(sb));
 
-	ret = dev_write(buf, erofs_btell(bh, false), EROFS_SUPER_END);
+	ret = dev_write(&sbi, buf, erofs_btell(bh, false), EROFS_SUPER_END);
 	free(buf);
 	erofs_bdrop(bh, false);
 	return ret;
@@ -638,7 +638,7 @@ static int erofs_mkfs_superblock_csum_set(void)
 	unsigned int len;
 	struct erofs_super_block *sb;
 
-	ret = blk_read(0, buf, 0, erofs_blknr(EROFS_SUPER_END) + 1);
+	ret = blk_read(&sbi, 0, buf, 0, erofs_blknr(&sbi, EROFS_SUPER_END) + 1);
 	if (ret) {
 		erofs_err("failed to read superblock to set checksum: %s",
 			  erofs_strerror(ret));
@@ -659,16 +659,16 @@ static int erofs_mkfs_superblock_csum_set(void)
 	/* turn on checksum feature */
 	sb->feature_compat = cpu_to_le32(le32_to_cpu(sb->feature_compat) |
 					 EROFS_FEATURE_COMPAT_SB_CHKSUM);
-	if (erofs_blksiz() > EROFS_SUPER_OFFSET)
-		len = erofs_blksiz() - EROFS_SUPER_OFFSET;
+	if (erofs_blksiz(&sbi) > EROFS_SUPER_OFFSET)
+		len = erofs_blksiz(&sbi) - EROFS_SUPER_OFFSET;
 	else
-		len = erofs_blksiz();
+		len = erofs_blksiz(&sbi);
 	crc = erofs_crc32c(~0, (u8 *)sb, len);
 
 	/* set up checksum field to erofs_super_block */
 	sb->checksum = cpu_to_le32(crc);
 
-	ret = blk_write(buf, 0, 1);
+	ret = blk_write(&sbi, buf, 0, 1);
 	if (ret) {
 		erofs_err("failed to write checksummed superblock: %s",
 			  erofs_strerror(ret));
@@ -782,7 +782,7 @@ int main(int argc, char **argv)
 		sbi.build_time_nsec = t.tv_usec;
 	}
 
-	err = dev_open(cfg.c_img_path);
+	err = dev_open(&sbi, cfg.c_img_path);
 	if (err) {
 		usage();
 		return 1;
@@ -850,14 +850,14 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
-	err = erofs_load_compress_hints();
+	err = erofs_load_compress_hints(&sbi);
 	if (err) {
 		erofs_err("failed to load compress hints %s",
 			  cfg.c_compress_hints_file);
 		goto exit;
 	}
 
-	err = z_erofs_compress_init(sb_bh);
+	err = z_erofs_compress_init(&sbi, sb_bh);
 	if (err) {
 		erofs_err("failed to initialize compressor: %s",
 			  erofs_strerror(err));
@@ -869,7 +869,7 @@ int main(int argc, char **argv)
 			erofs_err("Compression is not enabled.  Turn on chunk-based data deduplication instead.");
 			cfg.c_chunkbits = sbi.blkszbits;
 		} else {
-			err = z_erofs_dedupe_init(erofs_blksiz());
+			err = z_erofs_dedupe_init(erofs_blksiz(&sbi));
 			if (err) {
 				erofs_err("failed to initialize deduplication: %s",
 					  erofs_strerror(err));
@@ -885,9 +885,9 @@ int main(int argc, char **argv)
 	}
 
 	if (tar_mode && erofstar.index_mode)
-		err = tarerofs_reserve_devtable(1);
+		err = tarerofs_reserve_devtable(&sbi, 1);
 	else
-		err = erofs_generate_devtable();
+		err = erofs_generate_devtable(&sbi);
 	if (err) {
 		erofs_err("failed to generate device table: %s",
 			  erofs_strerror(err));
@@ -899,10 +899,10 @@ int main(int argc, char **argv)
 	erofs_inode_manager_init();
 
 	if (cfg.c_extra_ea_name_prefixes)
-		erofs_xattr_write_name_prefixes(packedfile);
+		erofs_xattr_write_name_prefixes(&sbi, packedfile);
 
 	if (!tar_mode) {
-		err = erofs_build_shared_xattrs_from_path(cfg.c_src_path);
+		err = erofs_build_shared_xattrs_from_path(&sbi, cfg.c_src_path);
 		if (err) {
 			erofs_err("failed to build shared xattrs: %s",
 				  erofs_strerror(err));
@@ -910,7 +910,7 @@ int main(int argc, char **argv)
 		}
 
 		if (cfg.c_extra_ea_name_prefixes)
-			erofs_xattr_write_name_prefixes(packedfile);
+			erofs_xattr_write_name_prefixes(&sbi, packedfile);
 
 		root_inode = erofs_mkfs_build_tree_from_path(cfg.c_src_path);
 		if (IS_ERR(root_inode)) {
@@ -943,17 +943,17 @@ int main(int argc, char **argv)
 	erofs_iput(root_inode);
 
 	if (tar_mode)
-		tarerofs_write_devtable(&erofstar);
+		tarerofs_write_devtable(&sbi, &erofstar);
 	if (cfg.c_chunkbits) {
 		erofs_info("total metadata: %u blocks", erofs_mapbh(NULL));
-		err = erofs_blob_remap();
+		err = erofs_blob_remap(&sbi);
 		if (err)
 			goto exit;
 	}
 
 	packed_nid = 0;
 	if ((cfg.c_fragments || cfg.c_extra_ea_name_prefixes) &&
-	    erofs_sb_has_fragments()) {
+	    erofs_sb_has_fragments(&sbi)) {
 		erofs_update_progressinfo("Handling packed_file ...");
 		packed_inode = erofs_mkfs_build_packedfile();
 		if (IS_ERR(packed_inode)) {
@@ -973,9 +973,9 @@ int main(int argc, char **argv)
 	if (!erofs_bflush(NULL))
 		err = -EIO;
 	else
-		err = dev_resize(nblocks);
+		err = dev_resize(&sbi, nblocks);
 
-	if (!err && erofs_sb_has_sb_chksum())
+	if (!err && erofs_sb_has_sb_chksum(&sbi))
 		err = erofs_mkfs_superblock_csum_set();
 exit:
 	z_erofs_compress_exit();
@@ -983,7 +983,7 @@ exit:
 #ifdef WITH_ANDROID
 	erofs_droid_blocklist_fclose();
 #endif
-	dev_close();
+	dev_close(&sbi);
 	erofs_cleanup_compress_hints();
 	erofs_cleanup_exclude_rules();
 	if (cfg.c_chunkbits)

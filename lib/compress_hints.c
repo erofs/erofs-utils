@@ -86,7 +86,7 @@ void erofs_cleanup_compress_hints(void)
 	}
 }
 
-int erofs_load_compress_hints(void)
+int erofs_load_compress_hints(struct erofs_sb_info *sbi)
 {
 	char buf[PATH_MAX + 100];
 	FILE *f;
@@ -133,21 +133,21 @@ int erofs_load_compress_hints(void)
 			}
 		}
 
-		if (pclustersize % erofs_blksiz()) {
+		if (pclustersize % erofs_blksiz(sbi)) {
 			erofs_warn("invalid physical clustersize %u, "
 				   "use default pclusterblks %u",
 				   pclustersize, cfg.c_pclusterblks_def);
 			continue;
 		}
 		erofs_insert_compress_hints(pattern,
-					    pclustersize / erofs_blksiz(), ccfg);
+				pclustersize / erofs_blksiz(sbi), ccfg);
 
 		if (pclustersize > max_pclustersize)
 			max_pclustersize = pclustersize;
 	}
 
-	if (cfg.c_pclusterblks_max * erofs_blksiz() < max_pclustersize) {
-		cfg.c_pclusterblks_max = max_pclustersize / erofs_blksiz();
+	if (cfg.c_pclusterblks_max * erofs_blksiz(sbi) < max_pclustersize) {
+		cfg.c_pclusterblks_max = max_pclustersize / erofs_blksiz(sbi);
 		erofs_warn("update max pclusterblks to %u", cfg.c_pclusterblks_max);
 	}
 out:

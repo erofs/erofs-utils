@@ -49,6 +49,7 @@ int erofsfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	};
 	erofs_dbg("readdir:%s offset=%llu", path, (long long)offset);
 
+	dir.sbi = &sbi;
 	ret = erofs_ilookup(path, &dir);
 	if (ret)
 		return ret;
@@ -84,7 +85,7 @@ static int erofsfuse_open(const char *path, struct fuse_file_info *fi)
 
 static int erofsfuse_getattr(const char *path, struct stat *stbuf)
 {
-	struct erofs_inode vi = {};
+	struct erofs_inode vi = { .sbi = &sbi };
 	int ret;
 
 	erofs_dbg("getattr(%s)", path);
@@ -95,7 +96,7 @@ static int erofsfuse_getattr(const char *path, struct stat *stbuf)
 	stbuf->st_mode  = vi.i_mode;
 	stbuf->st_nlink = vi.i_nlink;
 	stbuf->st_size  = vi.i_size;
-	stbuf->st_blocks = roundup(vi.i_size, erofs_blksiz()) >> 9;
+	stbuf->st_blocks = roundup(vi.i_size, erofs_blksiz(vi.sbi)) >> 9;
 	stbuf->st_uid = vi.i_uid;
 	stbuf->st_gid = vi.i_gid;
 	if (S_ISBLK(vi.i_mode) || S_ISCHR(vi.i_mode))
@@ -115,6 +116,7 @@ static int erofsfuse_read(const char *path, char *buffer,
 
 	erofs_dbg("path:%s size=%zd offset=%llu", path, size, (long long)offset);
 
+	vi.sbi = &sbi;
 	ret = erofs_ilookup(path, &vi);
 	if (ret)
 		return ret;
@@ -155,6 +157,7 @@ static int erofsfuse_getxattr(const char *path, const char *name, char *value,
 
 	erofs_dbg("getxattr(%s): name=%s size=%llu", path, name, size);
 
+	vi.sbi = &sbi;
 	ret = erofs_ilookup(path, &vi);
 	if (ret)
 		return ret;
@@ -169,6 +172,7 @@ static int erofsfuse_listxattr(const char *path, char *list, size_t size)
 
 	erofs_dbg("listxattr(%s): size=%llu", path, size);
 
+	vi.sbi = &sbi;
 	ret = erofs_ilookup(path, &vi);
 	if (ret)
 		return ret;
@@ -244,7 +248,7 @@ static int optional_opt_func(void *data, const char *arg, int key,
 
 	switch (key) {
 	case 1:
-		ret = blob_open_ro(arg + sizeof("--device=") - 1);
+		ret = blob_open_ro(&sbi, arg + sizeof("--device=") - 1);
 		if (ret)
 			return -1;
 		++sbi.extra_devices;
@@ -325,13 +329,13 @@ int main(int argc, char *argv[])
 	cfg.c_offset = fusecfg.offset;
 
 	erofsfuse_dumpcfg();
-	ret = dev_open_ro(fusecfg.disk);
+	ret = dev_open_ro(&sbi, fusecfg.disk);
 	if (ret) {
 		fprintf(stderr, "failed to open: %s\n", fusecfg.disk);
 		goto err_fuse_free_args;
 	}
 
-	ret = erofs_read_superblock();
+	ret = erofs_read_superblock(&sbi);
 	if (ret) {
 		fprintf(stderr, "failed to read erofs super block\n");
 		goto err_dev_close;
@@ -339,10 +343,10 @@ int main(int argc, char *argv[])
 
 	ret = fuse_main(args.argc, args.argv, &erofs_ops, NULL);
 
-	erofs_put_super();
+	erofs_put_super(&sbi);
 err_dev_close:
-	blob_closeall();
-	dev_close();
+	blob_closeall(&sbi);
+	dev_close(&sbi);
 err_fuse_free_args:
 	fuse_opt_free_args(&args);
 err:

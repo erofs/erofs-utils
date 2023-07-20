@@ -158,7 +158,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 			}
 			break;
 		case 3:
-			ret = blob_open_ro(optarg);
+			ret = blob_open_ro(&sbi, optarg);
 			if (ret)
 				return ret;
 			++sbi.extra_devices;
@@ -279,7 +279,7 @@ static int erofs_check_sb_chksum(void)
 	struct erofs_super_block *sb;
 	int ret;
 
-	ret = blk_read(0, buf, 0, 1);
+	ret = blk_read(&sbi, 0, buf, 0, 1);
 	if (ret) {
 		erofs_err("failed to read superblock to check checksum: %d",
 			  ret);
@@ -289,7 +289,7 @@ static int erofs_check_sb_chksum(void)
 	sb = (struct erofs_super_block *)(buf + EROFS_SUPER_OFFSET);
 	sb->checksum = 0;
 
-	crc = erofs_crc32c(~0, (u8 *)sb, erofs_blksiz() - EROFS_SUPER_OFFSET);
+	crc = erofs_crc32c(~0, (u8 *)sb, erofs_blksiz(&sbi) - EROFS_SUPER_OFFSET);
 	if (crc != sbi.checksum) {
 		erofs_err("superblock chksum doesn't match: saved(%08xh) calculated(%08xh)",
 			  sbi.checksum, crc);
@@ -302,6 +302,7 @@ static int erofs_check_sb_chksum(void)
 
 static int erofs_verify_xattr(struct erofs_inode *inode)
 {
+	struct erofs_sb_info *sbi = inode->sbi;
 	unsigned int xattr_hdr_size = sizeof(struct erofs_xattr_ibody_header);
 	unsigned int xattr_entry_size = sizeof(struct erofs_xattr_entry);
 	erofs_off_t addr;
@@ -326,7 +327,7 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	}
 
 	addr = erofs_iloc(inode) + inode->inode_isize;
-	ret = dev_read(0, buf, addr, xattr_hdr_size);
+	ret = dev_read(sbi, 0, buf, addr, xattr_hdr_size);
 	if (ret < 0) {
 		erofs_err("failed to read xattr header @ nid %llu: %d",
 			  inode->nid | 0ULL, ret);
@@ -335,12 +336,12 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	ih = (struct erofs_xattr_ibody_header *)buf;
 	xattr_shared_count = ih->h_shared_count;
 
-	ofs = erofs_blkoff(addr) + xattr_hdr_size;
+	ofs = erofs_blkoff(sbi, addr) + xattr_hdr_size;
 	addr += xattr_hdr_size;
 	remaining -= xattr_hdr_size;
 	for (i = 0; i < xattr_shared_count; ++i) {
-		if (ofs >= erofs_blksiz()) {
-			if (ofs != erofs_blksiz()) {
+		if (ofs >= erofs_blksiz(sbi)) {
+			if (ofs != erofs_blksiz(sbi)) {
 				erofs_err("unaligned xattr entry in xattr shared area @ nid %llu",
 					  inode->nid | 0ULL);
 				ret = -EFSCORRUPTED;
@@ -356,7 +357,7 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	while (remaining > 0) {
 		unsigned int entry_sz;
 
-		ret = dev_read(0, buf, addr, xattr_entry_size);
+		ret = dev_read(sbi, 0, buf, addr, xattr_entry_size);
 		if (ret) {
 			erofs_err("failed to read xattr entry @ nid %llu: %d",
 				  inode->nid | 0ULL, ret);
@@ -483,7 +484,7 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 				u64 count = min_t(u64, alloc_rawsize,
 						  map.m_llen);
 
-				ret = erofs_read_one_data(&map, raw, p, count);
+				ret = erofs_read_one_data(inode, &map, raw, p, count);
 				if (ret)
 					goto out;
 
@@ -497,8 +498,8 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 
 	if (fsckcfg.print_comp_ratio) {
 		if (!erofs_is_packed_inode(inode))
-			fsckcfg.logical_blocks += BLK_ROUND_UP(inode->i_size);
-		fsckcfg.physical_blocks += BLK_ROUND_UP(pchunk_len);
+			fsckcfg.logical_blocks += BLK_ROUND_UP(inode->sbi, inode->i_size);
+		fsckcfg.physical_blocks += BLK_ROUND_UP(inode->sbi, pchunk_len);
 	}
 out:
 	if (raw)
@@ -845,6 +846,7 @@ static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 	erofs_dbg("check inode: nid(%llu)", nid | 0ULL);
 
 	inode.nid = nid;
+	inode.sbi = &sbi;
 	ret = erofs_read_inode_from_disk(&inode);
 	if (ret) {
 		if (ret == -EIO)
@@ -920,19 +922,19 @@ int main(int argc, char *argv[])
 	cfg.c_dbg_lvl = -1;
 #endif
 
-	err = dev_open_ro(cfg.c_img_path);
+	err = dev_open_ro(&sbi, cfg.c_img_path);
 	if (err) {
 		erofs_err("failed to open image file");
 		goto exit;
 	}
 
-	err = erofs_read_superblock();
+	err = erofs_read_superblock(&sbi);
 	if (err) {
 		erofs_err("failed to read superblock");
 		goto exit_dev_close;
 	}
 
-	if (erofs_sb_has_sb_chksum() && erofs_check_sb_chksum()) {
+	if (erofs_sb_has_sb_chksum(&sbi) && erofs_check_sb_chksum()) {
 		erofs_err("failed to verify superblock checksum");
 		goto exit_put_super;
 	}
@@ -940,7 +942,7 @@ int main(int argc, char *argv[])
 	if (fsckcfg.extract_path)
 		erofsfsck_hardlink_init();
 
-	if (erofs_sb_has_fragments() && sbi.packed_nid > 0) {
+	if (erofs_sb_has_fragments(&sbi) && sbi.packed_nid > 0) {
 		err = erofsfsck_check_inode(sbi.packed_nid, sbi.packed_nid);
 		if (err) {
 			erofs_err("failed to verify packed file");
@@ -974,11 +976,11 @@ exit_hardlink:
 	if (fsckcfg.extract_path)
 		erofsfsck_hardlink_exit();
 exit_put_super:
-	erofs_put_super();
+	erofs_put_super(&sbi);
 exit_dev_close:
-	dev_close();
+	dev_close(&sbi);
 exit:
-	blob_closeall();
+	blob_closeall(&sbi);
 	erofs_exit_configure();
 	return err ? 1 : 0;
 }

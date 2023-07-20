@@ -15,6 +15,7 @@
 
 static int z_erofs_decompress_deflate(struct z_erofs_decompress_req *rq)
 {
+	struct erofs_sb_info *sbi = rq->sbi;
 	u8 *dest = (u8 *)rq->out;
 	u8 *src = (u8 *)rq->in;
 	u8 *buff = NULL;
@@ -23,8 +24,8 @@ static int z_erofs_decompress_deflate(struct z_erofs_decompress_req *rq)
 	struct libdeflate_decompressor *inf;
 	enum libdeflate_result ret;
 
-	while (!src[inputmargin & (erofs_blksiz() - 1)])
-		if (!(++inputmargin & (erofs_blksiz() - 1)))
+	while (!src[inputmargin & (erofs_blksiz(sbi) - 1)])
+		if (!(++inputmargin & (erofs_blksiz(sbi) - 1)))
 			break;
 
 	if (inputmargin >= rq->inputsize)
@@ -96,15 +97,16 @@ static int zerr(int ret)
 
 static int z_erofs_decompress_deflate(struct z_erofs_decompress_req *rq)
 {
-	int ret = 0;
+	struct erofs_sb_info *sbi = rq->sbi;
 	u8 *dest = (u8 *)rq->out;
 	u8 *src = (u8 *)rq->in;
 	u8 *buff = NULL;
 	unsigned int inputmargin = 0;
 	z_stream strm;
+	int ret;
 
-	while (!src[inputmargin & (erofs_blksiz() - 1)])
-		if (!(++inputmargin & (erofs_blksiz() - 1)))
+	while (!src[inputmargin & (erofs_blksiz(sbi) - 1)])
+		if (!(++inputmargin & (erofs_blksiz(sbi) - 1)))
 			break;
 
 	if (inputmargin >= rq->inputsize)
@@ -158,6 +160,7 @@ out_inflate_end:
 static int z_erofs_decompress_lzma(struct z_erofs_decompress_req *rq)
 {
 	int ret = 0;
+	struct erofs_sb_info *sbi = rq->sbi;
 	u8 *dest = (u8 *)rq->out;
 	u8 *src = (u8 *)rq->in;
 	u8 *buff = NULL;
@@ -165,8 +168,8 @@ static int z_erofs_decompress_lzma(struct z_erofs_decompress_req *rq)
 	lzma_stream strm;
 	lzma_ret ret2;
 
-	while (!src[inputmargin & (erofs_blksiz() - 1)])
-		if (!(++inputmargin & (erofs_blksiz() - 1)))
+	while (!src[inputmargin & (erofs_blksiz(sbi) - 1)])
+		if (!(++inputmargin & (erofs_blksiz(sbi) - 1)))
 			break;
 
 	if (inputmargin >= rq->inputsize)
@@ -224,12 +227,13 @@ static int z_erofs_decompress_lz4(struct z_erofs_decompress_req *rq)
 	char *buff = NULL;
 	bool support_0padding = false;
 	unsigned int inputmargin = 0;
+	struct erofs_sb_info *sbi = rq->sbi;
 
-	if (erofs_sb_has_lz4_0padding()) {
+	if (erofs_sb_has_lz4_0padding(sbi)) {
 		support_0padding = true;
 
-		while (!src[inputmargin & (erofs_blksiz() - 1)])
-			if (!(++inputmargin & (erofs_blksiz() - 1)))
+		while (!src[inputmargin & (erofs_blksiz(sbi) - 1)])
+			if (!(++inputmargin & (erofs_blksiz(sbi) - 1)))
 				break;
 
 		if (inputmargin >= rq->inputsize)
@@ -274,22 +278,24 @@ out:
 
 int z_erofs_decompress(struct z_erofs_decompress_req *rq)
 {
+	struct erofs_sb_info *sbi = rq->sbi;
+
 	if (rq->alg == Z_EROFS_COMPRESSION_INTERLACED) {
 		unsigned int count, rightpart, skip;
 
-		/* XXX: should support inputsize >= erofs_blksiz() later */
-		if (rq->inputsize > erofs_blksiz())
+		/* XXX: should support inputsize >= erofs_blksiz(sbi) later */
+		if (rq->inputsize > erofs_blksiz(sbi))
 			return -EFSCORRUPTED;
 
-		if (rq->decodedlength > erofs_blksiz())
+		if (rq->decodedlength > erofs_blksiz(sbi))
 			return -EFSCORRUPTED;
 
 		if (rq->decodedlength < rq->decodedskip)
 			return -EFSCORRUPTED;
 
 		count = rq->decodedlength - rq->decodedskip;
-		skip = erofs_blkoff(rq->interlaced_offset + rq->decodedskip);
-		rightpart = min(erofs_blksiz() - skip, count);
+		skip = erofs_blkoff(sbi, rq->interlaced_offset + rq->decodedskip);
+		rightpart = min(erofs_blksiz(sbi) - skip, count);
 		memcpy(rq->out, rq->in + skip, rightpart);
 		memcpy(rq->out + rightpart, rq->in, count - rightpart);
 		return 0;

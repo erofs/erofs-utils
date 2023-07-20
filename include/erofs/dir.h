@@ -62,7 +62,8 @@ struct erofs_dir_context {
 /* Iterate over inodes that are in directory */
 int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck);
 /* Get a full pathname of the inode NID */
-int erofs_get_pathname(erofs_nid_t nid, char *buf, size_t size);
+int erofs_get_pathname(struct erofs_sb_info *sbi, erofs_nid_t nid,
+		       char *buf, size_t size);
 
 #ifdef __cplusplus
 }

@@ -14,6 +14,7 @@ extern "C"
 #include "internal.h"
 
 struct z_erofs_decompress_req {
+	struct erofs_sb_info *sbi;
 	char *in, *out;
 
 	/*

@@ -44,12 +44,11 @@ typedef u32 erofs_blk_t;
 /* global sbi */
 extern struct erofs_sb_info sbi;
 
-#define erofs_blksiz()		(1u << sbi.blkszbits)
-#define erofs_blknr(addr)       ((addr) >> sbi.blkszbits)
-#define erofs_blkoff(addr)      ((addr) & (erofs_blksiz() - 1))
-#define erofs_pos(nr)           ((erofs_off_t)(nr) << sbi.blkszbits)
-
-#define BLK_ROUND_UP(addr)	DIV_ROUND_UP(addr, 1u << sbi.blkszbits)
+#define erofs_blksiz(sbi)	(1u << (sbi)->blkszbits)
+#define erofs_blknr(sbi, addr)  ((addr) >> (sbi)->blkszbits)
+#define erofs_blkoff(sbi, addr) ((addr) & (erofs_blksiz(sbi) - 1))
+#define erofs_pos(sbi, nr)      ((erofs_off_t)(nr) << (sbi)->blkszbits)
+#define BLK_ROUND_UP(sbi, addr)	DIV_ROUND_UP(addr, erofs_blksiz(sbi))
 
 struct erofs_buffer_head;
 
@@ -62,6 +61,7 @@ struct erofs_device_info {
 
 struct erofs_sb_info {
 	struct erofs_device_info *devs;
+	const char *devname;
 
 	u64 total_blocks;
 	u64 primarydevice_blocks;
@@ -98,23 +98,28 @@ struct erofs_sb_info {
 
 	u32 xattr_prefix_start;
 	u8 xattr_prefix_count;
+
+	int devfd;
+	u64 devsz;
+	unsigned int nblobs;
+	unsigned int blobfd[256];
 };
 
 /* make sure that any user of the erofs headers has atleast 64bit off_t type */
 extern int erofs_assert_largefile[sizeof(off_t)-8];
 
 #define EROFS_FEATURE_FUNCS(name, compat, feature) \
-static inline bool erofs_sb_has_##name(void) \
+static inline bool erofs_sb_has_##name(struct erofs_sb_info *sbi) \
 { \
-	return sbi.feature_##compat & EROFS_FEATURE_##feature; \
+	return sbi->feature_##compat & EROFS_FEATURE_##feature; \
 } \
-static inline void erofs_sb_set_##name(void) \
+static inline void erofs_sb_set_##name(struct erofs_sb_info *sbi) \
 { \
-	sbi.feature_##compat |= EROFS_FEATURE_##feature; \
+	sbi->feature_##compat |= EROFS_FEATURE_##feature; \
 } \
-static inline void erofs_sb_clear_##name(void) \
+static inline void erofs_sb_clear_##name(struct erofs_sb_info *sbi) \
 { \
-	sbi.feature_##compat &= ~EROFS_FEATURE_##feature; \
+	sbi->feature_##compat &= ~EROFS_FEATURE_##feature; \
 }
 
 EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_ZERO_PADDING)
@@ -143,6 +148,7 @@ struct erofs_inode {
 		u32 subdirs_queued;
 	};
 	unsigned int i_count;
+	struct erofs_sb_info *sbi;
 	struct erofs_inode *i_parent;
 
 	umode_t i_mode;
@@ -216,7 +222,10 @@ struct erofs_inode {
 
 static inline erofs_off_t erofs_iloc(struct erofs_inode *inode)
 {
-	return erofs_pos(sbi.meta_blkaddr) + (inode->nid << sbi.islotbits);
+	struct erofs_sb_info *sbi = inode->sbi;
+
+	return erofs_pos(sbi, sbi->meta_blkaddr) +
+			(inode->nid << sbi->islotbits);
 }
 
 static inline bool is_inode_layout_compression(struct erofs_inode *inode)
@@ -336,22 +345,21 @@ struct erofs_map_dev {
 };
 
 /* super.c */
-int erofs_read_superblock(void);
-void erofs_put_super(void);
+int erofs_read_superblock(struct erofs_sb_info *sbi);
+void erofs_put_super(struct erofs_sb_info *sbi);
 
 /* namei.c */
 int erofs_read_inode_from_disk(struct erofs_inode *vi);
 int erofs_ilookup(const char *path, struct erofs_inode *vi);
-int erofs_read_inode_from_disk(struct erofs_inode *vi);
 
 /* data.c */
 int erofs_pread(struct erofs_inode *inode, char *buf,
 		erofs_off_t count, erofs_off_t offset);
 int erofs_map_blocks(struct erofs_inode *inode,
 		struct erofs_map_blocks *map, int flags);
-int erofs_map_dev(struct erofs_map_dev *map);
-int erofs_read_one_data(struct erofs_map_blocks *map, char *buffer, u64 offset,
-			size_t len);
+int erofs_map_dev(struct erofs_sb_info *sbi, struct erofs_map_dev *map);
+int erofs_read_one_data(struct erofs_inode *inode, struct erofs_map_blocks *map,
+			char *buffer, u64 offset, size_t len);
 int z_erofs_read_one_data(struct erofs_inode *inode,
 			struct erofs_map_blocks *map, char *raw, char *buffer,
 			erofs_off_t skip, erofs_off_t length, bool trimmed);
@@ -368,7 +376,7 @@ static inline int erofs_get_occupied_size(const struct erofs_inode *inode,
 		break;
 	case EROFS_INODE_COMPRESSED_FULL:
 	case EROFS_INODE_COMPRESSED_COMPACT:
-		*size = inode->u.i_blocks * erofs_blksiz();
+		*size = inode->u.i_blocks * erofs_blksiz(inode->sbi);
 		break;
 	default:
 		return -EOPNOTSUPP;

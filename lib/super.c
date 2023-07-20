@@ -31,7 +31,7 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 
 	sbi->total_blocks = sbi->primarydevice_blocks;
 
-	if (!erofs_sb_has_device_table())
+	if (!erofs_sb_has_device_table(sbi))
 		ondisk_extradevs = 0;
 	else
 		ondisk_extradevs = le16_to_cpu(dsb->extra_devices);
@@ -53,7 +53,7 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 		struct erofs_deviceslot dis;
 		int ret;
 
-		ret = dev_read(0, &dis, pos, sizeof(dis));
+		ret = dev_read(sbi, 0, &dis, pos, sizeof(dis));
 		if (ret < 0) {
 			free(sbi->devs);
 			return ret;
@@ -66,13 +66,14 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 	return 0;
 }
 
-int erofs_read_superblock(void)
+int erofs_read_superblock(struct erofs_sb_info *sbi)
 {
 	u8 data[EROFS_MAX_BLOCK_SIZE];
 	struct erofs_super_block *dsb;
 	int ret;
 
-	ret = blk_read(0, data, 0, erofs_blknr(sizeof(data)));
+	sbi->blkszbits = ilog2(EROFS_MAX_BLOCK_SIZE);
+	ret = blk_read(sbi, 0, data, 0, erofs_blknr(sbi, sizeof(data)));
 	if (ret < 0) {
 		erofs_err("cannot read erofs superblock: %d", ret);
 		return -EIO;
@@ -85,36 +86,36 @@ int erofs_read_superblock(void)
 		return ret;
 	}
 
-	sbi.feature_compat = le32_to_cpu(dsb->feature_compat);
+	sbi->feature_compat = le32_to_cpu(dsb->feature_compat);
 
-	sbi.blkszbits = dsb->blkszbits;
-	if (sbi.blkszbits < 9 ||
-	    sbi.blkszbits > ilog2(EROFS_MAX_BLOCK_SIZE)) {
+	sbi->blkszbits = dsb->blkszbits;
+	if (sbi->blkszbits < 9 ||
+	    sbi->blkszbits > ilog2(EROFS_MAX_BLOCK_SIZE)) {
 		erofs_err("blksize %llu isn't supported on this platform",
-			  erofs_blksiz() | 0ULL);
+			  erofs_blksiz(sbi) | 0ULL);
 		return ret;
-	} else if (!check_layout_compatibility(&sbi, dsb)) {
+	} else if (!check_layout_compatibility(sbi, dsb)) {
 		return ret;
 	}
 
-	sbi.primarydevice_blocks = le32_to_cpu(dsb->blocks);
-	sbi.meta_blkaddr = le32_to_cpu(dsb->meta_blkaddr);
-	sbi.xattr_blkaddr = le32_to_cpu(dsb->xattr_blkaddr);
-	sbi.islotbits = EROFS_ISLOTBITS;
-	sbi.root_nid = le16_to_cpu(dsb->root_nid);
-	sbi.packed_nid = le64_to_cpu(dsb->packed_nid);
-	sbi.inos = le64_to_cpu(dsb->inos);
-	sbi.checksum = le32_to_cpu(dsb->checksum);
+	sbi->primarydevice_blocks = le32_to_cpu(dsb->blocks);
+	sbi->meta_blkaddr = le32_to_cpu(dsb->meta_blkaddr);
+	sbi->xattr_blkaddr = le32_to_cpu(dsb->xattr_blkaddr);
+	sbi->islotbits = EROFS_ISLOTBITS;
+	sbi->root_nid = le16_to_cpu(dsb->root_nid);
+	sbi->packed_nid = le64_to_cpu(dsb->packed_nid);
+	sbi->inos = le64_to_cpu(dsb->inos);
+	sbi->checksum = le32_to_cpu(dsb->checksum);
 
-	sbi.build_time = le64_to_cpu(dsb->build_time);
-	sbi.build_time_nsec = le32_to_cpu(dsb->build_time_nsec);
+	sbi->build_time = le64_to_cpu(dsb->build_time);
+	sbi->build_time_nsec = le32_to_cpu(dsb->build_time_nsec);
 
-	memcpy(&sbi.uuid, dsb->uuid, sizeof(dsb->uuid));
-	return erofs_init_devices(&sbi, dsb);
+	memcpy(&sbi->uuid, dsb->uuid, sizeof(dsb->uuid));
+	return erofs_init_devices(sbi, dsb);
 }
 
-void erofs_put_super(void)
+void erofs_put_super(struct erofs_sb_info *sbi)
 {
-	if (sbi.devs)
-		free(sbi.devs);
+	if (sbi->devs)
+		free(sbi->devs);
 }

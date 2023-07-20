@@ -153,7 +153,7 @@ static int __allocate_inode_bh_data(struct erofs_inode *inode,
 	}
 
 	/* allocate main data buffer */
-	bh = erofs_balloc(type, erofs_pos(nblocks), 0, 0);
+	bh = erofs_balloc(type, erofs_pos(inode->sbi, nblocks), 0, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 
@@ -181,6 +181,7 @@ static int comp_subdir(const void *a, const void *b)
 static int erofs_prepare_dir_layout(struct erofs_inode *dir,
 				    unsigned int nr_subdirs)
 {
+	struct erofs_sb_info *sbi = dir->sbi;
 	struct erofs_dentry *d, *n, **sorted_d;
 	unsigned int i;
 	unsigned int d_size = 0;
@@ -203,8 +204,8 @@ static int erofs_prepare_dir_layout(struct erofs_inode *dir,
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
 		int len = strlen(d->name) + sizeof(struct erofs_dirent);
 
-		if ((d_size & (erofs_blksiz() - 1)) + len > erofs_blksiz())
-			d_size = round_up(d_size, erofs_blksiz());
+		if (erofs_blkoff(sbi, d_size) + len > erofs_blksiz(sbi))
+			d_size = round_up(d_size, erofs_blksiz(sbi));
 		d_size += len;
 	}
 	dir->i_size = d_size;
@@ -213,7 +214,7 @@ static int erofs_prepare_dir_layout(struct erofs_inode *dir,
 	dir->datalayout = EROFS_INODE_FLAT_INLINE;
 
 	/* it will be used in erofs_prepare_inode_buffer */
-	dir->idata_size = d_size % erofs_blksiz();
+	dir->idata_size = d_size % erofs_blksiz(sbi);
 	return 0;
 }
 
@@ -274,18 +275,20 @@ static void fill_dirblock(char *buf, unsigned int size, unsigned int q,
 	memset(buf + q, 0, size - q);
 }
 
-static int write_dirblock(unsigned int q, struct erofs_dentry *head,
+static int write_dirblock(struct erofs_sb_info *sbi,
+			  unsigned int q, struct erofs_dentry *head,
 			  struct erofs_dentry *end, erofs_blk_t blkaddr)
 {
 	char buf[EROFS_MAX_BLOCK_SIZE];
 
-	fill_dirblock(buf, erofs_blksiz(), q, head, end);
-	return blk_write(buf, blkaddr, 1);
+	fill_dirblock(buf, erofs_blksiz(sbi), q, head, end);
+	return blk_write(sbi, buf, blkaddr, 1);
 }
 
 erofs_nid_t erofs_lookupnid(struct erofs_inode *inode)
 {
 	struct erofs_buffer_head *const bh = inode->bh;
+	struct erofs_sb_info *sbi = inode->sbi;
 	erofs_off_t off, meta_offset;
 
 	if (!bh || (long long)inode->nid > 0)
@@ -294,7 +297,7 @@ erofs_nid_t erofs_lookupnid(struct erofs_inode *inode)
 	erofs_mapbh(bh->block);
 	off = erofs_btell(bh, false);
 
-	meta_offset = erofs_pos(sbi.meta_blkaddr);
+	meta_offset = erofs_pos(sbi, sbi->meta_blkaddr);
 	DBG_BUGON(off < meta_offset);
 	inode->nid = (off - meta_offset) >> EROFS_ISLOTBITS;
 	erofs_dbg("Assign nid %llu to file %s (mode %05o)",
@@ -315,6 +318,7 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 	struct erofs_dentry *head = list_first_entry(&dir->i_subdirs,
 						     struct erofs_dentry,
 						     d_child);
+	struct erofs_sb_info *sbi = dir->sbi;
 	struct erofs_dentry *d;
 	int ret;
 	unsigned int q, used, blkno;
@@ -322,7 +326,7 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 	q = used = blkno = 0;
 
 	/* allocate dir main data */
-	ret = __allocate_inode_bh_data(dir, erofs_blknr(dir->i_size), DIRA);
+	ret = __allocate_inode_bh_data(dir, erofs_blknr(sbi, dir->i_size), DIRA);
 	if (ret)
 		return ret;
 
@@ -331,8 +335,8 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 			sizeof(struct erofs_dirent);
 
 		erofs_d_invalidate(d);
-		if (used + len > erofs_blksiz()) {
-			ret = write_dirblock(q, head, d,
+		if (used + len > erofs_blksiz(sbi)) {
+			ret = write_dirblock(sbi, q, head, d,
 					     dir->u.i_blkaddr + blkno);
 			if (ret)
 				return ret;
@@ -345,13 +349,13 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 		q += sizeof(struct erofs_dirent);
 	}
 
-	DBG_BUGON(used > erofs_blksiz());
-	if (used == erofs_blksiz()) {
-		DBG_BUGON(dir->i_size % erofs_blksiz());
+	DBG_BUGON(used > erofs_blksiz(sbi));
+	if (used == erofs_blksiz(sbi)) {
+		DBG_BUGON(dir->i_size % erofs_blksiz(sbi));
 		DBG_BUGON(dir->idata_size);
-		return write_dirblock(q, head, d, dir->u.i_blkaddr + blkno);
+		return write_dirblock(sbi, q, head, d, dir->u.i_blkaddr + blkno);
 	}
-	DBG_BUGON(used != dir->i_size % erofs_blksiz());
+	DBG_BUGON(used != dir->i_size % erofs_blksiz(sbi));
 	if (used) {
 		/* fill tail-end dir block */
 		dir->idata = malloc(used);
@@ -365,7 +369,8 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 
 int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 {
-	const unsigned int nblocks = erofs_blknr(inode->i_size);
+	struct erofs_sb_info *sbi = inode->sbi;
+	const unsigned int nblocks = erofs_blknr(sbi, inode->i_size);
 	int ret;
 
 	inode->datalayout = EROFS_INODE_FLAT_INLINE;
@@ -375,13 +380,13 @@ int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 		return ret;
 
 	if (nblocks)
-		blk_write(buf, inode->u.i_blkaddr, nblocks);
-	inode->idata_size = inode->i_size % erofs_blksiz();
+		blk_write(sbi, buf, inode->u.i_blkaddr, nblocks);
+	inode->idata_size = inode->i_size % erofs_blksiz(sbi);
 	if (inode->idata_size) {
 		inode->idata = malloc(inode->idata_size);
 		if (!inode->idata)
 			return -ENOMEM;
-		memcpy(inode->idata, buf + erofs_pos(nblocks),
+		memcpy(inode->idata, buf + erofs_pos(sbi, nblocks),
 		       inode->idata_size);
 	}
 	return 0;
@@ -399,9 +404,10 @@ static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 {
 	int ret;
 	unsigned int nblocks, i;
+	struct erofs_sb_info *sbi = inode->sbi;
 
 	inode->datalayout = EROFS_INODE_FLAT_INLINE;
-	nblocks = inode->i_size / erofs_blksiz();
+	nblocks = inode->i_size / erofs_blksiz(sbi);
 
 	ret = __allocate_inode_bh_data(inode, nblocks, DATA);
 	if (ret)
@@ -410,20 +416,20 @@ static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 	for (i = 0; i < nblocks; ++i) {
 		char buf[EROFS_MAX_BLOCK_SIZE];
 
-		ret = read(fd, buf, erofs_blksiz());
-		if (ret != erofs_blksiz()) {
+		ret = read(fd, buf, erofs_blksiz(sbi));
+		if (ret != erofs_blksiz(sbi)) {
 			if (ret < 0)
 				return -errno;
 			return -EAGAIN;
 		}
 
-		ret = blk_write(buf, inode->u.i_blkaddr + i, 1);
+		ret = blk_write(sbi, buf, inode->u.i_blkaddr + i, 1);
 		if (ret)
 			return ret;
 	}
 
 	/* read the tail-end data */
-	inode->idata_size = inode->i_size % erofs_blksiz();
+	inode->idata_size = inode->i_size % erofs_blksiz(sbi);
 	if (inode->idata_size) {
 		inode->idata = malloc(inode->idata_size);
 		if (!inode->idata)
@@ -473,6 +479,7 @@ int erofs_write_file(struct erofs_inode *inode, int fd)
 static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 {
 	struct erofs_inode *const inode = bh->fsprivate;
+	struct erofs_sb_info *sbi = inode->sbi;
 	const u16 icount = EROFS_INODE_XATTR_ICOUNT(inode->xattr_isize);
 	erofs_off_t off = erofs_btell(bh, false);
 	union {
@@ -559,7 +566,7 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		BUG_ON(1);
 	}
 
-	ret = dev_write(&u, off, inode->inode_isize);
+	ret = dev_write(sbi, &u, off, inode->inode_isize);
 	if (ret)
 		return false;
 	off += inode->inode_isize;
@@ -570,7 +577,7 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		if (IS_ERR(xattrs))
 			return false;
 
-		ret = dev_write(xattrs, off, inode->xattr_isize);
+		ret = dev_write(sbi, xattrs, off, inode->xattr_isize);
 		free(xattrs);
 		if (ret)
 			return false;
@@ -586,7 +593,7 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		} else {
 			/* write compression metadata */
 			off = roundup(off, 8);
-			ret = dev_write(inode->compressmeta, off,
+			ret = dev_write(sbi, inode->compressmeta, off,
 					inode->extent_isize);
 			if (ret)
 				return false;
@@ -605,6 +612,7 @@ static struct erofs_bhops erofs_write_inode_bhops = {
 
 static int erofs_prepare_tail_block(struct erofs_inode *inode)
 {
+	struct erofs_sb_info *sbi = inode->sbi;
 	struct erofs_buffer_head *bh;
 	int ret;
 
@@ -614,8 +622,8 @@ static int erofs_prepare_tail_block(struct erofs_inode *inode)
 	bh = inode->bh_data;
 	if (bh) {
 		/* expend a block as the tail block (should be successful) */
-		ret = erofs_bh_balloon(bh, erofs_blksiz());
-		if (ret != erofs_blksiz()) {
+		ret = erofs_bh_balloon(bh, erofs_blksiz(sbi));
+		if (ret != erofs_blksiz(sbi)) {
 			DBG_BUGON(1);
 			return -EIO;
 		}
@@ -678,7 +686,7 @@ noinline:
 			erofs_dbg("Inline %scompressed data (%u bytes) to %s",
 				  inode->compressed_idata ? "" : "un",
 				  inode->idata_size, inode->i_srcpath);
-			erofs_sb_set_ztailpacking();
+			erofs_sb_set_ztailpacking(inode->sbi);
 		} else {
 			inode->datalayout = EROFS_INODE_FLAT_INLINE;
 			erofs_dbg("Inline tail-end data (%u bytes) to %s",
@@ -706,7 +714,7 @@ static bool erofs_bh_flush_write_inline(struct erofs_buffer_head *bh)
 	const erofs_off_t off = erofs_btell(bh, false);
 	int ret;
 
-	ret = dev_write(inode->idata, off, inode->idata_size);
+	ret = dev_write(inode->sbi, inode->idata, off, inode->idata_size);
 	if (ret)
 		return false;
 
@@ -724,6 +732,7 @@ static struct erofs_bhops erofs_write_inline_bhops = {
 
 static int erofs_write_tail_end(struct erofs_inode *inode)
 {
+	struct erofs_sb_info *sbi = inode->sbi;
 	struct erofs_buffer_head *bh, *ibh;
 
 	bh = inode->bh_data;
@@ -744,7 +753,7 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		erofs_off_t pos, zero_pos;
 
 		if (!bh) {
-			bh = erofs_balloc(DATA, erofs_blksiz(), 0, 0);
+			bh = erofs_balloc(DATA, erofs_blksiz(sbi), 0, 0);
 			if (IS_ERR(bh))
 				return PTR_ERR(bh);
 			bh->op = &erofs_skip_write_bhops;
@@ -756,8 +765,8 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		} else {
 			if (inode->lazy_tailblock) {
 				/* expend a tail block (should be successful) */
-				ret = erofs_bh_balloon(bh, erofs_blksiz());
-				if (ret != erofs_blksiz()) {
+				ret = erofs_bh_balloon(bh, erofs_blksiz(sbi));
+				if (ret != erofs_blksiz(sbi)) {
 					DBG_BUGON(1);
 					return -EIO;
 				}
@@ -766,24 +775,24 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 			ret = erofs_mapbh(bh->block);
 		}
 		DBG_BUGON(ret < 0);
-		pos = erofs_btell(bh, true) - erofs_blksiz();
+		pos = erofs_btell(bh, true) - erofs_blksiz(sbi);
 
 		/* 0'ed data should be padded at head for 0padding conversion */
-		if (erofs_sb_has_lz4_0padding() && inode->compressed_idata) {
+		if (erofs_sb_has_lz4_0padding(sbi) && inode->compressed_idata) {
 			zero_pos = pos;
-			pos += erofs_blksiz() - inode->idata_size;
+			pos += erofs_blksiz(sbi) - inode->idata_size;
 		} else {
 			/* pad 0'ed data for the other cases */
 			zero_pos = pos + inode->idata_size;
 		}
-		ret = dev_write(inode->idata, pos, inode->idata_size);
+		ret = dev_write(sbi, inode->idata, pos, inode->idata_size);
 		if (ret)
 			return ret;
 
-		DBG_BUGON(inode->idata_size > erofs_blksiz());
-		if (inode->idata_size < erofs_blksiz()) {
-			ret = dev_fillzero(zero_pos,
-					   erofs_blksiz() - inode->idata_size,
+		DBG_BUGON(inode->idata_size > erofs_blksiz(sbi));
+		if (inode->idata_size < erofs_blksiz(sbi)) {
+			ret = dev_fillzero(sbi, zero_pos,
+					   erofs_blksiz(sbi) - inode->idata_size,
 					   false);
 			if (ret)
 				return ret;
@@ -792,7 +801,7 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		free(inode->idata);
 		inode->idata = NULL;
 
-		erofs_droid_blocklist_write_tail_end(inode, erofs_blknr(pos));
+		erofs_droid_blocklist_write_tail_end(inode, erofs_blknr(sbi, pos));
 	}
 out:
 	/* now bh_data can drop directly */
@@ -821,8 +830,8 @@ static bool erofs_should_use_inode_extended(struct erofs_inode *inode)
 		return true;
 	if (inode->i_nlink > USHRT_MAX)
 		return true;
-	if ((inode->i_mtime != sbi.build_time ||
-	     inode->i_mtime_nsec != sbi.build_time_nsec) &&
+	if ((inode->i_mtime != inode->sbi->build_time ||
+	     inode->i_mtime_nsec != inode->sbi->build_time_nsec) &&
 	    !cfg.c_ignore_mtime)
 		return true;
 	return false;
@@ -897,6 +906,7 @@ static int erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 			    const char *path)
 {
 	int err = erofs_droid_inode_fsconfig(inode, st, path);
+	struct erofs_sb_info *sbi = inode->sbi;
 
 	if (err)
 		return err;
@@ -917,11 +927,11 @@ static int erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 
 	switch (cfg.c_timeinherit) {
 	case TIMESTAMP_CLAMPING:
-		if (inode->i_mtime < sbi.build_time)
+		if (inode->i_mtime < sbi->build_time)
 			break;
 	case TIMESTAMP_FIXED:
-		inode->i_mtime = sbi.build_time;
-		inode->i_mtime_nsec = sbi.build_time_nsec;
+		inode->i_mtime = sbi->build_time;
+		inode->i_mtime_nsec = sbi->build_time_nsec;
 	default:
 		break;
 	}
@@ -978,6 +988,7 @@ struct erofs_inode *erofs_new_inode(void)
 	if (!inode)
 		return ERR_PTR(-ENOMEM);
 
+	inode->sbi = &sbi;
 	inode->i_ino[0] = sbi.inos++;	/* inode serial number */
 	inode->i_count = 1;
 	inode->datalayout = EROFS_INODE_FLAT_PLAIN;
@@ -1031,16 +1042,17 @@ static void erofs_fixup_meta_blkaddr(struct erofs_inode *rootdir)
 {
 	const erofs_off_t rootnid_maxoffset = 0xffff << EROFS_ISLOTBITS;
 	struct erofs_buffer_head *const bh = rootdir->bh;
+	struct erofs_sb_info *sbi = rootdir->sbi;
 	erofs_off_t off, meta_offset;
 
 	erofs_mapbh(bh->block);
 	off = erofs_btell(bh, false);
 
 	if (off > rootnid_maxoffset)
-		meta_offset = round_up(off - rootnid_maxoffset, erofs_blksiz());
+		meta_offset = round_up(off - rootnid_maxoffset, erofs_blksiz(sbi));
 	else
 		meta_offset = 0;
-	sbi.meta_blkaddr = erofs_blknr(meta_offset);
+	sbi->meta_blkaddr = erofs_blknr(sbi, meta_offset);
 	rootdir->nid = (off - meta_offset) >> EROFS_ISLOTBITS;
 }
 
@@ -1283,8 +1295,8 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
 	}
 
 	if (name == EROFS_PACKED_INODE) {
-		sbi.packed_nid = EROFS_PACKED_NID_UNALLOCATED;
-		inode->nid = sbi.packed_nid;
+		inode->sbi->packed_nid = EROFS_PACKED_NID_UNALLOCATED;
+		inode->nid = inode->sbi->packed_nid;
 	}
 
 	ret = erofs_write_compressed_file(inode, fd);

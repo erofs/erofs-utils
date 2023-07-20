@@ -50,8 +50,8 @@ struct erofs_blobchunk *erofs_get_unhashed_chunk(erofs_off_t chunksize,
 	return chunk;
 }
 
-static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
-		erofs_off_t chunksize)
+static struct erofs_blobchunk *erofs_blob_getchunk(struct erofs_sb_info *sbi,
+		int fd, erofs_off_t chunksize)
 {
 	static u8 zeroed[EROFS_MAX_BLOCK_SIZE];
 	u8 *chunkdata, sha256[32];
@@ -84,17 +84,18 @@ static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
 
 	chunk->chunksize = chunksize;
 	blkpos = ftell(blobfile);
-	DBG_BUGON(erofs_blkoff(blkpos));
+	DBG_BUGON(erofs_blkoff(sbi, blkpos));
 	chunk->device_id = 0;
-	chunk->blkaddr = erofs_blknr(blkpos);
+	chunk->blkaddr = erofs_blknr(sbi, blkpos);
 	memcpy(chunk->sha256, sha256, sizeof(sha256));
 	hashmap_entry_init(&chunk->ent, hash);
 	hashmap_add(&blob_hashmap, chunk);
 
 	erofs_dbg("Writing chunk (%u bytes) to %u", chunksize, chunk->blkaddr);
 	ret = fwrite(chunkdata, chunksize, 1, blobfile);
-	if (ret == 1 && erofs_blkoff(chunksize))
-		ret = fwrite(zeroed, erofs_blksiz() - erofs_blkoff(chunksize),
+	if (ret == 1 && erofs_blkoff(sbi, chunksize))
+		ret = fwrite(zeroed,
+			     erofs_blksiz(sbi) - erofs_blkoff(sbi, chunksize),
 			     1, blobfile);
 	if (ret < 1) {
 		hashmap_remove(&blob_hashmap, &chunk->ent);
@@ -182,11 +183,12 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 	erofs_droid_blocklist_write_extent(inode, extent_start, extents_blks,
 					   first_extent, true);
 
-	return dev_write(inode->chunkindexes, off, inode->extent_isize);
+	return dev_write(inode->sbi, inode->chunkindexes, off, inode->extent_isize);
 }
 
 int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd)
 {
+	struct erofs_sb_info *sbi = inode->sbi;
 	unsigned int chunkbits = cfg.c_chunkbits;
 	unsigned int count, unit;
 	struct erofs_inode_chunk_index *idx;
@@ -197,15 +199,15 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd)
 	/* if the file is fully sparsed, use one big chunk instead */
 	if (lseek(fd, 0, SEEK_DATA) < 0 && errno == ENXIO) {
 		chunkbits = ilog2(inode->i_size - 1) + 1;
-		if (chunkbits < sbi.blkszbits)
-			chunkbits = sbi.blkszbits;
+		if (chunkbits < sbi->blkszbits)
+			chunkbits = sbi->blkszbits;
 	}
 #endif
-	if (chunkbits - sbi.blkszbits > EROFS_CHUNK_FORMAT_BLKBITS_MASK)
-		chunkbits = EROFS_CHUNK_FORMAT_BLKBITS_MASK + sbi.blkszbits;
+	if (chunkbits - sbi->blkszbits > EROFS_CHUNK_FORMAT_BLKBITS_MASK)
+		chunkbits = EROFS_CHUNK_FORMAT_BLKBITS_MASK + sbi->blkszbits;
 	chunksize = 1ULL << chunkbits;
 	count = DIV_ROUND_UP(inode->i_size, chunksize);
-	inode->u.chunkformat |= chunkbits - sbi.blkszbits;
+	inode->u.chunkformat |= chunkbits - sbi->blkszbits;
 	if (multidev)
 		inode->u.chunkformat |= EROFS_CHUNK_FORMAT_INDEXES;
 
@@ -246,7 +248,7 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd)
 #endif
 
 		len = min_t(u64, inode->i_size - pos, chunksize);
-		chunk = erofs_blob_getchunk(fd, len);
+		chunk = erofs_blob_getchunk(sbi, fd, len);
 		if (IS_ERR(chunk)) {
 			ret = PTR_ERR(chunk);
 			goto err;
@@ -263,7 +265,7 @@ err:
 	return ret;
 }
 
-int erofs_blob_remap(void)
+int erofs_blob_remap(struct erofs_sb_info *sbi)
 {
 	struct erofs_buffer_head *bh;
 	ssize_t length;
@@ -276,11 +278,11 @@ int erofs_blob_remap(void)
 		return -errno;
 	if (multidev) {
 		struct erofs_deviceslot dis = {
-			.blocks = erofs_blknr(length),
+			.blocks = erofs_blknr(sbi, length),
 		};
 
 		pos_out = erofs_btell(bh_devt, false);
-		ret = dev_write(&dis, pos_out, sizeof(dis));
+		ret = dev_write(sbi, &dis, pos_out, sizeof(dis));
 		if (ret)
 			return ret;
 
@@ -297,9 +299,9 @@ int erofs_blob_remap(void)
 	erofs_mapbh(bh->block);
 	pos_out = erofs_btell(bh, false);
 	pos_in = 0;
-	remapped_base = erofs_blknr(pos_out);
+	remapped_base = erofs_blknr(sbi, pos_out);
 	ret = erofs_copy_file_range(fileno(blobfile), &pos_in,
-				    erofs_devfd, &pos_out, length);
+				    sbi->devfd, &pos_out, length);
 	bh->op = &erofs_drop_directly_bhops;
 	erofs_bdrop(bh, false);
 	return ret < length ? -EIO : 0;
@@ -348,7 +350,7 @@ int erofs_blob_init(const char *blobfile_path)
 	return 0;
 }
 
-int erofs_generate_devtable(void)
+int erofs_generate_devtable(struct erofs_sb_info *sbi)
 {
 	struct erofs_deviceslot dis;
 
@@ -362,8 +364,8 @@ int erofs_generate_devtable(void)
 	dis = (struct erofs_deviceslot) {};
 	erofs_mapbh(bh_devt->block);
 	bh_devt->op = &erofs_skip_write_bhops;
-	sbi.devt_slotoff = erofs_btell(bh_devt, false) / EROFS_DEVT_SLOT_SIZE;
-	sbi.extra_devices = 1;
-	erofs_sb_set_device_table();
+	sbi->devt_slotoff = erofs_btell(bh_devt, false) / EROFS_DEVT_SLOT_SIZE;
+	sbi->extra_devices = 1;
+	erofs_sb_set_device_table(sbi);
 	return 0;
 }

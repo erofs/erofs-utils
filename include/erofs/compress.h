@@ -19,18 +19,21 @@ extern "C"
 void z_erofs_drop_inline_pcluster(struct erofs_inode *inode);
 int erofs_write_compressed_file(struct erofs_inode *inode, int fd);
 
-int z_erofs_compress_init(struct erofs_buffer_head *bh);
+int z_erofs_compress_init(struct erofs_sb_info *sbi,
+			  struct erofs_buffer_head *bh);
 int z_erofs_compress_exit(void);
 
 const char *z_erofs_list_available_compressors(unsigned int i);
 
 static inline bool erofs_is_packed_inode(struct erofs_inode *inode)
 {
+	erofs_nid_t packed_nid = inode->sbi->packed_nid;
+
 	if (inode->nid == EROFS_PACKED_NID_UNALLOCATED) {
-		DBG_BUGON(sbi.packed_nid != EROFS_PACKED_NID_UNALLOCATED);
+		DBG_BUGON(packed_nid != EROFS_PACKED_NID_UNALLOCATED);
 		return true;
 	}
-	return (sbi.packed_nid > 0 && inode->nid == sbi.packed_nid);
+	return (packed_nid > 0 && inode->nid == packed_nid);
 }
 
 #ifdef __cplusplus
