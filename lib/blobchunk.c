@@ -127,7 +127,7 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 {
 	struct erofs_inode_chunk_index idx = {0};
 	erofs_blk_t extent_start = EROFS_NULL_ADDR;
-	erofs_blk_t extent_end, extents_blks;
+	erofs_blk_t extent_end, chunkblks;
 	unsigned int dst, src, unit;
 	bool first_extent = true;
 
@@ -136,6 +136,7 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 	else
 		unit = EROFS_BLOCK_MAP_ENTRY_SIZE;
 
+	chunkblks = 1U << (inode->u.chunkformat & EROFS_CHUNK_FORMAT_BLKBITS_MASK);
 	for (dst = src = 0; dst < inode->extent_isize;
 	     src += sizeof(void *), dst += unit) {
 		struct erofs_blobchunk *chunk;
@@ -152,20 +153,18 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 			idx.blkaddr = remapped_base + chunk->blkaddr;
 		}
 
-		if (extent_start != EROFS_NULL_ADDR &&
-		    idx.blkaddr == extent_end + 1) {
-			extent_end = idx.blkaddr;
-		} else {
+		if (extent_start == EROFS_NULL_ADDR ||
+		    idx.blkaddr != extent_end) {
 			if (extent_start != EROFS_NULL_ADDR) {
 				erofs_droid_blocklist_write_extent(inode,
 					extent_start,
-					(extent_end - extent_start) + 1,
+					extent_end - extent_start,
 					first_extent, false);
 				first_extent = false;
 			}
 			extent_start = idx.blkaddr;
-			extent_end = idx.blkaddr;
 		}
+		extent_end = idx.blkaddr + chunkblks;
 		idx.device_id = cpu_to_le16(chunk->device_id);
 		idx.blkaddr = cpu_to_le32(idx.blkaddr);
 
@@ -175,12 +174,9 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 			memcpy(inode->chunkindexes + dst, &idx, sizeof(idx));
 	}
 	off = roundup(off, unit);
-
-	if (extent_start == EROFS_NULL_ADDR)
-		extents_blks = 0;
-	else
-		extents_blks = (extent_end - extent_start) + 1;
-	erofs_droid_blocklist_write_extent(inode, extent_start, extents_blks,
+	erofs_droid_blocklist_write_extent(inode, extent_start,
+			extent_start == EROFS_NULL_ADDR ?
+					0 : extent_end - extent_start,
 					   first_extent, true);
 
 	return dev_write(inode->sbi, inode->chunkindexes, off, inode->extent_isize);
