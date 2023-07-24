@@ -228,8 +228,12 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd)
 				offset = pos;
 			else
 				offset = ((pos >> chunkbits) + 1) << chunkbits;
-		} else {
+		} else if (offset != (offset & ~(chunksize - 1))) {
 			offset &= ~(chunksize - 1);
+			if (lseek(fd, offset, SEEK_SET) != offset) {
+				ret = -EIO;
+				goto err;
+			}
 		}
 
 		if (offset > pos) {
