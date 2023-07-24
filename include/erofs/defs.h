@@ -286,6 +286,11 @@ static inline unsigned int fls_long(unsigned long x)
 	return x ? sizeof(x) * 8 - __builtin_clz(x) : 0;
 }
 
+static inline unsigned long lowbit(unsigned long n)
+{
+	return n & -n;
+}
+
 /**
  * __roundup_pow_of_two() - round up to nearest power of two
  * @n: value to round up
