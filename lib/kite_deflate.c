@@ -47,6 +47,11 @@ unsigned long erofs_memcmp2(const u8 *s1, const u8 *s2,
 #define kMatchMinLen		3
 #define kMatchMaxLen32		kNumLenSymbols32 + kMatchMinLen - 1
 
+#define kTableDirectLevels      16
+#define kBitLensRepNumber_3_6   kTableDirectLevels
+#define kBitLens0Number_3_10    (kBitLensRepNumber_3_6 + 1)
+#define kBitLens0Number_11_138  (kBitLens0Number_3_10 + 1)
+
 static u32 kstaticHuff_mainCodes[kFixedLenTableSize];
 static const u8 kstaticHuff_litLenLevels[kFixedLenTableSize] = {
 	[0   ... 143] = 8, [144 ... 255] = 9,
@@ -74,11 +79,6 @@ const u8 kCodeLengthAlphabetOrder[kLensTableSize] =
 	{16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
 
 const u8 kLevelExtraBits[3] = {2, 3, 7};
-
-const unsigned int kTableDirectLevels = 16;
-const unsigned int kBitLensRepNumber_3_6 = kTableDirectLevels;
-const unsigned int kBitLens0Number_3_10 = kBitLensRepNumber_3_6 + 1;
-const unsigned int kBitLens0Number_11_138 = kBitLens0Number_3_10 + 1;
 
 #define kStored			0
 #define kFixedHuffman		1
