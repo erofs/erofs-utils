@@ -138,16 +138,6 @@ static long long tarerofs_parsenum(const char *ptr, int len)
 	return tarerofs_otoi(ptr, len);
 }
 
-int tarerofs_init_empty_dir(struct erofs_inode *inode)
-{
-	int ret = erofs_init_empty_dir(inode);
-
-	if (ret)
-		return ret;
-	inode->i_nlink = 2;
-	return 0;
-}
-
 static struct erofs_dentry *tarerofs_mkdir(struct erofs_inode *dir, const char *s)
 {
 	struct erofs_inode *inode;
@@ -163,7 +153,7 @@ static struct erofs_dentry *tarerofs_mkdir(struct erofs_inode *dir, const char *
 	inode->i_gid = getgid();
 	inode->i_mtime = inode->sbi->build_time;
 	inode->i_mtime_nsec = inode->sbi->build_time_nsec;
-	tarerofs_init_empty_dir(inode);
+	erofs_init_empty_dir(inode);
 
 	d = erofs_d_alloc(dir, s);
 	if (!IS_ERR(d)) {
@@ -759,7 +749,7 @@ new_inode:
 		inode->i_nlink++;
 		ret = 0;
 	} else if (!inode->i_nlink)
-		ret = tarerofs_init_empty_dir(inode);
+		ret = erofs_init_empty_dir(inode);
 	else
 		ret = 0;
 out:

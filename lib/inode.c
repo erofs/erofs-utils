@@ -235,6 +235,8 @@ int erofs_init_empty_dir(struct erofs_inode *dir)
 		return PTR_ERR(d);
 	d->inode = erofs_igrab(dir->i_parent);
 	d->type = EROFS_FT_DIR;
+
+	dir->i_nlink = 2;
 	return 0;
 }
 

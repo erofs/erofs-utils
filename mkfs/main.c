@@ -928,7 +928,7 @@ int main(int argc, char **argv)
 		root_inode->i_parent = root_inode;
 		root_inode->i_mtime = sbi.build_time;
 		root_inode->i_mtime_nsec = sbi.build_time_nsec;
-		tarerofs_init_empty_dir(root_inode);
+		erofs_init_empty_dir(root_inode);
 
 		while (!(err = tarerofs_parse_tar(root_inode, &erofstar)));
 
