@@ -3,7 +3,6 @@
  * Copyright (C), 2021, Coolpad Group Limited.
  * Created by Yue Hu <huyue2@yulong.com>
  */
-#ifdef WITH_ANDROID
 #include <stdio.h>
 #include <sys/stat.h>
 #include "erofs/block_list.h"
@@ -12,17 +11,19 @@
 #include "erofs/print.h"
 
 static FILE *block_list_fp;
+bool srcmap_enabled;
 
-int erofs_droid_blocklist_fopen(void)
+int erofs_blocklist_open(char *filename, bool srcmap)
 {
-	block_list_fp = fopen(cfg.block_list_file, "w");
+	block_list_fp = fopen(filename, "w");
 
 	if (!block_list_fp)
-		return -1;
+		return -errno;
+	srcmap_enabled = srcmap;
 	return 0;
 }
 
-void erofs_droid_blocklist_fclose(void)
+void erofs_blocklist_close(void)
 {
 	if (!block_list_fp)
 		return;
@@ -31,6 +32,18 @@ void erofs_droid_blocklist_fclose(void)
 	block_list_fp = NULL;
 }
 
+/* XXX: really need to be cleaned up */
+void tarerofs_blocklist_write(erofs_blk_t blkaddr, erofs_blk_t nblocks,
+			      erofs_off_t srcoff)
+{
+	if (!block_list_fp || !nblocks || !srcmap_enabled)
+		return;
+
+	fprintf(block_list_fp, "%08x %8x %08" PRIx64 "\n",
+		blkaddr, nblocks, srcoff);
+}
+
+#ifdef WITH_ANDROID
 static void blocklist_write(const char *path, erofs_blk_t blk_start,
 			    erofs_blk_t nblocks, bool first_extent,
 			    bool last_extent)

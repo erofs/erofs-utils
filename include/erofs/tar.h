@@ -15,6 +15,7 @@ struct erofs_pax_header {
 
 struct erofs_tarfile {
 	struct erofs_pax_header global;
+	char *mapfile;
 
 	int fd;
 	u64 offset;

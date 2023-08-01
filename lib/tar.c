@@ -341,44 +341,6 @@ out:
 	return ret;
 }
 
-int tarerofs_write_chunk_indexes(struct erofs_inode *inode, erofs_blk_t blkaddr)
-{
-	struct erofs_sb_info *sbi = inode->sbi;
-	unsigned int chunkbits = ilog2(inode->i_size - 1) + 1;
-	unsigned int count, unit;
-	erofs_off_t chunksize, len, pos;
-	struct erofs_inode_chunk_index *idx;
-
-	if (chunkbits < sbi->blkszbits)
-		chunkbits = sbi->blkszbits;
-	inode->u.chunkformat |= chunkbits - sbi->blkszbits;
-	inode->u.chunkformat |= EROFS_CHUNK_FORMAT_INDEXES;
-	chunksize = 1ULL << chunkbits;
-	count = DIV_ROUND_UP(inode->i_size, chunksize);
-
-	unit = sizeof(struct erofs_inode_chunk_index);
-	inode->extent_isize = count * unit;
-	idx = calloc(count, max(sizeof(*idx), sizeof(void *)));
-	if (!idx)
-		return -ENOMEM;
-	inode->chunkindexes = idx;
-
-	for (pos = 0; pos < inode->i_size; pos += len) {
-		struct erofs_blobchunk *chunk;
-
-		len = min_t(erofs_off_t, inode->i_size - pos, chunksize);
-
-		chunk = erofs_get_unhashed_chunk(chunksize, 1, blkaddr);
-		if (IS_ERR(chunk))
-			return PTR_ERR(chunk);
-
-		*(void **)idx++ = chunk;
-		blkaddr += erofs_blknr(sbi, len);
-	}
-	inode->datalayout = EROFS_INODE_CHUNK_BASED;
-	return 0;
-}
-
 void tarerofs_remove_inode(struct erofs_inode *inode)
 {
 	struct erofs_dentry *d;
@@ -608,7 +570,8 @@ restart:
 			eh.link = strndup(th.linkname, sizeof(th.linkname));
 	}
 
-	if (tar->index_mode && erofs_blkoff(sbi, tar_offset + sizeof(th))) {
+	if (tar->index_mode && !tar->mapfile &&
+	    erofs_blkoff(sbi, data_offset)) {
 		erofs_err("invalid tar data alignment @ %llu", tar_offset);
 		ret = -EIO;
 		goto out;
@@ -710,8 +673,7 @@ new_inode:
 			inode->i_link = malloc(inode->i_size + 1);
 			memcpy(inode->i_link, eh.link, inode->i_size + 1);
 		} else if (tar->index_mode) {
-			ret = tarerofs_write_chunk_indexes(inode,
-					erofs_blknr(sbi, data_offset));
+			ret = tarerofs_write_chunkes(inode, data_offset);
 			if (ret)
 				goto out;
 			if (erofs_lskip(tar->fd, inode->i_size)) {
@@ -762,48 +724,4 @@ invalid_tar:
 	erofs_err("invalid tar @ %llu", tar_offset);
 	ret = -EIO;
 	goto out;
-}
-
-static struct erofs_buffer_head *bh_devt;
-
-int tarerofs_reserve_devtable(struct erofs_sb_info *sbi, unsigned int devices)
-{
-	if (!devices)
-		return 0;
-
-	bh_devt = erofs_balloc(DEVT,
-		sizeof(struct erofs_deviceslot) * devices, 0, 0);
-	if (IS_ERR(bh_devt))
-		return PTR_ERR(bh_devt);
-
-	erofs_mapbh(bh_devt->block);
-	bh_devt->op = &erofs_skip_write_bhops;
-	sbi->devt_slotoff = erofs_btell(bh_devt, false) / EROFS_DEVT_SLOT_SIZE;
-	sbi->extra_devices = devices;
-	erofs_sb_set_device_table(sbi);
-	return 0;
-}
-
-int tarerofs_write_devtable(struct erofs_sb_info *sbi, struct erofs_tarfile *tar)
-{
-	erofs_off_t pos_out;
-	unsigned int i;
-
-	if (!sbi->extra_devices)
-		return 0;
-	pos_out = erofs_btell(bh_devt, false);
-	for (i = 0; i < sbi->extra_devices; ++i) {
-		struct erofs_deviceslot dis = {
-			.blocks = erofs_blknr(sbi, tar->offset),
-		};
-		int ret;
-
-		ret = dev_write(sbi, &dis, pos_out, sizeof(dis));
-		if (ret)
-			return ret;
-		pos_out += sizeof(dis);
-	}
-	bh_devt->op = &erofs_drop_directly_bhops;
-	erofs_bdrop(bh_devt, false);
-	return 0;
 }

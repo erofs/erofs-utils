@@ -484,8 +484,11 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			break;
 		case 20:
 			if (optarg && (!strcmp(optarg, "i") ||
-					!strcmp(optarg, "0")))
+				!strcmp(optarg, "0") || !memcmp(optarg, "0,", 2))) {
 				erofstar.index_mode = true;
+				if (!memcmp(optarg, "0,", 2))
+					erofstar.mapfile = strdup(optarg + 2);
+			}
 			tar_mode = true;
 			break;
 		case 21:
@@ -795,7 +798,8 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (cfg.block_list_file && erofs_droid_blocklist_fopen() < 0) {
+	if (cfg.block_list_file &&
+	    erofs_blocklist_open(cfg.block_list_file, false)) {
 		erofs_err("failed to open %s", cfg.block_list_file);
 		return 1;
 	}
@@ -827,8 +831,18 @@ int main(int argc, char **argv)
 	if (cfg.c_random_pclusterblks)
 		srand(time(NULL));
 #endif
-	if (tar_mode && erofstar.index_mode)
-		sbi.blkszbits = 9;
+	if (tar_mode && erofstar.index_mode) {
+		if (erofstar.mapfile) {
+			err = erofs_blocklist_open(erofstar.mapfile, true);
+			if (err) {
+				erofs_err("failed to open %s", erofstar.mapfile);
+				goto exit;
+			}
+		} else {
+			sbi.blkszbits = 9;
+		}
+	}
+
 	sb_bh = erofs_buffer_init();
 	if (IS_ERR(sb_bh)) {
 		err = PTR_ERR(sb_bh);
@@ -884,10 +898,8 @@ int main(int argc, char **argv)
 			return 1;
 	}
 
-	if (tar_mode && erofstar.index_mode)
-		err = tarerofs_reserve_devtable(&sbi, 1);
-	else
-		err = erofs_generate_devtable(&sbi);
+	if ((erofstar.index_mode && !erofstar.mapfile) || cfg.c_blobdev_path)
+		err = erofs_mkfs_init_devices(&sbi, 1);
 	if (err) {
 		erofs_err("failed to generate device table: %s",
 			  erofs_strerror(err));
@@ -942,11 +954,12 @@ int main(int argc, char **argv)
 	root_nid = erofs_lookupnid(root_inode);
 	erofs_iput(root_inode);
 
-	if (tar_mode)
-		tarerofs_write_devtable(&sbi, &erofstar);
-	if (cfg.c_chunkbits) {
+	if (erofstar.index_mode || cfg.c_chunkbits) {
 		erofs_info("total metadata: %u blocks", erofs_mapbh(NULL));
-		err = erofs_blob_remap(&sbi);
+		if (erofstar.index_mode && !erofstar.mapfile)
+			sbi.devs[0].blocks =
+				BLK_ROUND_UP(&sbi, erofstar.offset);
+		err = erofs_mkfs_dump_blobs(&sbi);
 		if (err)
 			goto exit;
 	}
@@ -980,9 +993,7 @@ int main(int argc, char **argv)
 exit:
 	z_erofs_compress_exit();
 	z_erofs_dedupe_exit();
-#ifdef WITH_ANDROID
-	erofs_droid_blocklist_fclose();
-#endif
+	erofs_blocklist_close();
 	dev_close(&sbi);
 	erofs_cleanup_compress_hints();
 	erofs_cleanup_exclude_rules();
