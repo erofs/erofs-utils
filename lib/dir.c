@@ -217,10 +217,16 @@ static int erofs_get_pathname_iter(struct erofs_dir_context *ctx)
 		}
 
 		if (S_ISDIR(dir.i_mode)) {
-			ctx->dir = &dir;
-			pathctx->pos = pos + len + 1;
-			ret = erofs_iterate_dir(ctx, false);
-			pathctx->pos = pos;
+			struct erofs_get_pathname_context nctx = {
+				.ctx.flags = 0,
+				.ctx.dir = &dir,
+				.ctx.cb = erofs_get_pathname_iter,
+				.target_nid = pathctx->target_nid,
+				.buf = pathctx->buf,
+				.size = pathctx->size,
+				.pos = pos + len + 1,
+			};
+			ret = erofs_iterate_dir(&nctx.ctx, false);
 			if (ret == EROFS_PATHNAME_FOUND) {
 				pathctx->buf[pos++] = '/';
 				strncpy(pathctx->buf + pos, dname, len);
