@@ -74,6 +74,7 @@ struct erofs_sb_info {
 	u64 build_time;
 	u32 build_time_nsec;
 
+	u8  extslots;
 	unsigned char islotbits;
 	unsigned char blkszbits;
 

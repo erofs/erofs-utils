@@ -106,11 +106,17 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 	sbi->packed_nid = le64_to_cpu(dsb->packed_nid);
 	sbi->inos = le64_to_cpu(dsb->inos);
 	sbi->checksum = le32_to_cpu(dsb->checksum);
+	sbi->extslots = dsb->sb_extslots;
 
 	sbi->build_time = le64_to_cpu(dsb->build_time);
 	sbi->build_time_nsec = le32_to_cpu(dsb->build_time_nsec);
 
 	memcpy(&sbi->uuid, dsb->uuid, sizeof(dsb->uuid));
+
+	if (erofs_sb_has_compr_cfgs(sbi))
+		sbi->available_compr_algs = le16_to_cpu(dsb->u1.available_compr_algs);
+	else
+		sbi->lz4_max_distance = le16_to_cpu(dsb->u1.lz4_max_distance);
 	return erofs_init_devices(sbi, dsb);
 }
 

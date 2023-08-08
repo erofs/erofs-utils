@@ -92,12 +92,14 @@ static struct erofsdump_feature feature_lists[] = {
 	{ true, EROFS_FEATURE_COMPAT_SB_CHKSUM, "sb_csum" },
 	{ true, EROFS_FEATURE_COMPAT_MTIME, "mtime" },
 	{ false, EROFS_FEATURE_INCOMPAT_ZERO_PADDING, "0padding" },
+	{ false, EROFS_FEATURE_INCOMPAT_COMPR_CFGS, "compr_cfgs" },
 	{ false, EROFS_FEATURE_INCOMPAT_BIG_PCLUSTER, "big_pcluster" },
 	{ false, EROFS_FEATURE_INCOMPAT_CHUNKED_FILE, "chunked_file" },
 	{ false, EROFS_FEATURE_INCOMPAT_DEVICE_TABLE, "device_table" },
 	{ false, EROFS_FEATURE_INCOMPAT_ZTAILPACKING, "ztailpacking" },
 	{ false, EROFS_FEATURE_INCOMPAT_FRAGMENTS, "fragments" },
 	{ false, EROFS_FEATURE_INCOMPAT_DEDUPE, "dedupe" },
+	{ false, EROFS_FEATURE_INCOMPAT_XATTR_PREFIXES, "xattr_prefixes" },
 };
 
 static int erofsdump_readdir(struct erofs_dir_context *ctx);
@@ -588,6 +590,23 @@ static void erofsdump_print_statistic(void)
 	erofsdump_filetype_distribution(file_types, OTHERFILETYPE);
 }
 
+static void erofsdump_print_supported_compressors(FILE *f, unsigned int mask)
+{
+	unsigned int i = 0;
+	bool comma = false;
+	const char *s;
+
+	while ((s = z_erofs_list_supported_algorithms(i++, &mask)) != NULL) {
+		if (*s == '\0')
+			continue;
+		if (comma)
+			fputs(", ", f);
+		fputs(s, f);
+		comma = true;
+	}
+	fputc('\n', f);
+}
+
 static void erofsdump_show_superblock(void)
 {
 	time_t time = sbi.build_time;
@@ -607,6 +626,16 @@ static void erofsdump_show_superblock(void)
 	if (erofs_sb_has_fragments(&sbi) && sbi.packed_nid > 0)
 		fprintf(stdout, "Filesystem packed nid:                        %llu\n",
 			sbi.packed_nid | 0ULL);
+	if (erofs_sb_has_compr_cfgs(&sbi)) {
+		fprintf(stdout, "Filesystem compr_algs:                        ");
+		erofsdump_print_supported_compressors(stdout,
+			sbi.available_compr_algs);
+	} else {
+		fprintf(stdout, "Filesystem lz4_max_distance:                  %u\n",
+			sbi.lz4_max_distance | 0U);
+	}
+	fprintf(stdout, "Filesystem sb_extslots:                       %u\n",
+			sbi.extslots | 0U);
 	fprintf(stdout, "Filesystem inode count:                       %llu\n",
 			sbi.inos | 0ULL);
 	fprintf(stdout, "Filesystem created:                           %s",
