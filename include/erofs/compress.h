@@ -23,7 +23,8 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi,
 			  struct erofs_buffer_head *bh);
 int z_erofs_compress_exit(void);
 
-const char *z_erofs_list_available_compressors(unsigned int i);
+const char *z_erofs_list_supported_algorithms(int i, unsigned int *mask);
+const char *z_erofs_list_available_compressors(int *i);
 
 static inline bool erofs_is_packed_inode(struct erofs_inode *inode)
 {

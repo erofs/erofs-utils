@@ -10,21 +10,70 @@
 
 #define EROFS_CONFIG_COMPR_DEF_BOUNDARY		(128)
 
-static const struct erofs_compressor *compressors[] = {
+static const struct erofs_algorithm {
+	char *name;
+	const struct erofs_compressor *c;
+	unsigned int id;
+
+	/* its name won't be shown as a supported algorithm */
+	bool optimisor;
+} erofs_algs[] = {
+	{ "lz4",
 #if LZ4_ENABLED
-#if LZ4HC_ENABLED
-		&erofs_compressor_lz4hc,
-#endif
 		&erofs_compressor_lz4,
+#else
+		NULL,
 #endif
+	  Z_EROFS_COMPRESSION_LZ4, false },
+
+#if LZ4HC_ENABLED
+	{ "lz4hc", &erofs_compressor_lz4hc,
+	  Z_EROFS_COMPRESSION_LZ4, true },
+#endif
+
+	{ "lzma",
 #if HAVE_LIBLZMA
 		&erofs_compressor_lzma,
+#else
+		NULL,
 #endif
-		&erofs_compressor_deflate,
+	  Z_EROFS_COMPRESSION_LZMA, false },
+
+	{ "deflate", &erofs_compressor_deflate,
+	  Z_EROFS_COMPRESSION_DEFLATE, false },
+
 #if HAVE_LIBDEFLATE
-		&erofs_compressor_libdeflate,
+	{ "libdeflate", &erofs_compressor_libdeflate,
+	  Z_EROFS_COMPRESSION_DEFLATE, true },
 #endif
 };
+
+int z_erofs_get_compress_algorithm_id(const struct erofs_compress *c)
+{
+	DBG_BUGON(!c->alg);
+	return c->alg->id;
+}
+
+const char *z_erofs_list_supported_algorithms(int i, unsigned int *mask)
+{
+	if (i >= ARRAY_SIZE(erofs_algs))
+		return NULL;
+	if (!erofs_algs[i].optimisor && (*mask & (1 << erofs_algs[i].id))) {
+		*mask ^= 1 << erofs_algs[i].id;
+		return erofs_algs[i].name;
+	}
+	return "";
+}
+
+const char *z_erofs_list_available_compressors(int *i)
+{
+	for (;*i < ARRAY_SIZE(erofs_algs); ++*i) {
+		if (!erofs_algs[*i].c)
+			continue;
+		return erofs_algs[(*i)++].name;
+	}
+	return NULL;
+}
 
 int erofs_compress_destsize(const struct erofs_compress *c,
 			    const void *src, unsigned int *srcsize,
@@ -34,11 +83,11 @@ int erofs_compress_destsize(const struct erofs_compress *c,
 	int ret;
 
 	DBG_BUGON(!c->alg);
-	if (!c->alg->compress_destsize)
+	if (!c->alg->c->compress_destsize)
 		return -ENOTSUP;
 
 	uncompressed_capacity = *srcsize;
-	ret = c->alg->compress_destsize(c, src, srcsize, dst, dstsize);
+	ret = c->alg->c->compress_destsize(c, src, srcsize, dst, dstsize);
 	if (ret < 0)
 		return ret;
 
@@ -55,16 +104,11 @@ int erofs_compress_destsize(const struct erofs_compress *c,
 	return ret;
 }
 
-const char *z_erofs_list_available_compressors(unsigned int i)
-{
-	return i >= ARRAY_SIZE(compressors) ? NULL : compressors[i]->name;
-}
-
 int erofs_compressor_setlevel(struct erofs_compress *c, int compression_level)
 {
 	DBG_BUGON(!c->alg);
-	if (c->alg->setlevel)
-		return c->alg->setlevel(c, compression_level);
+	if (c->alg->c->setlevel)
+		return c->alg->c->setlevel(c, compression_level);
 
 	if (compression_level >= 0)
 		return -EINVAL;
@@ -93,13 +137,16 @@ int erofs_compressor_init(struct erofs_sb_info *sbi,
 	}
 
 	ret = -EINVAL;
-	for (i = 0; i < ARRAY_SIZE(compressors); ++i) {
-		if (alg_name && strcmp(alg_name, compressors[i]->name))
+	for (i = 0; i < ARRAY_SIZE(erofs_algs); ++i) {
+		if (alg_name && strcmp(alg_name, erofs_algs[i].name))
 			continue;
 
-		ret = compressors[i]->init(c);
+		if (!erofs_algs[i].c)
+			continue;
+
+		ret = erofs_algs[i].c->init(c);
 		if (!ret) {
-			DBG_BUGON(!c->alg);
+			c->alg = &erofs_algs[i];
 			return 0;
 		}
 	}
@@ -109,7 +156,7 @@ int erofs_compressor_init(struct erofs_sb_info *sbi,
 
 int erofs_compressor_exit(struct erofs_compress *c)
 {
-	if (c->alg && c->alg->exit)
-		return c->alg->exit(c);
+	if (c->alg && c->alg->c->exit)
+		return c->alg->c->exit(c);
 	return 0;
 }

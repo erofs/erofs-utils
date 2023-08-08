@@ -32,13 +32,11 @@ static int compressor_lz4_exit(struct erofs_compress *c)
 
 static int compressor_lz4_init(struct erofs_compress *c)
 {
-	c->alg = &erofs_compressor_lz4;
 	c->sbi->lz4_max_distance = LZ4_DISTANCE_MAX;
 	return 0;
 }
 
 const struct erofs_compressor erofs_compressor_lz4 = {
-	.name = "lz4",
 	.default_level = 0,
 	.best_level = 0,
 	.init = compressor_lz4_init,

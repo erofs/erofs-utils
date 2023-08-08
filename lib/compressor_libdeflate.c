@@ -82,7 +82,6 @@ static int compressor_libdeflate_exit(struct erofs_compress *c)
 
 static int compressor_libdeflate_init(struct erofs_compress *c)
 {
-	c->alg = &erofs_compressor_libdeflate;
 	c->private_data = NULL;
 
 	erofs_warn("EXPERIMENTAL libdeflate compressor in use. Use at your own risk!");
@@ -104,7 +103,6 @@ static int erofs_compressor_libdeflate_setlevel(struct erofs_compress *c,
 }
 
 const struct erofs_compressor erofs_compressor_libdeflate = {
-	.name = "libdeflate",
 	.default_level = 1,
 	.best_level = 12,
 	.init = compressor_libdeflate_init,

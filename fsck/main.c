@@ -61,13 +61,15 @@ static struct list_head erofsfsck_link_hashtable[NR_HARDLINK_HASHTABLE];
 
 static void print_available_decompressors(FILE *f, const char *delim)
 {
-	unsigned int i = 0;
+	int i = 0;
+	bool comma = false;
 	const char *s;
 
-	while ((s = z_erofs_list_available_compressors(i)) != NULL) {
-		if (i++)
+	while ((s = z_erofs_list_available_compressors(&i)) != NULL) {
+		if (comma)
 			fputs(delim, f);
 		fputs(s, f);
+		comma = true;
 	}
 	fputc('\n', f);
 }

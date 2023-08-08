@@ -1030,17 +1030,6 @@ err_free_meta:
 	return ret;
 }
 
-static int erofs_get_compress_algorithm_id(const char *name)
-{
-	if (!strcmp(name, "lz4") || !strcmp(name, "lz4hc"))
-		return Z_EROFS_COMPRESSION_LZ4;
-	if (!strcmp(name, "lzma"))
-		return Z_EROFS_COMPRESSION_LZMA;
-	if (!strcmp(name, "deflate") || !strcmp(name, "libdeflate"))
-		return Z_EROFS_COMPRESSION_DEFLATE;
-	return -ENOTSUP;
-}
-
 static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 				    struct erofs_buffer_head *sb_bh)
 {
@@ -1123,23 +1112,21 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 	int i, ret;
 
 	for (i = 0; cfg.c_compr_alg[i]; ++i) {
-		ret = erofs_compressor_init(sbi, &erofs_ccfg[i].handle,
-					     cfg.c_compr_alg[i]);
+		struct erofs_compress *c = &erofs_ccfg[i].handle;
+
+		ret = erofs_compressor_init(sbi, c, cfg.c_compr_alg[i]);
 		if (ret)
 			return ret;
 
-		ret = erofs_compressor_setlevel(&erofs_ccfg[i].handle,
-						cfg.c_compr_level[i]);
+		ret = erofs_compressor_setlevel(c, cfg.c_compr_level[i]);
 		if (ret)
 			return ret;
 
-		ret = erofs_get_compress_algorithm_id(cfg.c_compr_alg[i]);
-		if (ret < 0)
-			return ret;
-		erofs_ccfg[i].algorithmtype = ret;
+		erofs_ccfg[i].algorithmtype =
+			z_erofs_get_compress_algorithm_id(c);
 		erofs_ccfg[i].enable = true;
-		sbi->available_compr_algs |= 1 << ret;
-		if (ret != Z_EROFS_COMPRESSION_LZ4)
+		sbi->available_compr_algs |= 1 << erofs_ccfg[i].algorithmtype;
+		if (erofs_ccfg[i].algorithmtype != Z_EROFS_COMPRESSION_LZ4)
 			erofs_sb_set_compr_cfgs(sbi);
 	}
 
@@ -1172,10 +1159,8 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 		return -EINVAL;
 	}
 
-	if (erofs_sb_has_compr_cfgs(sbi)) {
-		sbi->available_compr_algs |= 1 << ret;
+	if (erofs_sb_has_compr_cfgs(sbi))
 		return z_erofs_build_compr_cfgs(sbi, sb_bh);
-	}
 	return 0;
 }
 

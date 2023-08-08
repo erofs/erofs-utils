@@ -12,8 +12,6 @@
 struct erofs_compress;
 
 struct erofs_compressor {
-	const char *name;
-
 	int default_level;
 	int best_level;
 
@@ -26,9 +24,11 @@ struct erofs_compressor {
 				 void *dst, unsigned int dstsize);
 };
 
+struct erofs_algorithm;
+
 struct erofs_compress {
 	struct erofs_sb_info *sbi;
-	const struct erofs_compressor *alg;
+	const struct erofs_algorithm *alg;
 
 	unsigned int compress_threshold;
 	unsigned int compression_level;
@@ -48,6 +48,7 @@ extern const struct erofs_compressor erofs_compressor_lzma;
 extern const struct erofs_compressor erofs_compressor_deflate;
 extern const struct erofs_compressor erofs_compressor_libdeflate;
 
+int z_erofs_get_compress_algorithm_id(const struct erofs_compress *c);
 int erofs_compress_destsize(const struct erofs_compress *c,
 			    const void *src, unsigned int *srcsize,
 			    void *dst, unsigned int dstsize, bool inblocks);
