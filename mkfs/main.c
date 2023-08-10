@@ -912,9 +912,6 @@ int main(int argc, char **argv)
 
 	erofs_inode_manager_init();
 
-	if (cfg.c_extra_ea_name_prefixes)
-		erofs_xattr_write_name_prefixes(&sbi, packedfile);
-
 	if (!tar_mode) {
 		err = erofs_build_shared_xattrs_from_path(&sbi, cfg.c_src_path);
 		if (err) {

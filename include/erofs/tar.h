@@ -2,7 +2,14 @@
 #ifndef __EROFS_TAR_H
 #define __EROFS_TAR_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include <sys/stat.h>
+
+#include "internal.h"
 
 struct erofs_pax_header {
 	struct stat st;
@@ -26,5 +33,9 @@ int tarerofs_init_empty_dir(struct erofs_inode *inode);
 int tarerofs_parse_tar(struct erofs_inode *root, struct erofs_tarfile *tar);
 int tarerofs_reserve_devtable(struct erofs_sb_info *sbi, unsigned int devices);
 int tarerofs_write_devtable(struct erofs_sb_info *sbi, struct erofs_tarfile *tar);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
