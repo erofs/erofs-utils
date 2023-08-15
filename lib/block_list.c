@@ -108,7 +108,7 @@ void erofs_droid_blocklist_write_tail_end(struct erofs_inode *inode,
 		return;
 
 	/* XXX: another hack, which means it has been outputed before */
-	if (erofs_blknr(inode->i_size)) {
+	if (erofs_blknr(inode->sbi, inode->i_size)) {
 		if (blkaddr == NULL_ADDR)
 			fprintf(block_list_fp, "\n");
 		else
