@@ -60,6 +60,7 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 		die = (struct erofs_inode_extended *)buf;
 		vi->xattr_isize = erofs_xattr_ibody_size(die->i_xattr_icount);
 		vi->i_mode = le16_to_cpu(die->i_mode);
+		vi->i_ino[0] = le32_to_cpu(die->i_ino);
 
 		switch (vi->i_mode & S_IFMT) {
 		case S_IFREG:
@@ -95,6 +96,7 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 		vi->inode_isize = sizeof(struct erofs_inode_compact);
 		vi->xattr_isize = erofs_xattr_ibody_size(dic->i_xattr_icount);
 		vi->i_mode = le16_to_cpu(dic->i_mode);
+		vi->i_ino[0] = le32_to_cpu(dic->i_ino);
 
 		switch (vi->i_mode & S_IFMT) {
 		case S_IFREG:
