@@ -66,7 +66,7 @@ struct erofs_xattr_prefix_item {
 
 struct erofs_sb_info {
 	struct erofs_device_info *devs;
-	const char *devname;
+	char *devname;
 
 	u64 total_blocks;
 	u64 primarydevice_blocks;

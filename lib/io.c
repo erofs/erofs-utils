@@ -10,6 +10,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include "erofs/io.h"
@@ -46,6 +47,7 @@ static int dev_get_blkdev_size(int fd, u64 *bytes)
 void dev_close(struct erofs_sb_info *sbi)
 {
 	close(sbi->devfd);
+	free(sbi->devname);
 	sbi->devname = NULL;
 	sbi->devfd   = -1;
 	sbi->devsz   = 0;
@@ -95,7 +97,11 @@ int dev_open(struct erofs_sb_info *sbi, const char *dev)
 		return -EINVAL;
 	}
 
-	sbi->devname = dev;
+	sbi->devname = strdup(dev);
+	if (!sbi->devname) {
+		close(fd);
+		return -ENOMEM;
+	}
 	sbi->devfd = fd;
 
 	erofs_info("successfully to open %s", dev);
@@ -136,8 +142,12 @@ int dev_open_ro(struct erofs_sb_info *sbi, const char *dev)
 		return -errno;
 	}
 
+	sbi->devname = strdup(dev);
+	if (!sbi->devname) {
+		close(fd);
+		return -ENOMEM;
+	}
 	sbi->devfd = fd;
-	sbi->devname = dev;
 	sbi->devsz = INT64_MAX;
 	return 0;
 }
