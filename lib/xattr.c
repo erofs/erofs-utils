@@ -1229,11 +1229,14 @@ static int xattr_entrylist(struct xattr_iter *_it,
 {
 	struct listxattr_iter *it =
 		container_of(_it, struct listxattr_iter, it);
+	unsigned int base_index = entry->e_name_index;
 	unsigned int prefix_len;
 	const char *prefix;
 
-	prefix = xattr_types[entry->e_name_index].prefix;
-	prefix_len = xattr_types[entry->e_name_index].prefix_len;
+	if (base_index >= ARRAY_SIZE(xattr_types))
+		return 1;
+	prefix = xattr_types[base_index].prefix;
+	prefix_len = xattr_types[base_index].prefix_len;
 
 	if (!it->buffer) {
 		it->buffer_ofs += prefix_len + entry->e_name_len + 1;
