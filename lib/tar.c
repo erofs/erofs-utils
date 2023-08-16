@@ -359,6 +359,44 @@ void tarerofs_remove_inode(struct erofs_inode *inode)
 	--inode->i_parent->i_nlink;
 }
 
+static int tarerofs_write_file_data(struct erofs_inode *inode,
+				    struct erofs_tarfile *tar)
+{
+	unsigned int j, rem;
+	char buf[65536];
+
+	if (!inode->i_tmpfile) {
+		inode->i_tmpfile = tmpfile();
+		if (!inode->i_tmpfile)
+			return -ENOSPC;
+	}
+
+	for (j = inode->i_size; j; ) {
+		rem = min_t(unsigned int, sizeof(buf), j);
+
+		if (erofs_read_from_fd(tar->fd, buf, rem) != rem ||
+		    fwrite(buf, rem, 1, inode->i_tmpfile) != 1)
+			return -EIO;
+		j -= rem;
+	}
+	fseek(inode->i_tmpfile, 0, SEEK_SET);
+	inode->with_tmpfile = true;
+	return 0;
+}
+
+static int tarerofs_write_file_index(struct erofs_inode *inode,
+		struct erofs_tarfile *tar, erofs_off_t data_offset)
+{
+	int ret;
+
+	ret = tarerofs_write_chunkes(inode, data_offset);
+	if (ret)
+		return ret;
+	if (erofs_lskip(tar->fd, inode->i_size))
+		return -EIO;
+	return 0;
+}
+
 int tarerofs_parse_tar(struct erofs_inode *root, struct erofs_tarfile *tar)
 {
 	char path[PATH_MAX];
@@ -672,41 +710,16 @@ new_inode:
 			inode->i_size = strlen(eh.link);
 			inode->i_link = malloc(inode->i_size + 1);
 			memcpy(inode->i_link, eh.link, inode->i_size + 1);
-		} else if (tar->index_mode) {
-			ret = tarerofs_write_chunkes(inode, data_offset);
-			if (ret)
-				goto out;
-			if (erofs_lskip(tar->fd, inode->i_size)) {
+		} else if (inode->i_size) {
+			if (tar->index_mode)
+				ret = tarerofs_write_file_index(inode, tar,
+								data_offset);
+			else
+				ret = tarerofs_write_file_data(inode, tar);
+			if (ret) {
 				erofs_iput(inode);
-				ret = -EIO;
 				goto out;
 			}
-		} else {
-			char buf[65536];
-
-			if (!inode->i_tmpfile) {
-				inode->i_tmpfile = tmpfile();
-
-				if (!inode->i_tmpfile) {
-					erofs_iput(inode);
-					ret = -ENOSPC;
-					goto out;
-				}
-			}
-
-			for (j = inode->i_size; j; ) {
-				rem = min_t(int, sizeof(buf), j);
-
-				if (erofs_read_from_fd(tar->fd, buf, rem) != rem ||
-				    fwrite(buf, rem, 1, inode->i_tmpfile) != 1) {
-					erofs_iput(inode);
-					ret = -EIO;
-					goto out;
-				}
-				j -= rem;
-			}
-			fseek(inode->i_tmpfile, 0, SEEK_SET);
-			inode->with_tmpfile = true;
 		}
 		inode->i_nlink++;
 		ret = 0;
