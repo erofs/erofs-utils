@@ -137,6 +137,20 @@ static struct xattr_item *get_xattritem(u8 prefix, char *kvbuf,
 	return item;
 }
 
+static bool match_base_prefix(const char *key, u8 *index, u16 *len)
+{
+	struct xattr_prefix *p;
+
+	for (p = xattr_types; p < xattr_types + ARRAY_SIZE(xattr_types); ++p) {
+		if (p->prefix && !strncmp(p->prefix, key, p->prefix_len)) {
+			*len = p->prefix_len;
+			*index = p - xattr_types;
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool match_prefix(const char *key, u8 *index, u16 *len)
 {
 	struct xattr_prefix *p;
@@ -150,14 +164,7 @@ static bool match_prefix(const char *key, u8 *index, u16 *len)
 			return true;
 		}
 	}
-	for (p = xattr_types; p < xattr_types + ARRAY_SIZE(xattr_types); ++p) {
-		if (p->prefix && !strncmp(p->prefix, key, p->prefix_len)) {
-			*len = p->prefix_len;
-			*index = p - xattr_types;
-			return true;
-		}
-	}
-	return false;
+	return match_base_prefix(key, index, len);
 }
 
 static struct xattr_item *parse_one_xattr(const char *path, const char *key,
@@ -1198,7 +1205,7 @@ int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
 	if (ret)
 		return ret;
 
-	if (!match_prefix(name, &prefix, &prefixlen))
+	if (!match_base_prefix(name, &prefix, &prefixlen))
 		return -ENODATA;
 
 	it.it.sbi = vi->sbi;
