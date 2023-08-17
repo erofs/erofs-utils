@@ -372,3 +372,87 @@ int erofs_pread(struct erofs_inode *inode, char *buf,
 	}
 	return -EINVAL;
 }
+
+static void *erofs_read_metadata_nid(struct erofs_sb_info *sbi, erofs_nid_t nid,
+				     erofs_off_t *offset, int *lengthp)
+{
+	struct erofs_inode vi = { .sbi = sbi, .nid = nid };
+	__le16 __len;
+	int ret, len;
+	char *buffer;
+
+	ret = erofs_read_inode_from_disk(&vi);
+	if (ret)
+		return ERR_PTR(ret);
+
+	*offset = round_up(*offset, 4);
+	ret = erofs_pread(&vi, (void *)&__len, sizeof(__le16), *offset);
+	if (ret)
+		return ERR_PTR(ret);
+
+	len = le16_to_cpu(__len);
+	if (!len)
+		return ERR_PTR(-EFSCORRUPTED);
+
+	buffer = malloc(len);
+	if (!buffer)
+		return ERR_PTR(-ENOMEM);
+	*offset += sizeof(__le16);
+	*lengthp = len;
+
+	ret = erofs_pread(&vi, buffer, len, *offset);
+	if (ret) {
+		free(buffer);
+		return ERR_PTR(ret);
+	}
+	*offset += len;
+	return buffer;
+}
+
+static void *erofs_read_metadata_bdi(struct erofs_sb_info *sbi,
+				     erofs_off_t *offset, int *lengthp)
+{
+	int ret, len, i, cnt;
+	void *buffer;
+	u8 data[EROFS_MAX_BLOCK_SIZE];
+
+	*offset = round_up(*offset, 4);
+	ret = blk_read(sbi, 0, data, erofs_blknr(sbi, *offset), 1);
+	if (ret)
+		return ERR_PTR(ret);
+	len = le16_to_cpu(*(__le16 *)&data[erofs_blkoff(sbi, *offset)]);
+	if (!len)
+		return ERR_PTR(-EFSCORRUPTED);
+
+	buffer = malloc(len);
+	if (!buffer)
+		return ERR_PTR(-ENOMEM);
+	*offset += sizeof(__le16);
+	*lengthp = len;
+
+	for (i = 0; i < len; i += cnt) {
+		cnt = min_t(int, erofs_blksiz(sbi) - erofs_blkoff(sbi, *offset),
+			    len - i);
+		ret = blk_read(sbi, 0, data, erofs_blknr(sbi, *offset), 1);
+		if (ret) {
+			free(buffer);
+			return ERR_PTR(ret);
+		}
+		memcpy(buffer + i, data + erofs_blkoff(sbi, *offset), cnt);
+		*offset += cnt;
+	}
+	return buffer;
+}
+
+/*
+ * read variable-sized metadata, offset will be aligned by 4-byte
+ *
+ * @nid is 0 if metadata is in meta inode
+ */
+void *erofs_read_metadata(struct erofs_sb_info *sbi, erofs_nid_t nid,
+			  erofs_off_t *offset, int *lengthp)
+{
+	if (nid)
+		return erofs_read_metadata_nid(sbi, nid, offset, lengthp);
+	return erofs_read_metadata_bdi(sbi, offset, lengthp);
+}
