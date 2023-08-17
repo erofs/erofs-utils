@@ -57,6 +57,11 @@ struct erofs_device_info {
 	u32 mapped_blkaddr;
 };
 
+struct erofs_xattr_prefix_item {
+	struct erofs_xattr_long_prefix *prefix;
+	u8 infix_len;
+};
+
 #define EROFS_PACKED_NID_UNALLOCATED	-1
 
 struct erofs_sb_info {
@@ -99,6 +104,7 @@ struct erofs_sb_info {
 
 	u32 xattr_prefix_start;
 	u8 xattr_prefix_count;
+	struct erofs_xattr_prefix_item *xattr_prefixes;
 
 	int devfd;
 	u64 devsz;

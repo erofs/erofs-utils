@@ -82,6 +82,8 @@ int erofs_build_shared_xattrs_from_path(struct erofs_sb_info *sbi, const char *p
 int erofs_xattr_insert_name_prefix(const char *prefix);
 void erofs_xattr_cleanup_name_prefixes(void);
 int erofs_xattr_write_name_prefixes(struct erofs_sb_info *sbi, FILE *f);
+void erofs_xattr_prefixes_cleanup(struct erofs_sb_info *sbi);
+int erofs_xattr_prefixes_init(struct erofs_sb_info *sbi);
 
 int erofs_setxattr(struct erofs_inode *inode, char *key,
 		   const void *value, size_t size);

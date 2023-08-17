@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include "erofs/io.h"
 #include "erofs/print.h"
+#include "erofs/xattr.h"
 
 static bool check_layout_compatibility(struct erofs_sb_info *sbi,
 				       struct erofs_super_block *dsb)
@@ -101,6 +102,8 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 	sbi->primarydevice_blocks = le32_to_cpu(dsb->blocks);
 	sbi->meta_blkaddr = le32_to_cpu(dsb->meta_blkaddr);
 	sbi->xattr_blkaddr = le32_to_cpu(dsb->xattr_blkaddr);
+	sbi->xattr_prefix_start = le32_to_cpu(dsb->xattr_prefix_start);
+	sbi->xattr_prefix_count = dsb->xattr_prefix_count;
 	sbi->islotbits = EROFS_ISLOTBITS;
 	sbi->root_nid = le16_to_cpu(dsb->root_nid);
 	sbi->packed_nid = le64_to_cpu(dsb->packed_nid);
@@ -117,11 +120,20 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 		sbi->available_compr_algs = le16_to_cpu(dsb->u1.available_compr_algs);
 	else
 		sbi->lz4_max_distance = le16_to_cpu(dsb->u1.lz4_max_distance);
-	return erofs_init_devices(sbi, dsb);
+
+	ret = erofs_init_devices(sbi, dsb);
+	if (ret)
+		return ret;
+
+	ret = erofs_xattr_prefixes_init(sbi);
+	if (ret)
+		free(sbi->devs);
+	return ret;
 }
 
 void erofs_put_super(struct erofs_sb_info *sbi)
 {
 	if (sbi->devs)
 		free(sbi->devs);
+	erofs_xattr_prefixes_cleanup(sbi);
 }

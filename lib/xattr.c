@@ -1093,19 +1093,47 @@ out:
 struct getxattr_iter {
 	struct xattr_iter it;
 
-	int buffer_size, index;
+	int buffer_size, index, infix_len;
 	char *buffer;
 	const char *name;
 	size_t len;
 };
+
+static int erofs_xattr_long_entrymatch(struct getxattr_iter *it,
+				       struct erofs_xattr_entry *entry)
+{
+	struct erofs_sb_info *sbi = it->it.sbi;
+	struct erofs_xattr_prefix_item *pf = sbi->xattr_prefixes +
+		(entry->e_name_index & EROFS_XATTR_LONG_PREFIX_MASK);
+
+	if (pf >= sbi->xattr_prefixes + sbi->xattr_prefix_count)
+		return -ENOATTR;
+
+	if (it->index != pf->prefix->base_index ||
+	    it->len != entry->e_name_len + pf->infix_len)
+		return -ENOATTR;
+
+	if (memcmp(it->name, pf->prefix->infix, pf->infix_len))
+		return -ENOATTR;
+
+	it->infix_len = pf->infix_len;
+	return 0;
+}
 
 static int xattr_entrymatch(struct xattr_iter *_it,
 			    struct erofs_xattr_entry *entry)
 {
 	struct getxattr_iter *it = container_of(_it, struct getxattr_iter, it);
 
-	return (it->index != entry->e_name_index ||
-		it->len != entry->e_name_len) ? -ENOATTR : 0;
+	/* should also match the infix for long name prefixes */
+	if (entry->e_name_index & EROFS_XATTR_LONG_PREFIX)
+		return erofs_xattr_long_entrymatch(it, entry);
+
+	if (it->index != entry->e_name_index ||
+	    it->len != entry->e_name_len)
+		return -ENOATTR;
+	it->infix_len = 0;
+	return 0;
 }
 
 static int xattr_namematch(struct xattr_iter *_it,
@@ -1113,8 +1141,9 @@ static int xattr_namematch(struct xattr_iter *_it,
 {
 	struct getxattr_iter *it = container_of(_it, struct getxattr_iter, it);
 
-
-	return memcmp(buf, it->name + processed, len) ? -ENOATTR : 0;
+	if (memcmp(buf, it->name + it->infix_len + processed, len))
+		return -ENOATTR;
+	return 0;
 }
 
 static int xattr_checkbuffer(struct xattr_iter *_it,
@@ -1237,8 +1266,20 @@ static int xattr_entrylist(struct xattr_iter *_it,
 	struct listxattr_iter *it =
 		container_of(_it, struct listxattr_iter, it);
 	unsigned int base_index = entry->e_name_index;
-	unsigned int prefix_len;
-	const char *prefix;
+	unsigned int prefix_len, infix_len = 0;
+	const char *prefix, *infix = NULL;
+
+	if (entry->e_name_index & EROFS_XATTR_LONG_PREFIX) {
+		struct erofs_sb_info *sbi = _it->sbi;
+		struct erofs_xattr_prefix_item *pf = sbi->xattr_prefixes +
+			(entry->e_name_index & EROFS_XATTR_LONG_PREFIX_MASK);
+
+		if (pf >= sbi->xattr_prefixes + sbi->xattr_prefix_count)
+			return 1;
+		infix = pf->prefix->infix;
+		infix_len = pf->infix_len;
+		base_index = pf->prefix->base_index;
+	}
 
 	if (base_index >= ARRAY_SIZE(xattr_types))
 		return 1;
@@ -1246,16 +1287,18 @@ static int xattr_entrylist(struct xattr_iter *_it,
 	prefix_len = xattr_types[base_index].prefix_len;
 
 	if (!it->buffer) {
-		it->buffer_ofs += prefix_len + entry->e_name_len + 1;
+		it->buffer_ofs += prefix_len + infix_len +
+					entry->e_name_len + 1;
 		return 1;
 	}
 
-	if (it->buffer_ofs + prefix_len
+	if (it->buffer_ofs + prefix_len + infix_len
 		+ entry->e_name_len + 1 > it->buffer_size)
 		return -ERANGE;
 
 	memcpy(it->buffer + it->buffer_ofs, prefix, prefix_len);
-	it->buffer_ofs += prefix_len;
+	memcpy(it->buffer + it->buffer_ofs + prefix_len, infix, infix_len);
+	it->buffer_ofs += prefix_len + infix_len;
 	return 0;
 }
 
@@ -1403,4 +1446,56 @@ void erofs_xattr_cleanup_name_prefixes(void)
 		free((void *)tnode->type.prefix);
 		free(tnode);
 	}
+}
+
+void erofs_xattr_prefixes_cleanup(struct erofs_sb_info *sbi)
+{
+	int i;
+
+	if (sbi->xattr_prefixes) {
+		for (i = 0; i < sbi->xattr_prefix_count; i++)
+			free(sbi->xattr_prefixes[i].prefix);
+		free(sbi->xattr_prefixes);
+		sbi->xattr_prefixes = NULL;
+	}
+}
+
+int erofs_xattr_prefixes_init(struct erofs_sb_info *sbi)
+{
+	erofs_off_t pos = (erofs_off_t)sbi->xattr_prefix_start << 2;
+	struct erofs_xattr_prefix_item *pfs;
+	erofs_nid_t nid = 0;
+	int ret = 0, i, len;
+	void *buf;
+
+	if (!sbi->xattr_prefix_count)
+		return 0;
+
+	if (sbi->packed_nid)
+		nid = sbi->packed_nid;
+
+	pfs = calloc(sbi->xattr_prefix_count, sizeof(*pfs));
+	if (!pfs)
+		return -ENOMEM;
+
+	for (i = 0; i < sbi->xattr_prefix_count; i++) {
+		buf = erofs_read_metadata(sbi, nid, &pos, &len);
+		if (IS_ERR(buf)) {
+			ret = PTR_ERR(buf);
+			goto out;
+		}
+		if (len < sizeof(*pfs->prefix) ||
+		    len > EROFS_NAME_LEN + sizeof(*pfs->prefix)) {
+			free(buf);
+			ret = -EFSCORRUPTED;
+			goto out;
+		}
+		pfs[i].prefix = buf;
+		pfs[i].infix_len = len - sizeof(struct erofs_xattr_long_prefix);
+	}
+out:
+	sbi->xattr_prefixes = pfs;
+	if (ret)
+		erofs_xattr_prefixes_cleanup(sbi);
+	return ret;
 }
