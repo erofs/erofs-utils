@@ -57,6 +57,7 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 		ret = dev_read(sbi, 0, &dis, pos, sizeof(dis));
 		if (ret < 0) {
 			free(sbi->devs);
+			sbi->devs = NULL;
 			return ret;
 		}
 
@@ -126,14 +127,18 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 		return ret;
 
 	ret = erofs_xattr_prefixes_init(sbi);
-	if (ret)
+	if (ret && sbi->devs) {
 		free(sbi->devs);
+		sbi->devs = NULL;
+	}
 	return ret;
 }
 
 void erofs_put_super(struct erofs_sb_info *sbi)
 {
-	if (sbi->devs)
+	if (sbi->devs) {
 		free(sbi->devs);
+		sbi->devs = NULL;
+	}
 	erofs_xattr_prefixes_cleanup(sbi);
 }
