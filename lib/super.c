@@ -37,7 +37,8 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 	else
 		ondisk_extradevs = le16_to_cpu(dsb->extra_devices);
 
-	if (ondisk_extradevs != sbi->extra_devices) {
+	if (sbi->extra_devices &&
+	    ondisk_extradevs != sbi->extra_devices) {
 		erofs_err("extra devices don't match (ondisk %u, given %u)",
 			  ondisk_extradevs, sbi->extra_devices);
 		return -EINVAL;
@@ -45,6 +46,7 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 	if (!ondisk_extradevs)
 		return 0;
 
+	sbi->extra_devices = ondisk_extradevs;
 	sbi->device_id_mask = roundup_pow_of_two(ondisk_extradevs + 1) - 1;
 	sbi->devs = calloc(ondisk_extradevs, sizeof(*sbi->devs));
 	if (!sbi->devs)
@@ -61,8 +63,9 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 			return ret;
 		}
 
-		sbi->devs[i].mapped_blkaddr = dis.mapped_blkaddr;
-		sbi->total_blocks += dis.blocks;
+		sbi->devs[i].mapped_blkaddr = le32_to_cpu(dis.mapped_blkaddr);
+		sbi->devs[i].blocks = le32_to_cpu(dis.blocks);
+		sbi->total_blocks += sbi->devs[i].blocks;
 		pos += EROFS_DEVT_SLOT_SIZE;
 	}
 	return 0;
