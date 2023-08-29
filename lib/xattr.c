@@ -18,6 +18,7 @@
 #include "erofs/cache.h"
 #include "erofs/io.h"
 #include "erofs/fragments.h"
+#include "erofs/xxhash.h"
 #include "liberofs_private.h"
 
 #define EA_HASHTABLE_BITS 16
@@ -783,6 +784,65 @@ out:
 	return ret;
 }
 
+static int erofs_xattr_filter_hashbit(struct xattr_item *item)
+{
+	u8 prefix = item->prefix;
+	const char *key = item->kvbuf;
+	unsigned int len = item->len[0];
+	char *name = NULL;
+	uint32_t hashbit;
+
+	if (prefix & EROFS_XATTR_LONG_PREFIX) {
+		struct ea_type_node *tnode;
+		u16 prefix_len;
+		int ret;
+
+		list_for_each_entry(tnode, &ea_name_prefixes, list) {
+			if (tnode->index == item->prefix) {
+				ret = asprintf(&name, "%s%.*s",
+					       tnode->type.prefix, len, key);
+				if (ret < 0)
+					return -ENOMEM;
+				break;
+			}
+		}
+		if (!name)
+			return -ENOENT;
+
+		if (!match_base_prefix(name, &prefix, &prefix_len)) {
+			free(name);
+			return -ENOENT;
+		}
+		key = name + prefix_len;
+		len = strlen(key);
+	}
+
+	hashbit = xxh32(key, len, EROFS_XATTR_FILTER_SEED + prefix) &
+		  (EROFS_XATTR_FILTER_BITS - 1);
+	if (name)
+		free(name);
+	return hashbit;
+}
+
+static u32 erofs_xattr_filter_map(struct list_head *ixattrs)
+{
+	struct inode_xattr_node *node, *n;
+	u32 name_filter;
+	int hashbit;
+
+	name_filter = 0;
+	list_for_each_entry_safe(node, n, ixattrs, list) {
+		hashbit = erofs_xattr_filter_hashbit(node->item);
+		if (hashbit < 0) {
+			erofs_warn("failed to generate xattr name filter: %s",
+				   strerror(-hashbit));
+			return 0;
+		}
+		name_filter |= (1UL << hashbit);
+	}
+	return EROFS_XATTR_FILTER_DEFAULT & ~name_filter;
+}
+
 char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size)
 {
 	struct inode_xattr_node *node, *n;
@@ -796,6 +856,11 @@ char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size)
 
 	header = (struct erofs_xattr_ibody_header *)buf;
 	header->h_shared_count = 0;
+
+	if (cfg.c_xattr_name_filter) {
+		header->h_name_filter =
+			cpu_to_le32(erofs_xattr_filter_map(ixattrs));
+	}
 
 	p = sizeof(struct erofs_xattr_ibody_header);
 	list_for_each_entry_safe(node, n, ixattrs, list) {

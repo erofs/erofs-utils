@@ -245,6 +245,13 @@ handle_fragment:
 				return -EINVAL;
 			cfg.c_dedupe = true;
 		}
+
+		if (MATCH_EXTENTED_OPT("xattr-name-filter", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			cfg.c_xattr_name_filter = true;
+			erofs_sb_set_xattr_filter(&sbi);
+		}
 	}
 	return 0;
 }
