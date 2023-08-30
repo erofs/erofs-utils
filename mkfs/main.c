@@ -565,11 +565,12 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		cfg.c_dbg_lvl = EROFS_ERR;
 		cfg.c_showprogress = false;
 	}
-	if (cfg.c_compr_alg[0] && erofs_blksiz(&sbi) != EROFS_MAX_BLOCK_SIZE) {
-		erofs_err("compression is unsupported for now with block size %u",
-			  erofs_blksiz(&sbi));
-		return -EINVAL;
-	}
+
+	if (cfg.c_compr_alg[0] && erofs_blksiz(&sbi) != getpagesize())
+		erofs_warn("Please note that subpage blocksize with compression isn't yet supported in kernel. "
+			   "This compressed image will only work with bs = ps = %u bytes",
+			   erofs_blksiz(&sbi));
+
 	if (pclustersize_max) {
 		if (pclustersize_max < erofs_blksiz(&sbi) ||
 		    pclustersize_max % erofs_blksiz(&sbi)) {
