@@ -705,7 +705,7 @@ static void erofs_mkfs_default_options(void)
 	cfg.c_showprogress = true;
 	cfg.c_legacy_compress = false;
 	cfg.c_xattr_name_filter = true;
-	sbi.blkszbits = ilog2(EROFS_MAX_BLOCK_SIZE);
+	sbi.blkszbits = ilog2(min_t(u32, getpagesize(), EROFS_MAX_BLOCK_SIZE));
 	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_ZERO_PADDING;
 	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM |
 			     EROFS_FEATURE_COMPAT_MTIME;
