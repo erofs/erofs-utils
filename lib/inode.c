@@ -574,8 +574,8 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 	off += inode->inode_isize;
 
 	if (inode->xattr_isize) {
-		char *xattrs = erofs_export_xattr_ibody(&inode->i_xattrs,
-							inode->xattr_isize);
+		char *xattrs = erofs_export_xattr_ibody(inode);
+
 		if (IS_ERR(xattrs))
 			return false;
 

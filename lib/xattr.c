@@ -843,8 +843,10 @@ static u32 erofs_xattr_filter_map(struct list_head *ixattrs)
 	return EROFS_XATTR_FILTER_DEFAULT & ~name_filter;
 }
 
-char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size)
+char *erofs_export_xattr_ibody(struct erofs_inode *inode)
 {
+	struct list_head *ixattrs = &inode->i_xattrs;
+	unsigned int size = inode->xattr_isize;
 	struct inode_xattr_node *node, *n;
 	struct erofs_xattr_ibody_header *header;
 	LIST_HEAD(ilst);
@@ -860,6 +862,8 @@ char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size)
 	if (cfg.c_xattr_name_filter) {
 		header->h_name_filter =
 			cpu_to_le32(erofs_xattr_filter_map(ixattrs));
+		if (header->h_name_filter)
+			erofs_sb_set_xattr_filter(inode->sbi);
 	}
 
 	p = sizeof(struct erofs_xattr_ibody_header);
