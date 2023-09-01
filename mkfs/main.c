@@ -132,7 +132,9 @@ static void usage(void)
 }
 
 static unsigned int pclustersize_packed, pclustersize_max;
-static struct erofs_tarfile erofstar;
+static struct erofs_tarfile erofstar = {
+	.global.xattrs = LIST_HEAD_INIT(erofstar.global.xattrs)
+};
 static bool tar_mode;
 
 static int parse_extended_opts(const char *opts)

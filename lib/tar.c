@@ -235,6 +235,131 @@ static struct erofs_dentry *tarerofs_get_dentry(struct erofs_inode *pwd, char *p
 	return d;
 }
 
+struct tarerofs_xattr_item {
+	struct list_head list;
+	char *kv;
+	unsigned int len, namelen;
+};
+
+int tarerofs_insert_xattr(struct list_head *xattrs,
+			  char *kv, int namelen, int len, bool skip)
+{
+	struct tarerofs_xattr_item *item;
+	char *nv;
+
+	DBG_BUGON(namelen >= len);
+	list_for_each_entry(item, xattrs, list) {
+		if (!strncmp(item->kv, kv, namelen + 1)) {
+			if (skip)
+				return 0;
+			goto found;
+		}
+	}
+
+	item = malloc(sizeof(*item));
+	if (!item)
+		return -ENOMEM;
+	item->kv = NULL;
+	item->namelen = namelen;
+	namelen = 0;
+	list_add_tail(&item->list, xattrs);
+found:
+	nv = realloc(item->kv, len);
+	if (!nv)
+		return -ENOMEM;
+	item->kv = nv;
+	item->len = len;
+	memcpy(nv + namelen, kv + namelen, len - namelen);
+	return 0;
+}
+
+int tarerofs_merge_xattrs(struct list_head *dst, struct list_head *src)
+{
+	struct tarerofs_xattr_item *item;
+
+	list_for_each_entry(item, src, list) {
+		int ret;
+
+		ret = tarerofs_insert_xattr(dst, item->kv, item->namelen,
+					    item->len, true);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+void tarerofs_remove_xattrs(struct list_head *xattrs)
+{
+	struct tarerofs_xattr_item *item, *n;
+
+	list_for_each_entry_safe(item, n, xattrs, list) {
+		DBG_BUGON(!item->kv);
+		free(item->kv);
+		list_del(&item->list);
+		free(item);
+	}
+}
+
+int tarerofs_apply_xattrs(struct erofs_inode *inode, struct list_head *xattrs)
+{
+	struct tarerofs_xattr_item *item;
+	int ret;
+
+	list_for_each_entry(item, xattrs, list) {
+		const char *v = item->kv + item->namelen + 1;
+		unsigned int vsz = item->len - item->namelen - 1;
+
+		if (item->len <= item->namelen - 1) {
+			DBG_BUGON(item->len < item->namelen - 1);
+			continue;
+		}
+		item->kv[item->namelen] = '\0';
+		erofs_dbg("Recording xattr(%s)=\"%s\" (of %u bytes) to file %s",
+			  item->kv, v, vsz, inode->i_srcpath);
+		ret = erofs_setxattr(inode, item->kv, v, vsz);
+		if (ret == -ENODATA)
+			erofs_err("Failed to set xattr(%s)=%s to file %s",
+				  item->kv, v, inode->i_srcpath);
+		else if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+static const char lookup_table[65] =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+,";
+
+static int base64_decode(const char *src, int len, u8 *dst)
+{
+	int i, bits = 0, ac = 0;
+	const char *p;
+	u8 *cp = dst;
+
+	if(!(len % 4)) {
+		/* Check for and ignore any end padding */
+		if (src[len - 2] == '=' && src[len - 1] == '=')
+			len -= 2;
+		else if (src[len - 1] == '=')
+			--len;
+	}
+
+	for (i = 0; i < len; i++) {
+		p = strchr(lookup_table, src[i]);
+		if (p == NULL || src[i] == 0)
+			return -2;
+		ac += (p - lookup_table) << bits;
+		bits += 6;
+		if (bits >= 8) {
+			*cp++ = ac & 0xff;
+			ac >>= 8;
+			bits -= 8;
+		}
+	}
+	if (ac)
+		return -1;
+	return cp - dst;
+}
+
 int tarerofs_parse_pax_header(int fd, struct erofs_pax_header *eh, u32 size)
 {
 	char *buf, *p;
@@ -260,6 +385,7 @@ int tarerofs_parse_pax_header(int fd, struct erofs_pax_header *eh, u32 size)
 		}
 		kv = p + n;
 		p += len;
+		len -= n;
 
 		if (p[-1] != '\n') {
 			ret = -EIO;
@@ -330,6 +456,34 @@ int tarerofs_parse_pax_header(int fd, struct erofs_pax_header *eh, u32 size)
 				}
 				eh->st.st_gid = lln;
 				eh->use_gid = true;
+			} else if (!strncmp(kv, "SCHILY.xattr.",
+				   sizeof("SCHILY.xattr.") - 1)) {
+				char *key = kv + sizeof("SCHILY.xattr.") - 1;
+
+				--len; /* p[-1] == '\0' */
+				ret = tarerofs_insert_xattr(&eh->xattrs, key,
+						value - key - 1,
+						len - (key - kv), false);
+				if (ret)
+					goto out;
+			} else if (!strncmp(kv, "LIBARCHIVE.xattr.",
+				   sizeof("LIBARCHIVE.xattr.") - 1)) {
+				char *key;
+				key = kv + sizeof("LIBARCHIVE.xattr.") - 1;
+
+				--len; /* p[-1] == '\0' */
+				ret = base64_decode(value, len - (value - kv),
+						    (u8 *)value);
+				if (ret < 0) {
+					ret = -EFSCORRUPTED;
+					goto out;
+				}
+
+				ret = tarerofs_insert_xattr(&eh->xattrs, key,
+						value - key - 1,
+						value - key + ret, false);
+				if (ret)
+					goto out;
 			} else {
 				erofs_info("unrecognized pax keyword \"%s\", ignoring", kv);
 			}
@@ -416,6 +570,7 @@ int tarerofs_parse_tar(struct erofs_inode *root, struct erofs_tarfile *tar)
 		eh.path = strdup(eh.path);
 	if (eh.link)
 		eh.link = strdup(eh.link);
+	init_list_head(&eh.xattrs);
 
 restart:
 	rem = tar->offset & 511;
@@ -723,15 +878,23 @@ new_inode:
 			}
 		}
 		inode->i_nlink++;
-		ret = 0;
-	} else if (!inode->i_nlink)
+	} else if (!inode->i_nlink) {
 		ret = erofs_init_empty_dir(inode);
-	else
-		ret = 0;
+		if (ret)
+			goto out;
+	}
+
+	ret = tarerofs_merge_xattrs(&eh.xattrs, &tar->global.xattrs);
+	if (ret)
+		goto out;
+
+	ret = tarerofs_apply_xattrs(inode, &eh.xattrs);
+
 out:
 	if (eh.path != path)
 		free(eh.path);
 	free(eh.link);
+	tarerofs_remove_xattrs(&eh.xattrs);
 	return ret;
 
 invalid_tar:

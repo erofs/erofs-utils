@@ -13,6 +13,7 @@ extern "C"
 
 struct erofs_pax_header {
 	struct stat st;
+	struct list_head xattrs;
 	bool use_mtime;
 	bool use_size;
 	bool use_uid;
