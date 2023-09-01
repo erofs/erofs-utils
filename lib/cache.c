@@ -349,6 +349,18 @@ erofs_blk_t erofs_mapbh(struct erofs_buffer_block *bb)
 	return tail_blkaddr;
 }
 
+static void erofs_bfree(struct erofs_buffer_block *bb)
+{
+	DBG_BUGON(!list_empty(&bb->buffers.list));
+
+	if (bb == last_mapped_block)
+		last_mapped_block = list_prev_entry(bb, list);
+
+	list_del(&bb->mapped_list);
+	list_del(&bb->list);
+	free(bb);
+}
+
 bool erofs_bflush(struct erofs_buffer_block *bb)
 {
 	const unsigned int blksiz = erofs_blksiz(&sbi);
@@ -384,13 +396,8 @@ bool erofs_bflush(struct erofs_buffer_block *bb)
 			dev_fillzero(&sbi, erofs_pos(&sbi, blkaddr) - padding,
 				     padding, true);
 
-		DBG_BUGON(!list_empty(&p->buffers.list));
-
 		erofs_dbg("block %u to %u flushed", p->blkaddr, blkaddr - 1);
-
-		list_del(&p->mapped_list);
-		list_del(&p->list);
-		free(p);
+		erofs_bfree(p);
 	}
 	return true;
 }
@@ -412,12 +419,7 @@ void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke)
 	if (!list_empty(&bb->buffers.list))
 		return;
 
-	if (bb == last_mapped_block)
-		last_mapped_block = list_prev_entry(bb, list);
-
-	list_del(&bb->mapped_list);
-	list_del(&bb->list);
-	free(bb);
+	erofs_bfree(bb);
 
 	if (rollback)
 		tail_blkaddr = blkaddr;
