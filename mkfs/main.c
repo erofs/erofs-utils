@@ -843,10 +843,7 @@ int main(int argc, char **argv)
 			erofs_err("failed to initialize fragments");
 			return 1;
 		}
-		erofs_warn("EXPERIMENTAL compressed fragments feature in use. Use at your own risk!");
 	}
-	if (cfg.c_dedupe)
-		erofs_warn("EXPERIMENTAL data deduplication feature in use. Use at your own risk!");
 
 #ifndef NDEBUG
 	if (cfg.c_random_pclusterblks)
