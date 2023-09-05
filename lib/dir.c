@@ -4,6 +4,19 @@
 #include "erofs/print.h"
 #include "erofs/dir.h"
 
+/* filename should not have a '/' in the name string */
+static bool erofs_validate_filename(const char *dname, int size)
+{
+	char *name = (char *)dname;
+
+	while (name - dname < size && *name != '\0') {
+		if (*name == '/')
+			return false;
+		++name;
+	}
+	return true;
+}
+
 static int traverse_dirents(struct erofs_dir_context *ctx,
 			    void *dentry_blk, unsigned int lblk,
 			    unsigned int next_nameoff, unsigned int maxsize,
@@ -102,6 +115,10 @@ static int traverse_dirents(struct erofs_dir_context *ctx,
 				}
 				break;
 			}
+		} else if (fsck &&
+			   !erofs_validate_filename(de_name, de_namelen)) {
+			errmsg = "corrupted dirent with illegal filename";
+			goto out;
 		}
 		ret = ctx->cb(ctx);
 		if (ret) {
