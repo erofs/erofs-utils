@@ -192,6 +192,8 @@ struct erofs_inode {
 	bool compressed_idata;
 	bool lazy_tailblock;
 	bool with_tmpfile;
+	/* OVL: non-merge dir that may contain whiteout entries */
+	bool whiteouts;
 
 	unsigned int xattr_isize;
 	unsigned int extent_isize;

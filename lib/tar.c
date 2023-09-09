@@ -843,6 +843,13 @@ new_inode:
 		inode->i_mode = (inode->i_mode & ~S_IFMT) | S_IFCHR;
 		inode->u.i_rdev = EROFS_WHITEOUT_DEV;
 		d->type = EROFS_FT_CHRDEV;
+
+		/*
+		 * Mark the parent directory as copied-up to avoid exposing
+		 * whiteouts if mounted.  See kernel commit b79e05aaa166
+		 * ("ovl: no direct iteration for dir with origin xattr")
+		 */
+		inode->i_parent->whiteouts = true;
 	} else {
 		inode->i_mode = st.st_mode;
 		if (S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode))

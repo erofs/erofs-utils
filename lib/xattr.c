@@ -57,11 +57,17 @@
 #ifndef OVL_XATTR_OPAQUE_POSTFIX
 #define OVL_XATTR_OPAQUE_POSTFIX "opaque"
 #endif
+#ifndef OVL_XATTR_ORIGIN_POSTFIX
+#define OVL_XATTR_ORIGIN_POSTFIX "origin"
+#endif
 #ifndef OVL_XATTR_TRUSTED_PREFIX
 #define OVL_XATTR_TRUSTED_PREFIX XATTR_TRUSTED_PREFIX OVL_XATTR_NAMESPACE
 #endif
 #ifndef OVL_XATTR_OPAQUE
 #define OVL_XATTR_OPAQUE OVL_XATTR_TRUSTED_PREFIX OVL_XATTR_OPAQUE_POSTFIX
+#endif
+#ifndef OVL_XATTR_ORIGIN
+#define OVL_XATTR_ORIGIN OVL_XATTR_TRUSTED_PREFIX OVL_XATTR_ORIGIN_POSTFIX
 #endif
 
 #define EA_HASHTABLE_BITS 16
@@ -488,6 +494,11 @@ int erofs_setxattr(struct erofs_inode *inode, char *key,
 int erofs_set_opaque_xattr(struct erofs_inode *inode)
 {
 	return erofs_setxattr(inode, OVL_XATTR_OPAQUE, "y", 1);
+}
+
+int erofs_set_origin_xattr(struct erofs_inode *inode)
+{
+	return erofs_setxattr(inode, OVL_XATTR_ORIGIN, NULL, 0);
 }
 
 #ifdef WITH_ANDROID

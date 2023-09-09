@@ -1337,6 +1337,9 @@ int tarerofs_dump_tree(struct erofs_inode *dir)
 		dir->inode_isize = sizeof(struct erofs_inode_compact);
 	}
 
+	if (dir->whiteouts)
+		erofs_set_origin_xattr(dir);
+
 	ret = erofs_prepare_xattr_ibody(dir);
 	if (ret < 0)
 		return ret;
