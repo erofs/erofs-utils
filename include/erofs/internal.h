@@ -20,6 +20,7 @@ typedef unsigned short umode_t;
 #include "erofs_fs.h"
 #include <fcntl.h>
 #include <sys/types.h> /* for off_t definition */
+#include <sys/stat.h> /* for S_ISCHR definition */
 #include <stdio.h>
 
 #ifndef PATH_MAX
@@ -421,6 +422,12 @@ static inline u32 erofs_crc32c(u32 crc, const u8 *in, size_t len)
 			crc = (crc >> 1) ^ ((crc & 1) ? CRC32C_POLY_LE : 0);
 	}
 	return crc;
+}
+
+#define EROFS_WHITEOUT_DEV	0
+static inline bool erofs_inode_is_whiteout(struct erofs_inode *inode)
+{
+	return S_ISCHR(inode->i_mode) && inode->u.i_rdev == EROFS_WHITEOUT_DEV;
 }
 
 #ifdef __cplusplus
