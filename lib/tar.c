@@ -19,11 +19,6 @@
 #include "erofs/xattr.h"
 #include "erofs/blobchunk.h"
 
-#define OVL_XATTR_NAMESPACE "overlay."
-#define OVL_XATTR_TRUSTED_PREFIX XATTR_TRUSTED_PREFIX OVL_XATTR_NAMESPACE
-#define OVL_XATTR_OPAQUE_POSTFIX "opaque"
-#define OVL_XATTR_OPAQUE OVL_XATTR_TRUSTED_PREFIX OVL_XATTR_OPAQUE_POSTFIX
-
 #define EROFS_WHITEOUT_DEV	0
 
 static char erofs_libbuf[16384];
@@ -788,7 +783,7 @@ restart:
 	} else if (opq) {
 		DBG_BUGON(d->type == EROFS_FT_UNKNOWN);
 		DBG_BUGON(!d->inode);
-		ret = erofs_setxattr(d->inode, OVL_XATTR_OPAQUE, "y", 1);
+		ret = erofs_set_opaque_xattr(d->inode);
 		goto out;
 	} else if (th.typeflag == '1') {	/* hard link cases */
 		struct erofs_dentry *d2;
