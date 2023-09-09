@@ -437,8 +437,7 @@ int erofs_setxattr(struct erofs_inode *inode, char *key,
 	item = get_xattritem(prefix, kvbuf, len);
 	if (IS_ERR(item))
 		return PTR_ERR(item);
-	if (!item)
-		return 0;
+	DBG_BUGON(!item);
 
 	return erofs_xattr_add(&inode->i_xattrs, item);
 }
@@ -473,8 +472,7 @@ static int erofs_droid_xattr_set_caps(struct erofs_inode *inode)
 	item = get_xattritem(EROFS_XATTR_INDEX_SECURITY, kvbuf, len);
 	if (IS_ERR(item))
 		return PTR_ERR(item);
-	if (!item)
-		return 0;
+	DBG_BUGON(!item);
 
 	return erofs_xattr_add(&inode->i_xattrs, item);
 }
