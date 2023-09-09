@@ -564,8 +564,10 @@ int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
 	struct inode_xattr_node *node;
 	struct list_head *ixattrs = &inode->i_xattrs;
 
-	if (list_empty(ixattrs))
+	if (list_empty(ixattrs)) {
+		inode->xattr_isize = 0;
 		return 0;
+	}
 
 	/* get xattr ibody size */
 	ret = sizeof(struct erofs_xattr_ibody_header);
