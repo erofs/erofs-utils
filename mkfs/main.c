@@ -184,63 +184,43 @@ static int parse_extended_opts(const char *opts)
 				return -EINVAL;
 			/* disable compacted indexes and 0padding */
 			cfg.c_legacy_compress = true;
-		}
-
-		if (MATCH_EXTENTED_OPT("force-inode-compact", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("force-inode-compact", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_force_inodeversion = FORCE_INODE_COMPACT;
 			cfg.c_ignore_mtime = true;
-		}
-
-		if (MATCH_EXTENTED_OPT("force-inode-extended", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("force-inode-extended", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_force_inodeversion = FORCE_INODE_EXTENDED;
-		}
-
-		if (MATCH_EXTENTED_OPT("nosbcrc", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("nosbcrc", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			erofs_sb_clear_sb_chksum(&sbi);
-		}
-
-		if (MATCH_EXTENTED_OPT("noinline_data", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("noinline_data", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_inline_data = false;
-		}
-
-		if (MATCH_EXTENTED_OPT("inline_data", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("inline_data", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_inline_data = !clear;
-		}
-
-		if (MATCH_EXTENTED_OPT("force-inode-blockmap", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("force-inode-blockmap", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_force_chunkformat = FORCE_INODE_BLOCK_MAP;
-		}
-
-		if (MATCH_EXTENTED_OPT("force-chunk-indexes", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("force-chunk-indexes", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_force_chunkformat = FORCE_INODE_CHUNK_INDEXES;
-		}
-
-		if (MATCH_EXTENTED_OPT("ztailpacking", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("ztailpacking", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_ztailpacking = !clear;
-		}
-
-		if (MATCH_EXTENTED_OPT("all-fragments", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("all-fragments", token, keylen)) {
 			cfg.c_all_fragments = true;
 			goto handle_fragment;
-		}
-
-		if (MATCH_EXTENTED_OPT("fragments", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("fragments", token, keylen)) {
 			char *endptr;
 			u64 i;
 
@@ -255,18 +235,18 @@ handle_fragment:
 				}
 				pclustersize_packed = i;
 			}
-		}
-
-		if (MATCH_EXTENTED_OPT("dedupe", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("dedupe", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_dedupe = !clear;
-		}
-
-		if (MATCH_EXTENTED_OPT("xattr-name-filter", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("xattr-name-filter", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_xattr_name_filter = !clear;
+		} else {
+			erofs_err("unknown extended option %.*s",
+				  p - token, token);
+			return -EINVAL;
 		}
 	}
 	return 0;
