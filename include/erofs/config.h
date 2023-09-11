@@ -45,7 +45,7 @@ struct erofs_configure {
 #endif
 	char c_timeinherit;
 	char c_chunkbits;
-	bool c_noinline_data;
+	bool c_inline_data;
 	bool c_ztailpacking;
 	bool c_fragments;
 	bool c_all_fragments;

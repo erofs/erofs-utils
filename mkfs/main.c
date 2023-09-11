@@ -208,7 +208,13 @@ static int parse_extended_opts(const char *opts)
 		if (MATCH_EXTENTED_OPT("noinline_data", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
-			cfg.c_noinline_data = true;
+			cfg.c_inline_data = false;
+		}
+
+		if (MATCH_EXTENTED_OPT("inline_data", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			cfg.c_inline_data = !clear;
 		}
 
 		if (MATCH_EXTENTED_OPT("force-inode-blockmap", token, keylen)) {
@@ -226,7 +232,7 @@ static int parse_extended_opts(const char *opts)
 		if (MATCH_EXTENTED_OPT("ztailpacking", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
-			cfg.c_ztailpacking = true;
+			cfg.c_ztailpacking = !clear;
 		}
 
 		if (MATCH_EXTENTED_OPT("all-fragments", token, keylen)) {
@@ -254,7 +260,7 @@ handle_fragment:
 		if (MATCH_EXTENTED_OPT("dedupe", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
-			cfg.c_dedupe = true;
+			cfg.c_dedupe = !clear;
 		}
 
 		if (MATCH_EXTENTED_OPT("xattr-name-filter", token, keylen)) {
@@ -706,6 +712,7 @@ static void erofs_mkfs_default_options(void)
 {
 	cfg.c_showprogress = true;
 	cfg.c_legacy_compress = false;
+	cfg.c_inline_data = true;
 	cfg.c_xattr_name_filter = true;
 	sbi.blkszbits = ilog2(min_t(u32, getpagesize(), EROFS_MAX_BLOCK_SIZE));
 	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_ZERO_PADDING;
