@@ -736,6 +736,25 @@ void erofs_show_progs(int argc, char *argv[])
 		printf("%s %s\n", basename(argv[0]), cfg.c_version);
 }
 
+static void erofs_mkfs_showsummaries(erofs_blk_t nblocks)
+{
+	char uuid_str[37] = {};
+
+	if (!(cfg.c_dbg_lvl > EROFS_ERR && cfg.c_showprogress))
+		return;
+
+	erofs_uuid_unparse_lower(sbi.uuid, uuid_str);
+
+	fprintf(stdout, "------\nFilesystem UUID: %s\n"
+		"Filesystem total blocks: %u (of %u-byte blocks)\n"
+		"Filesystem total inodes: %llu\n"
+		"Filesystem total metadata blocks: %u\n"
+		"Filesystem total deduplicated bytes (of source files): %llu\n",
+		uuid_str, nblocks, 1U << sbi.blkszbits, sbi.inos | 0ULL,
+		erofs_total_metablocks(),
+		sbi.saved_by_deduplication | 0ULL);
+}
+
 int main(int argc, char **argv)
 {
 	int err = 0;
@@ -745,7 +764,6 @@ int main(int argc, char **argv)
 	struct stat st;
 	erofs_blk_t nblocks;
 	struct timeval t;
-	char uuid_str[37];
 	FILE *packedfile = NULL;
 
 	erofs_init_configure();
@@ -910,8 +928,6 @@ int main(int argc, char **argv)
 			  erofs_strerror(err));
 		goto exit;
 	}
-	erofs_uuid_unparse_lower(sbi.uuid, uuid_str);
-	erofs_info("filesystem UUID: %s", uuid_str);
 
 	erofs_inode_manager_init();
 
@@ -957,7 +973,6 @@ int main(int argc, char **argv)
 	erofs_iput(root_inode);
 
 	if (erofstar.index_mode || cfg.c_chunkbits) {
-		erofs_info("total metadata: %u blocks", erofs_mapbh(NULL));
 		if (erofstar.index_mode && !erofstar.mapfile)
 			sbi.devs[0].blocks =
 				BLK_ROUND_UP(&sbi, erofstar.offset);
@@ -1017,8 +1032,8 @@ exit:
 		erofs_err("\tCould not format the device : %s\n",
 			  erofs_strerror(err));
 		return 1;
-	} else {
-		erofs_update_progressinfo("Build completed.\n");
 	}
+	erofs_update_progressinfo("Build completed.\n");
+	erofs_mkfs_showsummaries(nblocks);
 	return 0;
 }

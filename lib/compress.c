@@ -221,6 +221,8 @@ static int z_erofs_compress_dedupe(struct z_erofs_vle_compress_ctx *ctx,
 			ctx->e.length -= delta;
 		}
 
+		sbi->saved_by_deduplication +=
+			dctx.e.compressedblks * erofs_blksiz(sbi);
 		erofs_dbg("Dedupe %u %scompressed data (delta %d) to %u of %u blocks",
 			  dctx.e.length, dctx.e.raw ? "un" : "",
 			  delta, dctx.e.blkaddr, dctx.e.compressedblks);
@@ -974,6 +976,9 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 	}
 	z_erofs_dedupe_commit(false);
 	z_erofs_write_mapheader(inode, compressmeta);
+
+	if (!ctx.fragemitted)
+		sbi->saved_by_deduplication += inode->fragment_size;
 
 	/* if the entire file is a fragment, a simplified form is used. */
 	if (inode->i_size == inode->fragment_size) {

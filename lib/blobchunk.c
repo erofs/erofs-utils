@@ -69,6 +69,7 @@ static struct erofs_blobchunk *erofs_blob_getchunk(struct erofs_sb_info *sbi,
 	chunk = hashmap_get_from_hash(&blob_hashmap, hash, sha256);
 	if (chunk) {
 		DBG_BUGON(chunksize != chunk->chunksize);
+		sbi->saved_by_deduplication += chunksize;
 		erofs_dbg("Found duplicated chunk at %u", chunk->blkaddr);
 		return chunk;
 	}

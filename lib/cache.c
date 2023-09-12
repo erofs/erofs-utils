@@ -14,7 +14,7 @@ static struct erofs_buffer_block blkh = {
 	.list = LIST_HEAD_INIT(blkh.list),
 	.blkaddr = NULL_ADDR,
 };
-static erofs_blk_t tail_blkaddr;
+static erofs_blk_t tail_blkaddr, erofs_metablkcnt;
 
 /* buckets for all mapped buffer blocks to boost up allocation */
 static struct list_head mapped_buckets[META + 1][EROFS_MAX_BLOCK_SIZE];
@@ -396,6 +396,8 @@ bool erofs_bflush(struct erofs_buffer_block *bb)
 			dev_fillzero(&sbi, erofs_pos(&sbi, blkaddr) - padding,
 				     padding, true);
 
+		if (p->type != DATA)
+			erofs_metablkcnt += BLK_ROUND_UP(&sbi, p->buffers.off);
 		erofs_dbg("block %u to %u flushed", p->blkaddr, blkaddr - 1);
 		erofs_bfree(p);
 	}
@@ -419,8 +421,14 @@ void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke)
 	if (!list_empty(&bb->buffers.list))
 		return;
 
+	if (!rollback && bb->type != DATA)
+		erofs_metablkcnt += BLK_ROUND_UP(&sbi, bb->buffers.off);
 	erofs_bfree(bb);
-
 	if (rollback)
 		tail_blkaddr = blkaddr;
+}
+
+erofs_blk_t erofs_total_metablocks(void)
+{
+	return erofs_metablkcnt;
 }

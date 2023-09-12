@@ -112,6 +112,7 @@ erofs_blk_t erofs_mapbh(struct erofs_buffer_block *bb);
 bool erofs_bflush(struct erofs_buffer_block *bb);
 
 void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke);
+erofs_blk_t erofs_total_metablocks(void);
 
 #ifdef __cplusplus
 }

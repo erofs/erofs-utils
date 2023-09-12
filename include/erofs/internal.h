@@ -111,6 +111,10 @@ struct erofs_sb_info {
 	u64 devsz;
 	unsigned int nblobs;
 	unsigned int blobfd[256];
+
+	struct list_head list;
+
+	u64 saved_by_deduplication;
 };
 
 /* make sure that any user of the erofs headers has atleast 64bit off_t type */
