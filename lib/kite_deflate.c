@@ -405,6 +405,7 @@ static void kite_deflate_writeblock(struct kite_deflate *s, bool fixed)
 		distCodes = kstaticHuff_distCodes;
 
 		litLenLevels = kstaticHuff_litLenLevels;
+		distLevels = NULL;
 	}
 
 	for (i = 0; i < s->symbols; ++i) {
