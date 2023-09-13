@@ -262,7 +262,6 @@ static int link_path_walk(const char *name, struct nameidata *nd)
 		if (ret)
 			return ret;
 
-		name = p;
 		/* Skip until no more slashes. */
 		for (name = p; *name == '/'; ++name)
 			;
