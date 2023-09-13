@@ -126,8 +126,10 @@ static int z_erofs_decompress_deflate(struct z_erofs_decompress_req *rq)
 	strm.avail_in = 0;
 	strm.next_in = Z_NULL;
 	ret = inflateInit2(&strm, -15);
-	if (ret != Z_OK)
+	if (ret != Z_OK) {
+		free(buff);
 		return zerr(ret);
+	}
 
 	strm.next_in = src + inputmargin;
 	strm.avail_in = rq->inputsize - inputmargin;
