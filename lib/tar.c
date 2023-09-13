@@ -549,7 +549,7 @@ int tarerofs_parse_tar(struct erofs_inode *root, struct erofs_tarfile *tar)
 	char path[PATH_MAX];
 	struct erofs_pax_header eh = tar->global;
 	struct erofs_sb_info *sbi = root->sbi;
-	bool e, whout, opq;
+	bool whout, opq, e = false;
 	struct stat st;
 	erofs_off_t tar_offset, data_offset;
 
