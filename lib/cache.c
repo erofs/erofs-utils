@@ -282,8 +282,10 @@ struct erofs_buffer_head *erofs_balloc(int type, erofs_off_t size,
 
 	ret = __erofs_battach(bb, bh, size, alignsize,
 			      required_ext + inline_ext, false);
-	if (ret < 0)
+	if (ret < 0) {
+		free(bh);
 		return ERR_PTR(ret);
+	}
 	return bh;
 }
 
