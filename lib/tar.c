@@ -3,13 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#ifdef HAVE_LINUX_AUFS_TYPE_H
-#include <linux/aufs_type.h>
-#else
-#define AUFS_WH_PFX		".wh."
-#define AUFS_DIROPQ_NAME	AUFS_WH_PFX ".opq"
-#define AUFS_WH_DIROPQ		AUFS_WH_PFX AUFS_DIROPQ_NAME
-#endif
 #include "erofs/print.h"
 #include "erofs/cache.h"
 #include "erofs/inode.h"
@@ -18,6 +11,7 @@
 #include "erofs/io.h"
 #include "erofs/xattr.h"
 #include "erofs/blobchunk.h"
+#include "erofs/rebuild.h"
 
 static char erofs_libbuf[16384];
 
@@ -129,103 +123,6 @@ static long long tarerofs_parsenum(const char *ptr, int len)
 		return res;
 	}
 	return tarerofs_otoi(ptr, len);
-}
-
-static struct erofs_dentry *tarerofs_mkdir(struct erofs_inode *dir, const char *s)
-{
-	struct erofs_inode *inode;
-	struct erofs_dentry *d;
-
-	inode = erofs_new_inode();
-	if (IS_ERR(inode))
-		return ERR_CAST(inode);
-
-	inode->i_mode = S_IFDIR | 0755;
-	inode->i_parent = dir;
-	inode->i_uid = getuid();
-	inode->i_gid = getgid();
-	inode->i_mtime = inode->sbi->build_time;
-	inode->i_mtime_nsec = inode->sbi->build_time_nsec;
-	erofs_init_empty_dir(inode);
-
-	d = erofs_d_alloc(dir, s);
-	if (!IS_ERR(d)) {
-		d->type = EROFS_FT_DIR;
-		d->inode = inode;
-	}
-	return d;
-}
-
-static struct erofs_dentry *tarerofs_get_dentry(struct erofs_inode *pwd, char *path,
-					        bool aufs, bool *whout, bool *opq)
-{
-	struct erofs_dentry *d = NULL;
-	unsigned int len = strlen(path);
-	char *s = path;
-
-	*whout = false;
-	*opq = false;
-
-	while (s < path + len) {
-		char *slash = memchr(s, '/', path + len - s);
-		if (slash) {
-			if (s == slash) {
-				while (*++s == '/');	/* skip '//...' */
-				continue;
-			}
-			*slash = '\0';
-		}
-
-		if (!memcmp(s, ".", 2)) {
-			/* null */
-		} else if (!memcmp(s, "..", 3)) {
-			pwd = pwd->i_parent;
-		} else {
-			struct erofs_inode *inode = NULL;
-
-			if (aufs && !slash) {
-				if (!memcmp(s, AUFS_WH_DIROPQ, sizeof(AUFS_WH_DIROPQ))) {
-					*opq = true;
-					break;
-				}
-				if (!memcmp(s, AUFS_WH_PFX, sizeof(AUFS_WH_PFX) - 1)) {
-					s += sizeof(AUFS_WH_PFX) - 1;
-					*whout = true;
-				}
-			}
-
-			list_for_each_entry(d, &pwd->i_subdirs, d_child) {
-				if (!strcmp(d->name, s)) {
-					if (d->type != EROFS_FT_DIR && slash)
-						return ERR_PTR(-EIO);
-					inode = d->inode;
-					break;
-				}
-			}
-
-			if (inode) {
-				pwd = inode;
-			} else if (!slash) {
-				d = erofs_d_alloc(pwd, s);
-				if (IS_ERR(d))
-					return d;
-				d->type = EROFS_FT_UNKNOWN;
-				d->inode = pwd;
-			} else {
-				d = tarerofs_mkdir(pwd, s);
-				if (IS_ERR(d))
-					return d;
-				pwd = d->inode;
-			}
-		}
-		if (slash) {
-			*slash = '/';
-			s = slash + 1;
-		} else {
-			break;
-		}
-	}
-	return d;
 }
 
 struct tarerofs_xattr_item {
@@ -765,7 +662,7 @@ restart:
 
 	erofs_dbg("parsing %s (mode %05o)", eh.path, st.st_mode);
 
-	d = tarerofs_get_dentry(root, eh.path, tar->aufs, &whout, &opq);
+	d = erofs_rebuild_get_dentry(root, eh.path, tar->aufs, &whout, &opq);
 	if (IS_ERR(d)) {
 		ret = PTR_ERR(d);
 		goto out;
@@ -798,7 +695,7 @@ restart:
 		}
 		d->inode = NULL;
 
-		d2 = tarerofs_get_dentry(root, eh.link, tar->aufs, &dumb, &dumb);
+		d2 = erofs_rebuild_get_dentry(root, eh.link, tar->aufs, &dumb, &dumb);
 		if (IS_ERR(d2)) {
 			ret = PTR_ERR(d2);
 			goto out;
