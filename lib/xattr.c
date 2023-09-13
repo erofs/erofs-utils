@@ -499,9 +499,27 @@ int erofs_setxattr(struct erofs_inode *inode, char *key,
 	return erofs_xattr_add(&inode->i_xattrs, item);
 }
 
+static void erofs_removexattr(struct erofs_inode *inode, const char *key)
+{
+	struct inode_xattr_node *node, *n;
+
+	list_for_each_entry_safe(node, n, &inode->i_xattrs, list) {
+		if (!strcmp(node->item->kvbuf, key)) {
+			list_del(&node->list);
+			put_xattritem(node->item);
+			free(node);
+		}
+	}
+}
+
 int erofs_set_opaque_xattr(struct erofs_inode *inode)
 {
 	return erofs_setxattr(inode, OVL_XATTR_OPAQUE, "y", 1);
+}
+
+void erofs_clear_opaque_xattr(struct erofs_inode *inode)
+{
+	erofs_removexattr(inode, OVL_XATTR_OPAQUE);
 }
 
 int erofs_set_origin_xattr(struct erofs_inode *inode)

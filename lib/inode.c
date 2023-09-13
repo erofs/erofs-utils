@@ -1326,7 +1326,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
 
 int erofs_rebuild_dump_tree(struct erofs_inode *dir)
 {
-	struct erofs_dentry *d;
+	struct erofs_dentry *d, *n;
 	unsigned int nr_subdirs;
 	int ret;
 
@@ -1341,7 +1341,10 @@ int erofs_rebuild_dump_tree(struct erofs_inode *dir)
 		dir->inode_isize = sizeof(struct erofs_inode_compact);
 	}
 
-	if (dir->whiteouts)
+	/* strip all unnecessary overlayfs xattrs when ovlfs_strip is enabled */
+	if (cfg.c_ovlfs_strip)
+		erofs_clear_opaque_xattr(dir);
+	else if (dir->whiteouts)
 		erofs_set_origin_xattr(dir);
 
 	ret = erofs_prepare_xattr_ibody(dir);
@@ -1373,8 +1376,16 @@ int erofs_rebuild_dump_tree(struct erofs_inode *dir)
 	}
 
 	nr_subdirs = 0;
-	list_for_each_entry(d, &dir->i_subdirs, d_child)
+	list_for_each_entry_safe(d, n, &dir->i_subdirs, d_child) {
+		if (cfg.c_ovlfs_strip && erofs_inode_is_whiteout(d->inode)) {
+			erofs_dbg("remove whiteout %s", d->inode->i_srcpath);
+			list_del(&d->d_child);
+			erofs_d_invalidate(d);
+			free(d);
+			continue;
+		}
 		++nr_subdirs;
+	}
 
 	ret = erofs_prepare_dir_layout(dir, nr_subdirs);
 	if (ret)

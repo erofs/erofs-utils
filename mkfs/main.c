@@ -64,6 +64,7 @@ static struct option long_options[] = {
 	{"fs-config-file", required_argument, NULL, 514},
 	{"block-list-file", required_argument, NULL, 515},
 #endif
+	{"ovlfs-strip", optional_argument, NULL, 516},
 	{0, 0, 0, 0},
 };
 
@@ -115,6 +116,7 @@ static void usage(void)
 	      " --preserve-mtime      keep per-file modification time strictly\n"
 	      " --aufs                replace aufs special files with overlayfs metadata\n"
 	      " --tar=[fi]            generate an image from tarball(s)\n"
+	      " --ovlfs-strip=[01]    strip overlayfs metadata in the target image (e.g. whiteouts)\n"
 	      " --quiet               quiet execution (do not write anything to standard output.)\n"
 #ifndef NDEBUG
 	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
@@ -515,6 +517,12 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			break;
 		case 21:
 			erofstar.aufs = true;
+			break;
+		case 516:
+			if (!optarg || !strcmp(optarg, "1"))
+				cfg.c_ovlfs_strip = true;
+			else
+				cfg.c_ovlfs_strip = false;
 			break;
 		case 1:
 			usage();

@@ -54,6 +54,7 @@ struct erofs_configure {
 	bool c_showprogress;
 	bool c_extra_ea_name_prefixes;
 	bool c_xattr_name_filter;
+	bool c_ovlfs_strip;
 
 #ifdef HAVE_LIBSELINUX
 	struct selabel_handle *sehnd;
