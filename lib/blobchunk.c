@@ -91,7 +91,6 @@ static struct erofs_blobchunk *erofs_blob_getchunk(struct erofs_sb_info *sbi,
 
 	erofs_dbg("Writing chunk (%u bytes) to %u", chunksize, chunk->blkaddr);
 	ret = fwrite(buf, chunksize, 1, blobfile);
-	padding = erofs_blkoff(sbi, chunksize);
 	if (ret == 1) {
 		padding = erofs_blkoff(sbi, chunksize);
 		if (padding) {
