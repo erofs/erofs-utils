@@ -12,6 +12,8 @@ extern "C"
 struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
 		char *path, bool aufs, bool *whout, bool *opq);
 
+int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi);
+
 #ifdef __cplusplus
 }
 #endif

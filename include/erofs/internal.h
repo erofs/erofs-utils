@@ -109,6 +109,7 @@ struct erofs_sb_info {
 
 	int devfd;
 	u64 devsz;
+	dev_t dev;
 	unsigned int nblobs;
 	unsigned int blobfd[256];
 
@@ -155,14 +156,15 @@ struct erofs_inode {
 	union {
 		/* (erofsfuse) runtime flags */
 		unsigned int flags;
-		/* (mkfs.erofs) device ID containing source file */
-		u32 dev;
 		/* (mkfs.erofs) queued sub-directories blocking dump */
 		u32 subdirs_queued;
 	};
 	unsigned int i_count;
 	struct erofs_sb_info *sbi;
 	struct erofs_inode *i_parent;
+
+	/* (mkfs.erofs) device ID containing source file */
+	u32 dev;
 
 	umode_t i_mode;
 	erofs_off_t i_size;
