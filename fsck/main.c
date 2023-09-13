@@ -585,8 +585,10 @@ static int erofsfsck_hardlink_insert(erofs_nid_t nid, const char *path)
 
 	entry->nid = nid;
 	entry->path = strdup(path);
-	if (!entry->path)
+	if (!entry->path) {
+		free(entry);
 		return -ENOMEM;
+	}
 
 	list_add_tail(&entry->list,
 		      &erofsfsck_link_hashtable[nid % NR_HARDLINK_HASHTABLE]);
