@@ -927,6 +927,8 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 	if (cfg.c_all_fragments && !erofs_is_packed_inode(inode) &&
 	    !inode->fragment_size) {
 		ret = z_erofs_pack_file_from_fd(inode, fd, ctx.tof_chksum);
+		if (ret)
+			goto err_free_idata;
 	} else {
 		while (ctx.remaining) {
 			const u64 rx = min_t(u64, ctx.remaining,
