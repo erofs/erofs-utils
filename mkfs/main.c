@@ -26,6 +26,7 @@
 #include "erofs/compress_hints.h"
 #include "erofs/blobchunk.h"
 #include "erofs/fragments.h"
+#include "erofs/rebuild.h"
 #include "../lib/liberofs_private.h"
 #include "../lib/liberofs_uuid.h"
 
@@ -83,8 +84,8 @@ static void print_available_compressors(FILE *f, const char *delim)
 
 static void usage(void)
 {
-	fputs("usage: [options] FILE DIRECTORY\n\n"
-	      "Generate erofs image from DIRECTORY to FILE, and [options] are:\n"
+	fputs("usage: [options] FILE SOURCE(s)\n"
+	      "Generate EROFS image (FILE) from DIRECTORY, TARBALL and/or EROFS images.  And [options] are:\n"
 	      " -b#                   set block size to # (# = page size by default)\n"
 	      " -d#                   set output message level to # (maximum 9)\n"
 	      " -x#                   set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
@@ -135,7 +136,10 @@ static unsigned int pclustersize_packed, pclustersize_max;
 static struct erofs_tarfile erofstar = {
 	.global.xattrs = LIST_HEAD_INIT(erofstar.global.xattrs)
 };
-static bool tar_mode;
+static bool tar_mode, rebuild_mode;
+
+static unsigned int rebuild_src_count;
+static LIST_HEAD(rebuild_src_list);
 
 static int parse_extended_opts(const char *opts)
 {
@@ -277,10 +281,23 @@ static int mkfs_parse_compress_algs(char *algs)
 	return 0;
 }
 
+static void erofs_rebuild_cleanup(void)
+{
+	struct erofs_sb_info *src, *n;
+
+	list_for_each_entry_safe(src, n, &rebuild_src_list, list) {
+		list_del(&src->list);
+		erofs_put_super(src);
+		dev_close(src);
+		free(src);
+	}
+	rebuild_src_count = 0;
+}
+
 static int mkfs_parse_options_cfg(int argc, char *argv[])
 {
 	char *endptr;
-	int opt, i;
+	int opt, i, err;
 	bool quiet = false;
 
 	while ((opt = getopt_long(argc, argv, "C:E:L:T:U:b:d:x:z:",
@@ -531,12 +548,14 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 
 	if (optind >= argc) {
 		if (!tar_mode) {
-			erofs_err("missing argument: DIRECTORY");
+			erofs_err("missing argument: SOURCE(s)");
 			return -EINVAL;
 		} else {
 			erofstar.fd = STDIN_FILENO;
 		}
-	}else {
+	} else {
+		struct stat st;
+
 		cfg.c_src_path = realpath(argv[optind++], NULL);
 		if (!cfg.c_src_path) {
 			erofs_err("failed to parse source directory: %s",
@@ -544,7 +563,46 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			return -ENOENT;
 		}
 
-		if (optind < argc) {
+		if (tar_mode) {
+			erofstar.fd = open(cfg.c_src_path, O_RDONLY);
+			if (erofstar.fd < 0) {
+				erofs_err("failed to open file: %s", cfg.c_src_path);
+				usage();
+				return -errno;
+			}
+		} else {
+			err = lstat(cfg.c_src_path, &st);
+			if (err)
+				return -errno;
+			if (S_ISDIR(st.st_mode))
+				erofs_set_fs_root(cfg.c_src_path);
+			else
+				rebuild_mode = true;
+		}
+
+		if (rebuild_mode) {
+			char *srcpath = cfg.c_src_path;
+			struct erofs_sb_info *src;
+
+			do {
+				src = calloc(1, sizeof(struct erofs_sb_info));
+				if (!src) {
+					erofs_rebuild_cleanup();
+					return -ENOMEM;
+				}
+
+				err = dev_open_ro(src, srcpath);
+				if (err) {
+					free(src);
+					erofs_rebuild_cleanup();
+					return err;
+				}
+
+				/* extra device index starts from 1 */
+				src->dev = ++rebuild_src_count;
+				list_add(&src->list, &rebuild_src_list);
+			} while (optind < argc && (srcpath = argv[optind++]));
+		} else if (optind < argc) {
 			erofs_err("unexpected argument: %s\n", argv[optind]);
 			return -EINVAL;
 		}
@@ -735,6 +793,63 @@ void erofs_show_progs(int argc, char *argv[])
 	if (cfg.c_dbg_lvl >= EROFS_WARN)
 		printf("%s %s\n", basename(argv[0]), cfg.c_version);
 }
+static struct erofs_inode *erofs_alloc_root_inode(void)
+{
+	struct erofs_inode *root;
+
+	root = erofs_new_inode();
+	if (IS_ERR(root))
+		return root;
+	root->i_srcpath = strdup("/");
+	root->i_mode = S_IFDIR | 0777;
+	root->i_parent = root;
+	root->i_mtime = root->sbi->build_time;
+	root->i_mtime_nsec = root->sbi->build_time_nsec;
+	erofs_init_empty_dir(root);
+	return root;
+}
+
+static int erofs_rebuild_load_trees(struct erofs_inode *root)
+{
+	struct erofs_sb_info *src;
+	unsigned int extra_devices = 0;
+	erofs_blk_t nblocks;
+	int ret;
+
+	list_for_each_entry(src, &rebuild_src_list, list) {
+		ret = erofs_rebuild_load_tree(root, src);
+		if (ret) {
+			erofs_err("failed to load %s", src->devname);
+			return ret;
+		}
+		if (src->extra_devices > 1) {
+			erofs_err("%s: unsupported number of extra devices",
+				  src->devname, src->extra_devices);
+			return -EOPNOTSUPP;
+		}
+		extra_devices += src->extra_devices;
+	}
+
+	if (extra_devices && extra_devices != rebuild_src_count) {
+		erofs_err("extra_devices(%u) is mismatched with source images(%u)",
+			  extra_devices, rebuild_src_count);
+		return -EOPNOTSUPP;
+	}
+
+	ret = erofs_mkfs_init_devices(&sbi, rebuild_src_count);
+	if (ret)
+		return ret;
+
+	list_for_each_entry(src, &rebuild_src_list, list) {
+		if (extra_devices)
+			nblocks = src->devs[0].blocks;
+		else
+			nblocks = src->primarydevice_blocks;
+		DBG_BUGON(src->dev < 1);
+		sbi.devs[src->dev - 1].blocks = nblocks;
+	}
+	return 0;
+}
 
 static void erofs_mkfs_showsummaries(erofs_blk_t nblocks)
 {
@@ -761,7 +876,6 @@ int main(int argc, char **argv)
 	struct erofs_buffer_head *sb_bh;
 	struct erofs_inode *root_inode, *packed_inode;
 	erofs_nid_t root_nid, packed_nid;
-	struct stat st;
 	erofs_blk_t nblocks;
 	struct timeval t;
 	FILE *packedfile = NULL;
@@ -781,26 +895,6 @@ int main(int argc, char **argv)
 	if (err) {
 		usage();
 		return 1;
-	}
-
-	if (!tar_mode) {
-		err = lstat(cfg.c_src_path, &st);
-		if (err)
-			return 1;
-		if (!S_ISDIR(st.st_mode)) {
-			erofs_err("root of the filesystem is not a directory - %s",
-				  cfg.c_src_path);
-			usage();
-			return 1;
-		}
-		erofs_set_fs_root(cfg.c_src_path);
-	} else if (cfg.c_src_path) {
-		erofstar.fd = open(cfg.c_src_path, O_RDONLY);
-		if (erofstar.fd < 0) {
-			erofs_err("failed to open file: %s", cfg.c_src_path);
-			usage();
-			return 1;
-		}
 	}
 
 	if (cfg.c_unix_timestamp != -1) {
@@ -864,6 +958,22 @@ int main(int argc, char **argv)
 		} else {
 			sbi.blkszbits = 9;
 		}
+	}
+
+	if (rebuild_mode) {
+		struct erofs_sb_info *src;
+
+		erofs_warn("EXPERIMENTAL rebuild mode in use. Use at your own risk!");
+
+		src = list_first_entry(&rebuild_src_list, struct erofs_sb_info, list);
+		if (!src)
+			goto exit;
+		err = erofs_read_superblock(src);
+		if (err) {
+			erofs_err("failed to read superblock of %s", src->devname);
+			goto exit;
+		}
+		sbi.blkszbits = src->blkszbits;
 	}
 
 	sb_bh = erofs_buffer_init();
@@ -931,7 +1041,35 @@ int main(int argc, char **argv)
 
 	erofs_inode_manager_init();
 
-	if (!tar_mode) {
+	if (tar_mode) {
+		root_inode = erofs_alloc_root_inode();
+		if (IS_ERR(root_inode)) {
+			err = PTR_ERR(root_inode);
+			goto exit;
+		}
+
+		while (!(err = tarerofs_parse_tar(root_inode, &erofstar)));
+
+		if (err < 0)
+			goto exit;
+
+		err = erofs_rebuild_dump_tree(root_inode);
+		if (err < 0)
+			goto exit;
+	} else if (rebuild_mode) {
+		root_inode = erofs_alloc_root_inode();
+		if (IS_ERR(root_inode)) {
+			err = PTR_ERR(root_inode);
+			goto exit;
+		}
+
+		err = erofs_rebuild_load_trees(root_inode);
+		if (err)
+			goto exit;
+		err = erofs_rebuild_dump_tree(root_inode);
+		if (err)
+			goto exit;
+	} else {
 		err = erofs_build_shared_xattrs_from_path(&sbi, cfg.c_src_path);
 		if (err) {
 			erofs_err("failed to build shared xattrs: %s",
@@ -947,32 +1085,11 @@ int main(int argc, char **argv)
 			err = PTR_ERR(root_inode);
 			goto exit;
 		}
-	} else {
-		root_inode = erofs_new_inode();
-		if (IS_ERR(root_inode)) {
-			err = PTR_ERR(root_inode);
-			goto exit;
-		}
-		root_inode->i_srcpath = strdup("/");
-		root_inode->i_mode = S_IFDIR | 0777;
-		root_inode->i_parent = root_inode;
-		root_inode->i_mtime = sbi.build_time;
-		root_inode->i_mtime_nsec = sbi.build_time_nsec;
-		erofs_init_empty_dir(root_inode);
-
-		while (!(err = tarerofs_parse_tar(root_inode, &erofstar)));
-
-		if (err < 0)
-			goto exit;
-
-		err = erofs_rebuild_dump_tree(root_inode);
-		if (err < 0)
-			goto exit;
 	}
 	root_nid = erofs_lookupnid(root_inode);
 	erofs_iput(root_inode);
 
-	if (erofstar.index_mode || cfg.c_chunkbits) {
+	if (erofstar.index_mode || cfg.c_chunkbits || sbi.extra_devices) {
 		if (erofstar.index_mode && !erofstar.mapfile)
 			sbi.devs[0].blocks =
 				BLK_ROUND_UP(&sbi, erofstar.offset);
@@ -1026,6 +1143,7 @@ exit:
 		z_erofs_fragments_exit();
 	erofs_packedfile_exit();
 	erofs_xattr_cleanup_name_prefixes();
+	erofs_rebuild_cleanup();
 	erofs_exit_configure();
 
 	if (err) {
