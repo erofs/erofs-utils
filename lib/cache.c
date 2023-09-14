@@ -63,7 +63,8 @@ static void erofs_bupdate_mapped(struct erofs_buffer_block *bb)
 	if (bb->blkaddr == NULL_ADDR)
 		return;
 
-	bkt = mapped_buckets[bb->type] + bb->buffers.off % erofs_blksiz(&sbi);
+	bkt = mapped_buckets[bb->type] +
+		(bb->buffers.off & (erofs_blksiz(&sbi) - 1));
 	list_del(&bb->mapped_list);
 	list_add_tail(&bb->mapped_list, bkt);
 }
@@ -77,8 +78,9 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 			   bool dryrun)
 {
 	const unsigned int blksiz = erofs_blksiz(&sbi);
+	const unsigned int blkmask = blksiz - 1;
 	const erofs_off_t alignedoffset = roundup(bb->buffers.off, alignsize);
-	const int oob = cmpsgn(roundup((bb->buffers.off - 1) % blksiz + 1,
+	const int oob = cmpsgn(roundup(((bb->buffers.off - 1) & blkmask) + 1,
 				       alignsize) + incr + extrasize, blksiz);
 	bool tailupdate = false;
 	erofs_blk_t blkaddr;
@@ -110,7 +112,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 					DIV_ROUND_UP(bb->buffers.off, blksiz);
 		erofs_bupdate_mapped(bb);
 	}
-	return ((alignedoffset + incr - 1) & (blksiz - 1)) + 1;
+	return ((alignedoffset + incr - 1) & blkmask) + 1;
 }
 
 int erofs_bh_balloon(struct erofs_buffer_head *bh, erofs_off_t incr)
@@ -170,7 +172,7 @@ static int erofs_bfind_for_attach(int type, erofs_off_t size,
 
 		DBG_BUGON(cur->type != type);
 		DBG_BUGON(cur->blkaddr == NULL_ADDR);
-		DBG_BUGON(used_before != cur->buffers.off % blksiz);
+		DBG_BUGON(used_before != (cur->buffers.off & (blksiz - 1)));
 
 		ret = __erofs_battach(cur, NULL, size, alignsize,
 				      required_ext + inline_ext, true);
