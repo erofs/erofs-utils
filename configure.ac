@@ -190,6 +190,7 @@ AC_CHECK_HEADERS(m4_flatten([
 	sys/mman.h
 	sys/random.h
 	sys/stat.h
+	sys/statfs.h
 	sys/sysmacros.h
 	sys/time.h
 	unistd.h
@@ -249,6 +250,7 @@ AC_CHECK_FUNCS(m4_flatten([
 	ftello64
 	pread64
 	pwrite64
+	fstatfs
 	strdup
 	strerror
 	strrchr

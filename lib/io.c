@@ -20,7 +20,9 @@
 #ifdef HAVE_LINUX_FALLOC_H
 #include <linux/falloc.h>
 #endif
-
+#ifdef HAVE_SYS_STATFS_H
+#include <sys/statfs.h>
+#endif
 #define EROFS_MODNAME	"erofs_io"
 #include "erofs/print.h"
 
@@ -58,6 +60,11 @@ int dev_open(struct erofs_sb_info *sbi, const char *dev)
 	struct stat st;
 	int fd, ret;
 
+#if defined(HAVE_SYS_STATFS_H) && defined(HAVE_FSTATFS)
+	bool again = false;
+
+repeat:
+#endif
 	fd = open(dev, O_RDWR | O_CREAT | O_BINARY, 0644);
 	if (fd < 0) {
 		erofs_err("failed to open(%s).", dev);
@@ -82,11 +89,33 @@ int dev_open(struct erofs_sb_info *sbi, const char *dev)
 		sbi->devsz = round_down(sbi->devsz, erofs_blksiz(sbi));
 		break;
 	case S_IFREG:
-		ret = ftruncate(fd, 0);
-		if (ret) {
-			erofs_err("failed to ftruncate(%s).", dev);
-			close(fd);
-			return -errno;
+		if (st.st_size) {
+#if defined(HAVE_SYS_STATFS_H) && defined(HAVE_FSTATFS)
+			struct statfs stfs;
+
+			if (again)
+				return -ENOTEMPTY;
+
+			/*
+			 * fses like EXT4 and BTRFS will flush dirty blocks
+			 * after truncate(0) even after the writeback happens
+			 * (see kernel commit 7d8f9f7d150d and ccd2506bd431),
+			 * which is NOT our intention.  Let's work around this.
+			 */
+			if (!fstatfs(fd, &stfs) && (stfs.f_type == 0xEF53 ||
+					stfs.f_type == 0x9123683E)) {
+				close(fd);
+				unlink(dev);
+				again = true;
+				goto repeat;
+			}
+#endif
+			ret = ftruncate(fd, 0);
+			if (ret) {
+				erofs_err("failed to ftruncate(%s).", dev);
+				close(fd);
+				return -errno;
+			}
 		}
 		/* INT64_MAX is the limit of kernel vfs */
 		sbi->devsz = INT64_MAX;
