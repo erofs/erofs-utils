@@ -671,7 +671,7 @@ restart:
 
 	erofs_dbg("parsing %s (mode %05o)", eh.path, st.st_mode);
 
-	d = erofs_rebuild_get_dentry(root, eh.path, tar->aufs, &whout, &opq);
+	d = erofs_rebuild_get_dentry(root, eh.path, tar->aufs, &whout, &opq, true);
 	if (IS_ERR(d)) {
 		ret = PTR_ERR(d);
 		goto out;
@@ -704,7 +704,8 @@ restart:
 		}
 		d->inode = NULL;
 
-		d2 = erofs_rebuild_get_dentry(root, eh.link, tar->aufs, &dumb, &dumb);
+		d2 = erofs_rebuild_get_dentry(root, eh.link, tar->aufs,
+					      &dumb, &dumb, false);
 		if (IS_ERR(d2)) {
 			ret = PTR_ERR(d2);
 			goto out;

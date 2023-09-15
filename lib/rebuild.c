@@ -52,7 +52,7 @@ static struct erofs_dentry *erofs_rebuild_mkdir(struct erofs_inode *dir,
 }
 
 struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
-		char *path, bool aufs, bool *whout, bool *opq)
+		char *path, bool aufs, bool *whout, bool *opq, bool to_head)
 {
 	struct erofs_dentry *d = NULL;
 	unsigned int len = strlen(path);
@@ -100,6 +100,10 @@ struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
 			}
 
 			if (inode) {
+				if (to_head) {
+					list_del(&d->d_child);
+					list_add(&d->d_child, &pwd->i_subdirs);
+				}
 				pwd = inode;
 			} else if (!slash) {
 				d = erofs_d_alloc(pwd, s);
@@ -262,7 +266,8 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 	erofs_dbg("parsing %s", path);
 	dname = path + strlen(parent->i_srcpath) + 1;
 
-	d = erofs_rebuild_get_dentry(parent, dname, false, &dumb, &dumb);
+	d = erofs_rebuild_get_dentry(parent, dname, false,
+				     &dumb, &dumb, false);
 	if (IS_ERR(d)) {
 		ret = PTR_ERR(d);
 		goto out;
