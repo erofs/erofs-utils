@@ -410,20 +410,24 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 	}
 
 	if (sbi->extra_devices) {
-		unsigned int i;
+		unsigned int i, ret;
+		erofs_blk_t nblocks;
 
+		nblocks = erofs_mapbh(NULL);
 		pos_out = erofs_btell(bh_devt, false);
 		i = 0;
 		do {
 			struct erofs_deviceslot dis = {
+				.mapped_blkaddr = cpu_to_le32(nblocks),
 				.blocks = cpu_to_le32(sbi->devs[i].blocks),
 			};
-			int ret;
 
+			memcpy(dis.tag, sbi->devs[i].tag, sizeof(dis.tag));
 			ret = dev_write(sbi, &dis, pos_out, sizeof(dis));
 			if (ret)
 				return ret;
 			pos_out += sizeof(dis);
+			nblocks += sbi->devs[i].blocks;
 		} while (++i < sbi->extra_devices);
 		bh_devt->op = &erofs_drop_directly_bhops;
 		erofs_bdrop(bh_devt, false);

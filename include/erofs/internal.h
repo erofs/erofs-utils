@@ -54,6 +54,7 @@ extern struct erofs_sb_info sbi;
 struct erofs_buffer_head;
 
 struct erofs_device_info {
+	u8 tag[64];
 	u32 blocks;
 	u32 mapped_blkaddr;
 };

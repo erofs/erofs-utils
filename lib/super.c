@@ -65,6 +65,7 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 
 		sbi->devs[i].mapped_blkaddr = le32_to_cpu(dis.mapped_blkaddr);
 		sbi->devs[i].blocks = le32_to_cpu(dis.blocks);
+		memcpy(sbi->devs[i].tag, dis.tag, sizeof(dis.tag));
 		sbi->total_blocks += sbi->devs[i].blocks;
 		pos += EROFS_DEVT_SLOT_SIZE;
 	}

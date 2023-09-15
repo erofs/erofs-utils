@@ -822,7 +822,7 @@ static int erofs_rebuild_load_trees(struct erofs_inode *root)
 	struct erofs_sb_info *src;
 	unsigned int extra_devices = 0;
 	erofs_blk_t nblocks;
-	int ret;
+	int ret, idx;
 
 	list_for_each_entry(src, &rebuild_src_list, list) {
 		ret = erofs_rebuild_load_tree(root, src);
@@ -849,12 +849,31 @@ static int erofs_rebuild_load_trees(struct erofs_inode *root)
 		return ret;
 
 	list_for_each_entry(src, &rebuild_src_list, list) {
-		if (extra_devices)
+		u8 *tag = NULL;
+
+		if (extra_devices) {
 			nblocks = src->devs[0].blocks;
-		else
+			tag = src->devs[0].tag;
+		} else {
 			nblocks = src->primarydevice_blocks;
+		}
 		DBG_BUGON(src->dev < 1);
-		sbi.devs[src->dev - 1].blocks = nblocks;
+		idx = src->dev - 1;
+		sbi.devs[idx].blocks = nblocks;
+		if (tag && *tag)
+			memcpy(sbi.devs[idx].tag, tag, sizeof(sbi.devs[0].tag));
+		else
+			/* convert UUID of the source image to a hex string */
+			sprintf((char *)sbi.devs[idx].tag,
+				"%04x%04x%04x%04x%04x%04x%04x%04x",
+				(src->uuid[0] << 8) | src->uuid[1],
+				(src->uuid[2] << 8) | src->uuid[3],
+				(src->uuid[4] << 8) | src->uuid[5],
+				(src->uuid[6] << 8) | src->uuid[7],
+				(src->uuid[8] << 8) | src->uuid[9],
+				(src->uuid[10] << 8) | src->uuid[11],
+				(src->uuid[12] << 8) | src->uuid[13],
+				(src->uuid[14] << 8) | src->uuid[15]);
 	}
 	return 0;
 }
