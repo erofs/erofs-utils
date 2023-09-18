@@ -23,6 +23,7 @@ static inline struct erofs_inode *erofs_igrab(struct erofs_inode *inode)
 
 u32 erofs_new_encode_dev(dev_t dev);
 unsigned char erofs_mode_to_ftype(umode_t mode);
+umode_t erofs_ftype_to_mode(unsigned int ftype, unsigned int perm);
 unsigned char erofs_ftype_to_dtype(unsigned int filetype);
 void erofs_inode_manager_init(void);
 void erofs_insert_ihash(struct erofs_inode *inode, dev_t dev, ino_t ino);

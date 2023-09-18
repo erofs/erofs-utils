@@ -56,6 +56,25 @@ static const unsigned char erofs_dtype_by_ftype[EROFS_FT_MAX] = {
 	[EROFS_FT_SYMLINK]	= DT_LNK
 };
 
+static const umode_t erofs_dtype_by_umode[EROFS_FT_MAX] = {
+	[EROFS_FT_UNKNOWN]	= S_IFMT,
+	[EROFS_FT_REG_FILE]	= S_IFREG,
+	[EROFS_FT_DIR]		= S_IFDIR,
+	[EROFS_FT_CHRDEV]	= S_IFCHR,
+	[EROFS_FT_BLKDEV]	= S_IFBLK,
+	[EROFS_FT_FIFO]		= S_IFIFO,
+	[EROFS_FT_SOCK]		= S_IFSOCK,
+	[EROFS_FT_SYMLINK]	= S_IFLNK
+};
+
+umode_t erofs_ftype_to_mode(unsigned int ftype, unsigned int perm)
+{
+	if (ftype >= EROFS_FT_MAX)
+		ftype = EROFS_FT_UNKNOWN;
+
+	return erofs_dtype_by_umode[ftype] | perm;
+}
+
 unsigned char erofs_ftype_to_dtype(unsigned int filetype)
 {
 	if (filetype >= EROFS_FT_MAX)
