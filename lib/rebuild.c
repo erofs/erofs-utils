@@ -192,7 +192,7 @@ static int erofs_rebuild_fixup_inode_index(struct erofs_inode *inode)
 	inode->u.chunkformat |= chunkbits - sbi.blkszbits;
 	return 0;
 err:
-	free(idx);
+	free(inode->chunkindexes);
 	inode->chunkindexes = NULL;
 	return ret;
 }
