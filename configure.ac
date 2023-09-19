@@ -250,6 +250,7 @@ AC_CHECK_FUNCS(m4_flatten([
 	ftello64
 	pread64
 	pwrite64
+	posix_fadvise
 	fstatfs
 	strdup
 	strerror

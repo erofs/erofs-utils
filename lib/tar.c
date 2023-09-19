@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#if defined(HAVE_ZLIB)
+#include <zlib.h>
+#endif
 #include "erofs/print.h"
 #include "erofs/cache.h"
 #include "erofs/diskbuf.h"
@@ -13,8 +16,6 @@
 #include "erofs/xattr.h"
 #include "erofs/blobchunk.h"
 #include "erofs/rebuild.h"
-
-static char erofs_libbuf[16384];
 
 struct tar_header {
 	char name[100];		/*   0-99 */
@@ -60,35 +61,167 @@ s64 erofs_read_from_fd(int fd, void *buf, u64 bytes)
         return i;
 }
 
-/*
- * skip this many bytes of input. Return 0 for success, >0 means this much
- * left after input skipped.
- */
-u64 erofs_lskip(int fd, u64 sz)
+void erofs_iostream_close(struct erofs_iostream *ios)
 {
-	s64 cur = lseek(fd, 0, SEEK_CUR);
+	free(ios->buffer);
+	if (ios->decoder == EROFS_IOS_DECODER_GZIP) {
+#if defined(HAVE_ZLIB)
+		gzclose(ios->handler);
+#endif
+		return;
+	}
+	close(ios->fd);
+}
 
-	if (cur >= 0) {
-		s64 end = lseek(fd, 0, SEEK_END) - cur;
+int erofs_iostream_open(struct erofs_iostream *ios, int fd, int decoder)
+{
+	s64 fsz;
 
-		if (end > 0 && end < sz)
-			return sz - end;
-
-		end = cur + sz;
-		if (end == lseek(fd, end, SEEK_SET))
-			return 0;
+	ios->tail = ios->head = 0;
+	ios->decoder = decoder;
+	if (decoder == EROFS_IOS_DECODER_GZIP) {
+#if defined(HAVE_ZLIB)
+		ios->handler = gzdopen(fd, "r");
+		if (!ios->handler)
+			return -ENOMEM;
+		ios->sz = fsz = 0;
+		ios->bufsize = 32768;
+#else
+		return -EOPNOTSUPP;
+#endif
+	} else {
+		ios->fd = fd;
+		fsz = lseek(fd, 0, SEEK_END);
+		if (fsz <= 0) {
+			ios->feof = !fsz;
+			ios->sz = 0;
+		} else {
+			ios->feof = false;
+			ios->sz = fsz;
+			if (lseek(fd, 0, SEEK_SET))
+				return -EIO;
+#ifdef HAVE_POSIX_FADVISE
+			if (posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL))
+				erofs_warn("failed to fadvise: %s, ignored.",
+					   erofs_strerror(errno));
+#endif
+		}
+		ios->bufsize = 16384;
 	}
 
-	while (sz) {
-		int try = min_t(u64, sz, sizeof(erofs_libbuf));
-		int or;
-
-		or = read(fd, erofs_libbuf, try);
-		if (or <= 0)
+	do {
+		ios->buffer = malloc(ios->bufsize);
+		if (ios->buffer)
 			break;
-		else
-			sz -= or;
+		ios->bufsize >>= 1;
+	} while (ios->bufsize >= 1024);
+
+	if (!ios->buffer)
+		return -ENOMEM;
+	return 0;
+}
+
+int erofs_iostream_read(struct erofs_iostream *ios, void **buf, u64 bytes)
+{
+	unsigned int rabytes = ios->tail - ios->head;
+	int ret;
+
+	if (rabytes >= bytes) {
+		*buf = ios->buffer + ios->head;
+		ios->head += bytes;
+		return bytes;
 	}
+
+	if (ios->head) {
+		memmove(ios->buffer, ios->buffer + ios->head, rabytes);
+		ios->head = 0;
+		ios->tail = rabytes;
+	}
+
+	if (!ios->feof) {
+		if (ios->decoder == EROFS_IOS_DECODER_GZIP) {
+#if defined(HAVE_ZLIB)
+			ret = gzread(ios->handler, ios->buffer + rabytes,
+				     ios->bufsize - rabytes);
+			if (!ret) {
+				int errnum;
+				const char *errstr;
+
+				errstr = gzerror(ios->handler, &errnum);
+				if (errnum != Z_STREAM_END) {
+					erofs_err("failed to gzread: %s", errstr);
+					return -EIO;
+				}
+				ios->feof = true;
+			}
+			ios->tail += ret;
+#else
+			return -EOPNOTSUPP;
+#endif
+		} else {
+			ret = erofs_read_from_fd(ios->fd, ios->buffer + rabytes,
+						 ios->bufsize - rabytes);
+			if (ret < 0)
+				return ret;
+			ios->tail += ret;
+			if (ret < ios->bufsize - rabytes)
+				ios->feof = true;
+		}
+	}
+	*buf = ios->buffer;
+	ret = min_t(int, ios->tail, bytes);
+	ios->head = ret;
+	return ret;
+}
+
+int erofs_iostream_bread(struct erofs_iostream *ios, void *buf, u64 bytes)
+{
+	u64 rem = bytes;
+	void *src;
+	int ret;
+
+	do {
+		ret = erofs_iostream_read(ios, &src, rem);
+		if (ret < 0)
+			return ret;
+		memcpy(buf, src, ret);
+		rem -= ret;
+	} while (rem && ret);
+
+	return bytes - rem;
+}
+
+int erofs_iostream_lskip(struct erofs_iostream *ios, u64 sz)
+{
+	unsigned int rabytes = ios->tail - ios->head;
+	int ret;
+	void *dummy;
+
+	if (rabytes >= sz) {
+		ios->head += sz;
+		return 0;
+	}
+
+	sz -= rabytes;
+	ios->head = ios->tail = 0;
+	if (ios->feof)
+		return sz;
+
+	if (ios->sz) {
+		s64 cur = lseek(ios->fd, sz, SEEK_CUR);
+
+		if (cur > ios->sz)
+			return cur - ios->sz;
+		return 0;
+	}
+
+	do {
+		ret = erofs_iostream_read(ios, &dummy, sz);
+		if (ret < 0)
+			return ret;
+		sz -= ret;
+	} while (!(ios->feof || !ret || !sz));
+
 	return sz;
 }
 
@@ -251,7 +384,8 @@ static int base64_decode(const char *src, int len, u8 *dst)
 	return cp - dst;
 }
 
-int tarerofs_parse_pax_header(int fd, struct erofs_pax_header *eh, u32 size)
+int tarerofs_parse_pax_header(struct erofs_iostream *ios,
+			      struct erofs_pax_header *eh, u32 size)
 {
 	char *buf, *p;
 	int ret;
@@ -261,7 +395,7 @@ int tarerofs_parse_pax_header(int fd, struct erofs_pax_header *eh, u32 size)
 		return -ENOMEM;
 	p = buf;
 
-	ret = erofs_read_from_fd(fd, buf, size);
+	ret = erofs_iostream_bread(ios, buf, size);
 	if (ret != size)
 		goto out;
 
@@ -407,10 +541,10 @@ void tarerofs_remove_inode(struct erofs_inode *inode)
 static int tarerofs_write_file_data(struct erofs_inode *inode,
 				    struct erofs_tarfile *tar)
 {
-	unsigned int j, rem;
-	int fd;
+	unsigned int j;
+	void *buf;
+	int fd, nread;
 	u64 off;
-	char buf[65536];
 
 	if (!inode->i_diskbuf) {
 		inode->i_diskbuf = calloc(1, sizeof(*inode->i_diskbuf));
@@ -425,12 +559,14 @@ static int tarerofs_write_file_data(struct erofs_inode *inode,
 		return -EBADF;
 
 	for (j = inode->i_size; j; ) {
-		rem = min_t(unsigned int, sizeof(buf), j);
-
-		if (erofs_read_from_fd(tar->fd, buf, rem) != rem ||
-		    write(fd, buf, rem) != rem)
-			return -EIO;
-		j -= rem;
+		nread = erofs_iostream_read(&tar->ios, &buf, j);
+		if (nread < 0)
+			break;
+		if (write(fd, buf, nread) != nread) {
+			nread = -EIO;
+			break;
+		}
+		j -= nread;
 	}
 	erofs_diskbuf_commit(inode->i_diskbuf, inode->i_size);
 	inode->with_diskbuf = true;
@@ -445,7 +581,7 @@ static int tarerofs_write_file_index(struct erofs_inode *inode,
 	ret = tarerofs_write_chunkes(inode, data_offset);
 	if (ret)
 		return ret;
-	if (erofs_lskip(tar->fd, inode->i_size))
+	if (erofs_iostream_lskip(&tar->ios, inode->i_size))
 		return -EIO;
 	return 0;
 }
@@ -459,7 +595,7 @@ int tarerofs_parse_tar(struct erofs_inode *root, struct erofs_tarfile *tar)
 	struct stat st;
 	erofs_off_t tar_offset, data_offset;
 
-	struct tar_header th;
+	struct tar_header *th;
 	struct erofs_dentry *d;
 	struct erofs_inode *inode;
 	unsigned int j, csum, cksum;
@@ -474,7 +610,7 @@ int tarerofs_parse_tar(struct erofs_inode *root, struct erofs_tarfile *tar)
 restart:
 	rem = tar->offset & 511;
 	if (rem) {
-		if (erofs_lskip(tar->fd, 512 - rem)) {
+		if (erofs_iostream_lskip(&tar->ios, 512 - rem)) {
 			ret = -EIO;
 			goto out;
 		}
@@ -482,11 +618,14 @@ restart:
 	}
 
 	tar_offset = tar->offset;
-	ret = erofs_read_from_fd(tar->fd, &th, sizeof(th));
-	if (ret != sizeof(th))
+	ret = erofs_iostream_read(&tar->ios, (void **)&th, sizeof(*th));
+	if (ret != sizeof(*th)) {
+		erofs_err("failed to read header block @ %llu", tar_offset);
+		ret = -EIO;
 		goto out;
-	tar->offset += sizeof(th);
-	if (*th.name == '\0') {
+	}
+	tar->offset += sizeof(*th);
+	if (*th->name == '\0') {
 		if (e) {	/* end of tar 2 empty blocks */
 			ret = 1;
 			goto out;
@@ -495,14 +634,14 @@ restart:
 		goto restart;
 	}
 
-	if (strncmp(th.magic, "ustar", 5)) {
+	if (memcmp(th->magic, "ustar", 5)) {
 		erofs_err("invalid tar magic @ %llu", tar_offset);
 		ret = -EIO;
 		goto out;
 	}
 
 	/* chksum field itself treated as ' ' */
-	csum = tarerofs_otoi(th.chksum, sizeof(th.chksum));
+	csum = tarerofs_otoi(th->chksum, sizeof(th->chksum));
 	if (errno) {
 		erofs_err("invalid chksum @ %llu", tar_offset);
 		ret = -EBADMSG;
@@ -513,12 +652,12 @@ restart:
 		cksum += (unsigned int)' ';
 	ckksum = cksum;
 	for (j = 0; j < 148; ++j) {
-		cksum += (unsigned int)((u8*)&th)[j];
-		ckksum += (int)((char*)&th)[j];
+		cksum += (unsigned int)((u8*)th)[j];
+		ckksum += (int)((char*)th)[j];
 	}
 	for (j = 156; j < 500; ++j) {
-		cksum += (unsigned int)((u8*)&th)[j];
-		ckksum += (int)((char*)&th)[j];
+		cksum += (unsigned int)((u8*)th)[j];
+		ckksum += (int)((char*)th)[j];
 	}
 	if (csum != cksum && csum != ckksum) {
 		erofs_err("chksum mismatch @ %llu", tar_offset);
@@ -526,14 +665,14 @@ restart:
 		goto out;
 	}
 
-	st.st_mode = tarerofs_otoi(th.mode, sizeof(th.mode));
+	st.st_mode = tarerofs_otoi(th->mode, sizeof(th->mode));
 	if (errno)
 		goto invalid_tar;
 
 	if (eh.use_uid) {
 		st.st_uid = eh.st.st_uid;
 	} else {
-		st.st_uid = tarerofs_parsenum(th.uid, sizeof(th.uid));
+		st.st_uid = tarerofs_parsenum(th->uid, sizeof(th->uid));
 		if (errno)
 			goto invalid_tar;
 	}
@@ -541,7 +680,7 @@ restart:
 	if (eh.use_gid) {
 		st.st_gid = eh.st.st_gid;
 	} else {
-		st.st_gid = tarerofs_parsenum(th.gid, sizeof(th.gid));
+		st.st_gid = tarerofs_parsenum(th->gid, sizeof(th->gid));
 		if (errno)
 			goto invalid_tar;
 	}
@@ -549,7 +688,7 @@ restart:
 	if (eh.use_size) {
 		st.st_size = eh.st.st_size;
 	} else {
-		st.st_size = tarerofs_parsenum(th.size, sizeof(th.size));
+		st.st_size = tarerofs_parsenum(th->size, sizeof(th->size));
 		if (errno)
 			goto invalid_tar;
 	}
@@ -560,25 +699,25 @@ restart:
 		ST_MTIM_NSEC(&st) = ST_MTIM_NSEC(&eh.st);
 #endif
 	} else {
-		st.st_mtime = tarerofs_parsenum(th.mtime, sizeof(th.mtime));
+		st.st_mtime = tarerofs_parsenum(th->mtime, sizeof(th->mtime));
 		if (errno)
 			goto invalid_tar;
 	}
 
-	if (th.typeflag <= '7' && !eh.path) {
+	if (th->typeflag <= '7' && !eh.path) {
 		eh.path = path;
 		j = 0;
-		if (*th.prefix) {
-			memcpy(path, th.prefix, sizeof(th.prefix));
-			path[sizeof(th.prefix)] = '\0';
+		if (*th->prefix) {
+			memcpy(path, th->prefix, sizeof(th->prefix));
+			path[sizeof(th->prefix)] = '\0';
 			j = strlen(path);
 			if (path[j - 1] != '/') {
 				path[j] = '/';
 				path[++j] = '\0';
 			}
 		}
-		memcpy(path + j, th.name, sizeof(th.name));
-		path[j + sizeof(th.name)] = '\0';
+		memcpy(path + j, th->name, sizeof(th->name));
+		path[j + sizeof(th->name)] = '\0';
 		j = strlen(path);
 		while (path[j - 1] == '/')
 			path[--j] = '\0';
@@ -586,20 +725,30 @@ restart:
 
 	data_offset = tar->offset;
 	tar->offset += st.st_size;
-	if (th.typeflag == '0' || th.typeflag == '7' || th.typeflag == '1') {
+	switch(th->typeflag) {
+	case '0':
+	case '7':
+	case '1':
 		st.st_mode |= S_IFREG;
-	} else if (th.typeflag == '2') {
+		break;
+	case '2':
 		st.st_mode |= S_IFLNK;
-	} else if (th.typeflag == '3') {
+		break;
+	case '3':
 		st.st_mode |= S_IFCHR;
-	} else if (th.typeflag == '4') {
+		break;
+	case '4':
 		st.st_mode |= S_IFBLK;
-	} else if (th.typeflag == '5') {
+		break;
+	case '5':
 		st.st_mode |= S_IFDIR;
-	} else if (th.typeflag == '6') {
+		break;
+	case '6':
 		st.st_mode |= S_IFIFO;
-	} else if (th.typeflag == 'g') {
-		ret = tarerofs_parse_pax_header(tar->fd, &tar->global, st.st_size);
+		break;
+	case 'g':
+		ret = tarerofs_parse_pax_header(&tar->ios, &tar->global,
+						st.st_size);
 		if (ret)
 			goto out;
 		if (tar->global.path) {
@@ -611,31 +760,31 @@ restart:
 			eh.link = strdup(tar->global.link);
 		}
 		goto restart;
-	} else if (th.typeflag == 'x') {
-		ret = tarerofs_parse_pax_header(tar->fd, &eh, st.st_size);
+	case 'x':
+		ret = tarerofs_parse_pax_header(&tar->ios, &eh, st.st_size);
 		if (ret)
 			goto out;
 		goto restart;
-	} else if (th.typeflag == 'L') {
+	case 'L':
 		free(eh.path);
 		eh.path = malloc(st.st_size + 1);
-		if (st.st_size != erofs_read_from_fd(tar->fd, eh.path,
-						     st.st_size))
+		if (st.st_size != erofs_iostream_bread(&tar->ios, eh.path,
+						       st.st_size))
 			goto invalid_tar;
 		eh.path[st.st_size] = '\0';
 		goto restart;
-	} else if (th.typeflag == 'K') {
+	case 'K':
 		free(eh.link);
 		eh.link = malloc(st.st_size + 1);
 		if (st.st_size > PATH_MAX || st.st_size !=
-		    erofs_read_from_fd(tar->fd, eh.link, st.st_size))
+		    erofs_iostream_bread(&tar->ios, eh.link, st.st_size))
 			goto invalid_tar;
 		eh.link[st.st_size] = '\0';
 		goto restart;
-	} else {
+	default:
 		erofs_info("unrecognized typeflag %xh @ %llu - ignoring",
-			   th.typeflag, tar_offset);
-		(void)erofs_lskip(tar->fd, st.st_size);
+			   th->typeflag, tar_offset);
+		(void)erofs_iostream_lskip(&tar->ios, st.st_size);
 		ret = 0;
 		goto out;
 	}
@@ -644,22 +793,22 @@ restart:
 	if (S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode)) {
 		int major, minor;
 
-		major = tarerofs_parsenum(th.devmajor, sizeof(th.devmajor));
+		major = tarerofs_parsenum(th->devmajor, sizeof(th->devmajor));
 		if (errno) {
 			erofs_err("invalid device major @ %llu", tar_offset);
 			goto out;
 		}
 
-		minor = tarerofs_parsenum(th.devminor, sizeof(th.devminor));
+		minor = tarerofs_parsenum(th->devminor, sizeof(th->devminor));
 		if (errno) {
 			erofs_err("invalid device minor @ %llu", tar_offset);
 			goto out;
 		}
 
 		st.st_rdev = (major << 8) | (minor & 0xff) | ((minor & ~0xff) << 12);
-	} else if (th.typeflag == '1' || th.typeflag == '2') {
+	} else if (th->typeflag == '1' || th->typeflag == '2') {
 		if (!eh.link)
-			eh.link = strndup(th.linkname, sizeof(th.linkname));
+			eh.link = strndup(th->linkname, sizeof(th->linkname));
 	}
 
 	if (tar->index_mode && !tar->mapfile &&
@@ -689,7 +838,7 @@ restart:
 		DBG_BUGON(!d->inode);
 		ret = erofs_set_opaque_xattr(d->inode);
 		goto out;
-	} else if (th.typeflag == '1') {	/* hard link cases */
+	} else if (th->typeflag == '1') {	/* hard link cases */
 		struct erofs_dentry *d2;
 		bool dumb;
 

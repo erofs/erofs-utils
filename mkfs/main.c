@@ -66,6 +66,9 @@ static struct option long_options[] = {
 	{"block-list-file", required_argument, NULL, 515},
 #endif
 	{"ovlfs-strip", optional_argument, NULL, 516},
+#ifdef HAVE_ZLIB
+	{"gzip", no_argument, NULL, 517},
+#endif
 	{0, 0, 0, 0},
 };
 
@@ -111,6 +114,9 @@ static void usage(void)
 	      " --force-gid=#         set all file gids to # (# = GID)\n"
 	      " --uid-offset=#        add offset # to all file uids (# = id offset)\n"
 	      " --gid-offset=#        add offset # to all file gids (# = id offset)\n"
+#ifdef HAVE_ZLIB
+	      " --gzip                try to filter the tarball stream through gzip\n"
+#endif
 	      " --help                display this help and exit\n"
 	      " --ignore-mtime        use build time instead of strict per-file modification time\n"
 	      " --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
@@ -139,7 +145,7 @@ static unsigned int pclustersize_packed, pclustersize_max;
 static struct erofs_tarfile erofstar = {
 	.global.xattrs = LIST_HEAD_INIT(erofstar.global.xattrs)
 };
-static bool tar_mode, rebuild_mode;
+static bool tar_mode, rebuild_mode, gzip_supported;
 
 static unsigned int rebuild_src_count;
 static LIST_HEAD(rebuild_src_list);
@@ -525,6 +531,9 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			else
 				cfg.c_ovlfs_strip = false;
 			break;
+		case 517:
+			gzip_supported = true;
+			break;
 		case 1:
 			usage();
 			exit(0);
@@ -560,7 +569,17 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			erofs_err("missing argument: SOURCE(s)");
 			return -EINVAL;
 		} else {
-			erofstar.fd = STDIN_FILENO;
+			int dupfd;
+
+			dupfd = dup(STDIN_FILENO);
+			if (dupfd < 0) {
+				erofs_err("failed to duplicate STDIN_FILENO: %s",
+					  strerror(errno));
+				return -errno;
+			}
+			err = erofs_iostream_open(&erofstar.ios, dupfd, gzip_supported);
+			if (err)
+				return err;
 		}
 	} else {
 		struct stat st;
@@ -573,12 +592,15 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		}
 
 		if (tar_mode) {
-			erofstar.fd = open(cfg.c_src_path, O_RDONLY);
-			if (erofstar.fd < 0) {
+			int fd = open(cfg.c_src_path, O_RDONLY);
+
+			if (fd < 0) {
 				erofs_err("failed to open file: %s", cfg.c_src_path);
-				usage();
 				return -errno;
 			}
+			err = erofs_iostream_open(&erofstar.ios, fd, gzip_supported);
+			if (err)
+				return err;
 		} else {
 			err = lstat(cfg.c_src_path, &st);
 			if (err)
@@ -1182,6 +1204,8 @@ exit:
 	erofs_rebuild_cleanup();
 	erofs_diskbuf_exit();
 	erofs_exit_configure();
+	if (tar_mode)
+		erofs_iostream_close(&erofstar.ios);
 
 	if (err) {
 		erofs_err("\tCould not format the device : %s\n",
