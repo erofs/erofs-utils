@@ -440,10 +440,12 @@ struct z_erofs_lcluster_index {
 /* check the EROFS on-disk layout strictly at compile time */
 static inline void erofs_check_ondisk_layout_definitions(void)
 {
-	const __le64 fmh __maybe_unused =
-		*(__le64 *)&(struct z_erofs_map_header) {
-			.h_clusterbits = 1 << Z_EROFS_FRAGMENT_INODE_BIT
-		};
+	const union {
+		struct z_erofs_map_header h;
+		__le64 v;
+	} fmh __maybe_unused = {
+		.h.h_clusterbits = 1 << Z_EROFS_FRAGMENT_INODE_BIT,
+	};
 
 	BUILD_BUG_ON(sizeof(struct erofs_super_block) != 128);
 	BUILD_BUG_ON(sizeof(struct erofs_inode_compact) != 32);
@@ -463,8 +465,8 @@ static inline void erofs_check_ondisk_layout_definitions(void)
 	BUILD_BUG_ON(BIT(Z_EROFS_LI_LCLUSTER_TYPE_BITS) <
 		     Z_EROFS_LCLUSTER_TYPE_MAX - 1);
 	/* exclude old compiler versions like gcc 7.5.0 */
-	BUILD_BUG_ON(__builtin_constant_p(fmh) ?
-		     fmh != cpu_to_le64(1ULL << 63) : 0);
+	BUILD_BUG_ON(__builtin_constant_p(fmh.v) ?
+		     fmh.v != cpu_to_le64(1ULL << 63) : 0);
 }
 
 #endif
