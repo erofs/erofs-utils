@@ -665,6 +665,7 @@ int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
 	int ret;
 	struct inode_xattr_node *node;
 	struct list_head *ixattrs = &inode->i_xattrs;
+	unsigned int h_shared_count;
 
 	if (list_empty(ixattrs)) {
 		inode->xattr_isize = 0;
@@ -672,11 +673,13 @@ int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
 	}
 
 	/* get xattr ibody size */
+	h_shared_count = 0;
 	ret = sizeof(struct erofs_xattr_ibody_header);
 	list_for_each_entry(node, ixattrs, list) {
 		struct xattr_item *item = node->item;
 
-		if (item->shared_xattr_id >= 0) {
+		if (item->shared_xattr_id >= 0 && h_shared_count < UCHAR_MAX) {
+			++h_shared_count;
 			ret += sizeof(__le32);
 			continue;
 		}
@@ -980,7 +983,8 @@ char *erofs_export_xattr_ibody(struct erofs_inode *inode)
 		list_del(&node->list);
 
 		/* move inline xattrs to the onstack list */
-		if (item->shared_xattr_id < 0) {
+		if (item->shared_xattr_id < 0 ||
+		    header->h_shared_count >= UCHAR_MAX) {
 			list_add(&node->list, &ilst);
 			continue;
 		}
