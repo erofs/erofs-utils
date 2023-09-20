@@ -26,6 +26,11 @@ compression level (1 to 12 for LZ4HC, 0 to 9 for LZMA and 100 to 109 for LZMA
 extreme compression) separated by a comma.  Alternative algorithms could be
 specified and separated by colons.
 .TP
+.BI "\-b " block-size
+Set the fundamental block size of the filesystem in bytes.  In other words,
+specify the smallest amount of data that can be accessed at a time.  The
+default is the system page size.  It cannot be less than 512 bytes.
+.TP
 .BI "\-C " max-pcluster-size
 Specify the maximum size of compress physical cluster in bytes.
 This may cause the big pcluster feature to be enabled (Linux v5.13+).
@@ -78,6 +83,9 @@ for compatibility with Linux pre-v5.4.
 .TP
 .BI noinline_data
 Don't inline regular files to enable FSDAX for these files (Linux v5.15+).
+.TP
+.B ^xattr-name-filter
+Turn off/on xattr name filter to optimize negative xattr lookups (Linux v6.6+).
 .TP
 .BI ztailpacking
 Pack the tail part (pcluster) of compressed files into its metadata to save
@@ -152,6 +160,9 @@ When this option is used together with
 the final file gids are
 set to \fIGID\fR + \fIGID-OFFSET\fR.
 .TP
+.B \-\-gzip
+Filter tarball streams through gzip.
+.TP
 .B \-\-help
 Display help string and exit.
 .TP
@@ -169,12 +180,24 @@ Use extended inodes instead of compact inodes if the file modification time
 would overflow compact inodes. This is the default. Overrides
 .BR --ignore-mtime .
 .TP
+.B "\-\-tar=f"
+Generate a full EROFS image from a tarball.
+.TP
+.B "\-\-tar=i"
+Generate an meta-only EROFS image from a tarball.
+.TP
 .BI "\-\-uid-offset=" UIDOFFSET
 Add \fIUIDOFFSET\fR to all file UIDs.
 When this option is used together with
 .BR --force-uid ,
 the final file uids are
 set to \fIUID\fR + \fIUIDOFFSET\fR.
+.TP
+.BI "\-\-xattr-prefix=" PREFIX
+Specify a customized extended attribute namespace prefix for space saving,
+e.g. "trusted.overlay.".  You may give multiple
+.B --xattr-prefix
+options (Linux v6.4+).
 .SH AUTHOR
 This version of \fBmkfs.erofs\fR is written by Li Guifu <blucerlee@gmail.com>,
 Miao Xie <miaoxie@huawei.com> and Gao Xiang <xiang@kernel.org> with
