@@ -923,11 +923,17 @@ new_inode:
 		if (S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode))
 			inode->u.i_rdev = erofs_new_encode_dev(st.st_rdev);
 	}
+
 	inode->i_srcpath = strdup(eh.path);
-	inode->i_uid = st.st_uid;
-	inode->i_gid = st.st_gid;
+	if (!inode->i_srcpath) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ret = __erofs_fill_inode(inode, &st, eh.path);
+	if (ret)
+		goto out;
 	inode->i_size = st.st_size;
-	inode->i_mtime = st.st_mtime;
 
 	if (!S_ISDIR(inode->i_mode)) {
 		if (S_ISLNK(inode->i_mode)) {
@@ -940,10 +946,8 @@ new_inode:
 								data_offset);
 			else
 				ret = tarerofs_write_file_data(inode, tar);
-			if (ret) {
-				erofs_iput(inode);
+			if (ret)
 				goto out;
-			}
 		}
 		inode->i_nlink++;
 	} else if (!inode->i_nlink) {

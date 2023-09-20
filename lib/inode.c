@@ -912,15 +912,15 @@ static int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
 }
 #endif
 
-static int erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
-			    const char *path)
+int __erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
+		       const char *path)
 {
 	int err = erofs_droid_inode_fsconfig(inode, st, path);
 	struct erofs_sb_info *sbi = inode->sbi;
 
 	if (err)
 		return err;
-	inode->i_mode = st->st_mode;
+
 	inode->i_uid = cfg.c_uid == -1 ? st->st_uid : cfg.c_uid;
 	inode->i_gid = cfg.c_gid == -1 ? st->st_gid : cfg.c_gid;
 
@@ -945,6 +945,19 @@ static int erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 	default:
 		break;
 	}
+
+	return 0;
+}
+
+static int erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
+			    const char *path)
+{
+	int err = __erofs_fill_inode(inode, st, path);
+
+	if (err)
+		return err;
+
+	inode->i_mode = st->st_mode;
 	inode->i_nlink = 1;	/* fix up later if needed */
 
 	switch (inode->i_mode & S_IFMT) {
