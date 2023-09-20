@@ -17,6 +17,9 @@
 #include "erofs/blobchunk.h"
 #include "erofs/rebuild.h"
 
+/* This file is a tape/volume header.  Ignore it on extraction.  */
+#define GNUTYPE_VOLHDR 'V'
+
 struct tar_header {
 	char name[100];		/*   0-99 */
 	char mode[8];		/* 100-107 */
@@ -634,12 +637,6 @@ restart:
 		goto restart;
 	}
 
-	if (memcmp(th->magic, "ustar", 5)) {
-		erofs_err("invalid tar magic @ %llu", tar_offset);
-		ret = -EIO;
-		goto out;
-	}
-
 	/* chksum field itself treated as ' ' */
 	csum = tarerofs_otoi(th->chksum, sizeof(th->chksum));
 	if (errno) {
@@ -662,6 +659,21 @@ restart:
 	if (csum != cksum && csum != ckksum) {
 		erofs_err("chksum mismatch @ %llu", tar_offset);
 		ret = -EBADMSG;
+		goto out;
+	}
+
+	if (th->typeflag == GNUTYPE_VOLHDR) {
+		if (th->size[0])
+			erofs_warn("GNUTYPE_VOLHDR with non-zeroed size @ %llu",
+				   tar_offset);
+		/* anyway, strncpy could cause some GCC warning here */
+		memcpy(sbi->volume_name, th->name, sizeof(sbi->volume_name));
+		goto restart;
+	}
+
+	if (memcmp(th->magic, "ustar", 5)) {
+		erofs_err("invalid tar magic @ %llu", tar_offset);
+		ret = -EIO;
 		goto out;
 	}
 
