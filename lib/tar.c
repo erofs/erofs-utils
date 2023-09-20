@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include "erofs/print.h"
 #include "erofs/cache.h"
+#include "erofs/diskbuf.h"
 #include "erofs/inode.h"
 #include "erofs/list.h"
 #include "erofs/tar.h"
@@ -407,24 +408,32 @@ static int tarerofs_write_file_data(struct erofs_inode *inode,
 				    struct erofs_tarfile *tar)
 {
 	unsigned int j, rem;
+	int fd;
+	u64 off;
 	char buf[65536];
 
-	if (!inode->i_tmpfile) {
-		inode->i_tmpfile = tmpfile();
-		if (!inode->i_tmpfile)
+	if (!inode->i_diskbuf) {
+		inode->i_diskbuf = calloc(1, sizeof(*inode->i_diskbuf));
+		if (!inode->i_diskbuf)
 			return -ENOSPC;
+	} else {
+		erofs_diskbuf_close(inode->i_diskbuf);
 	}
+
+	fd = erofs_diskbuf_reserve(inode->i_diskbuf, 0, &off);
+	if (fd < 0)
+		return -EBADF;
 
 	for (j = inode->i_size; j; ) {
 		rem = min_t(unsigned int, sizeof(buf), j);
 
 		if (erofs_read_from_fd(tar->fd, buf, rem) != rem ||
-		    fwrite(buf, rem, 1, inode->i_tmpfile) != 1)
+		    write(fd, buf, rem) != rem)
 			return -EIO;
 		j -= rem;
 	}
-	fseek(inode->i_tmpfile, 0, SEEK_SET);
-	inode->with_tmpfile = true;
+	erofs_diskbuf_commit(inode->i_diskbuf, inode->i_size);
+	inode->with_diskbuf = true;
 	return 0;
 }
 

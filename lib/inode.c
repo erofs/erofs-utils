@@ -16,6 +16,7 @@
 #endif
 #include <dirent.h>
 #include "erofs/print.h"
+#include "erofs/diskbuf.h"
 #include "erofs/inode.h"
 #include "erofs/cache.h"
 #include "erofs/io.h"
@@ -121,10 +122,12 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 	list_del(&inode->i_hash);
 	if (inode->i_srcpath)
 		free(inode->i_srcpath);
-	if (inode->with_tmpfile)
-		fclose(inode->i_tmpfile);
-	else if (inode->i_link)
+	if (inode->with_diskbuf) {
+		erofs_diskbuf_close(inode->i_diskbuf);
+		free(inode->i_diskbuf);
+	} else if (inode->i_link) {
 		free(inode->i_link);
+	}
 	free(inode);
 	return 0;
 }
@@ -454,12 +457,11 @@ static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 	return 0;
 }
 
-int erofs_write_file(struct erofs_inode *inode, int fd)
+int erofs_write_file(struct erofs_inode *inode, int fd, u64 fpos)
 {
 	int ret;
 
-	if (!inode->i_size)
-		return 0;
+	DBG_BUGON(!inode->i_size);
 
 	if (cfg.c_chunkbits) {
 		inode->u.chunkbits = cfg.c_chunkbits;
@@ -467,7 +469,7 @@ int erofs_write_file(struct erofs_inode *inode, int fd)
 		inode->u.chunkformat = 0;
 		if (cfg.c_force_chunkformat == FORCE_INODE_CHUNK_INDEXES)
 			inode->u.chunkformat = EROFS_CHUNK_FORMAT_INDEXES;
-		return erofs_blob_write_chunked_file(inode, fd);
+		return erofs_blob_write_chunked_file(inode, fd, fpos);
 	}
 
 	if (cfg.c_compr_alg[0] && erofs_file_is_compressible(inode)) {
@@ -475,7 +477,7 @@ int erofs_write_file(struct erofs_inode *inode, int fd)
 		if (!ret || ret != -ENOSPC)
 			return ret;
 
-		ret = lseek(fd, 0, SEEK_SET);
+		ret = lseek(fd, fpos, SEEK_SET);
 		if (ret < 0)
 			return -errno;
 	}
@@ -1096,7 +1098,7 @@ static int erofs_mkfs_build_tree(struct erofs_inode *dir, struct list_head *dirs
 			if (fd < 0)
 				return -errno;
 
-			ret = erofs_write_file(dir, fd);
+			ret = erofs_write_file(dir, fd, 0);
 			close(fd);
 		} else {
 			ret = 0;
@@ -1358,11 +1360,16 @@ int erofs_rebuild_dump_tree(struct erofs_inode *dir)
 			ret = erofs_write_file_from_buffer(dir, dir->i_link);
 			free(dir->i_link);
 			dir->i_link = NULL;
-		} else if (dir->i_tmpfile) {
-			ret = erofs_write_file(dir, fileno(dir->i_tmpfile));
-			fclose(dir->i_tmpfile);
-			dir->i_tmpfile = NULL;
-			dir->with_tmpfile = false;
+		} else if (dir->with_diskbuf) {
+			u64 fpos;
+
+			ret = erofs_diskbuf_getfd(dir->i_diskbuf, &fpos);
+			if (ret >= 0)
+				ret = erofs_write_file(dir, ret, fpos);
+			erofs_diskbuf_close(dir->i_diskbuf);
+			free(dir->i_diskbuf);
+			dir->i_diskbuf = NULL;
+			dir->with_diskbuf = false;
 		} else {
 			ret = 0;
 		}

@@ -223,7 +223,8 @@ out:
 	return 0;
 }
 
-int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd)
+int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
+				  erofs_off_t startoff)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
 	unsigned int chunkbits = cfg.c_chunkbits;
@@ -237,7 +238,7 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd)
 
 #ifdef SEEK_DATA
 	/* if the file is fully sparsed, use one big chunk instead */
-	if (lseek(fd, 0, SEEK_DATA) < 0 && errno == ENXIO) {
+	if (lseek(fd, startoff, SEEK_DATA) < 0 && errno == ENXIO) {
 		chunkbits = ilog2(inode->i_size - 1) + 1;
 		if (chunkbits < sbi->blkszbits)
 			chunkbits = sbi->blkszbits;
@@ -271,18 +272,23 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd)
 	minextblks = BLK_ROUND_UP(sbi, inode->i_size);
 	for (pos = 0; pos < inode->i_size; pos += len) {
 #ifdef SEEK_DATA
-		off_t offset = lseek(fd, pos, SEEK_DATA);
+		off_t offset = lseek(fd, pos + startoff, SEEK_DATA);
 
 		if (offset < 0) {
 			if (errno != ENXIO)
 				offset = pos;
 			else
 				offset = ((pos >> chunkbits) + 1) << chunkbits;
-		} else if (offset != (offset & ~(chunksize - 1))) {
-			offset &= ~(chunksize - 1);
-			if (lseek(fd, offset, SEEK_SET) != offset) {
-				ret = -EIO;
-				goto err;
+		} else {
+			offset -= startoff;
+
+			if (offset != (offset & ~(chunksize - 1))) {
+				offset &= ~(chunksize - 1);
+				if (lseek(fd, offset + startoff, SEEK_SET) !=
+					  startoff + offset) {
+					ret = -EIO;
+					goto err;
+				}
 			}
 		}
 

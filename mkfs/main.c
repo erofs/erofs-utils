@@ -15,6 +15,7 @@
 #include "erofs/config.h"
 #include "erofs/print.h"
 #include "erofs/cache.h"
+#include "erofs/diskbuf.h"
 #include "erofs/inode.h"
 #include "erofs/tar.h"
 #include "erofs/io.h"
@@ -938,6 +939,14 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	if (tar_mode && !erofstar.index_mode) {
+		err = erofs_diskbuf_init(1);
+		if (err) {
+			erofs_err("failed to initialize diskbuf: %s",
+				   strerror(-err));
+			goto exit;
+		}
+	}
 #ifdef WITH_ANDROID
 	if (cfg.fs_config_file &&
 	    load_canned_fs_config(cfg.fs_config_file) < 0) {
@@ -1171,6 +1180,7 @@ exit:
 	erofs_packedfile_exit();
 	erofs_xattr_cleanup_name_prefixes();
 	erofs_rebuild_cleanup();
+	erofs_diskbuf_exit();
 	erofs_exit_configure();
 
 	if (err) {

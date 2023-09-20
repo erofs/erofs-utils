@@ -108,7 +108,7 @@ struct erofs_sb_info {
 	u8 xattr_prefix_count;
 	struct erofs_xattr_prefix_item *xattr_prefixes;
 
-	int devfd;
+	int devfd, devblksz;
 	u64 devsz;
 	dev_t dev;
 	unsigned int nblobs;
@@ -151,6 +151,8 @@ EROFS_FEATURE_FUNCS(xattr_filter, compat, COMPAT_XATTR_FILTER)
 #define EROFS_I_EA_INITED	(1 << 0)
 #define EROFS_I_Z_INITED	(1 << 1)
 
+struct erofs_diskbuf;
+
 struct erofs_inode {
 	struct list_head i_hash, i_subdirs, i_xattrs;
 
@@ -190,7 +192,7 @@ struct erofs_inode {
 	char *i_srcpath;
 	union {
 		char *i_link;
-		FILE *i_tmpfile;
+		struct erofs_diskbuf *i_diskbuf;
 	};
 	unsigned char datalayout;
 	unsigned char inode_isize;
@@ -198,7 +200,7 @@ struct erofs_inode {
 	unsigned short idata_size;
 	bool compressed_idata;
 	bool lazy_tailblock;
-	bool with_tmpfile;
+	bool with_diskbuf;
 	bool opaque;
 	/* OVL: non-merge dir that may contain whiteout entries */
 	bool whiteouts;

@@ -119,6 +119,7 @@ repeat:
 		}
 		/* INT64_MAX is the limit of kernel vfs */
 		sbi->devsz = INT64_MAX;
+		sbi->devblksz = st.st_blksize;
 		break;
 	default:
 		erofs_err("bad file type (%s, %o).", dev, st.st_mode);
