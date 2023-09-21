@@ -170,6 +170,7 @@ static int z_erofs_compress_dedupe(struct z_erofs_vle_compress_ctx *ctx,
 				   unsigned int *len)
 {
 	struct erofs_inode *inode = ctx->inode;
+	const unsigned int lclustermask = (1 << inode->z_logical_clusterbits) - 1;
 	struct erofs_sb_info *sbi = inode->sbi;
 	int ret = 0;
 
@@ -205,21 +206,31 @@ static int z_erofs_compress_dedupe(struct z_erofs_vle_compress_ctx *ctx,
 		 * decompresssion could be done as another try in practice.
 		 */
 		if (dctx.e.compressedblks > 1 &&
-		    (ctx->clusterofs + ctx->e.length - delta) % erofs_blksiz(sbi) +
-			dctx.e.length < 2 * erofs_blksiz(sbi))
+		    ((ctx->clusterofs + ctx->e.length - delta) & lclustermask) +
+			dctx.e.length < 2 * (lclustermask + 1))
 			break;
+
+		if (delta) {
+			DBG_BUGON(delta < 0);
+			DBG_BUGON(!ctx->e.length);
+
+			/*
+			 * For big pcluster dedupe, if we decide to shorten the
+			 * previous big pcluster, make sure that the previous
+			 * CBLKCNT is still kept.
+			 */
+			if (ctx->e.compressedblks > 1 &&
+			    (ctx->clusterofs & lclustermask) + ctx->e.length
+				- delta < 2 * (lclustermask + 1))
+				break;
+			ctx->e.partial = true;
+			ctx->e.length -= delta;
+		}
 
 		/* fall back to noncompact indexes for deduplication */
 		inode->z_advise &= ~Z_EROFS_ADVISE_COMPACTED_2B;
 		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
 		erofs_sb_set_dedupe(sbi);
-
-		if (delta) {
-			DBG_BUGON(delta < 0);
-			DBG_BUGON(!ctx->e.length);
-			ctx->e.partial = true;
-			ctx->e.length -= delta;
-		}
 
 		sbi->saved_by_deduplication +=
 			dctx.e.compressedblks * erofs_blksiz(sbi);
