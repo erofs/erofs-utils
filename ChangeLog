@@ -1,3 +1,19 @@
+erofs-utils 1.7
+
+ * This release includes the following updates:
+   - support arbitrary valid block sizes in addition to page size;
+   - (mkfs.erofs) arrange on-disk meta with Breadth-First Traversal instead;
+   - support long xattr name prefixes (Jingbo Xu);
+   - support UUID functionality without libuuid (Norbert Lange);
+   - (mkfs.erofs, experimental) add DEFLATE algorithm support;
+   - (mkfs.erofs, experimental) support building images directly from tarballs;
+   - (dump.erofs) print more superblock fields (Guo Xuenan);
+   - (mkfs.erofs, experimental) introduce preliminary rebuild mode (Jingbo Xu);
+   - various bugfixes and cleanups (Sandeep Dhavale, Guo Xuenan, Yue Hu,
+           Weizhao Ouyang, Kelvin Zhang, Noboru Asai, Yifan Zhao and Li Yiyan);
+
+ -- Gao Xiang <xiang@kernel.org>  Thu, 21 Sep 2023 00:00:00 +0800
+
 erofs-utils 1.6
 
  * This release includes the following updates:
