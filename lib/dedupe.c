@@ -2,9 +2,9 @@
 /*
  * Copyright (C) 2022 Alibaba Cloud
  */
+#include <stdlib.h>
 #include "erofs/dedupe.h"
 #include "erofs/print.h"
-#include "rb_tree.h"
 #include "rolling_hash.h"
 #include "xxhash.h"
 #include "sha256.h"
@@ -62,9 +62,12 @@ out_bytes:
 }
 
 static unsigned int window_size, rollinghash_rm;
-static struct rb_tree *dedupe_tree, *dedupe_subtree;
+static struct list_head dedupe_tree[65536];
+struct z_erofs_dedupe_item *dedupe_subtree;
 
 struct z_erofs_dedupe_item {
+	struct list_head list;
+	struct z_erofs_dedupe_item *chain;
 	long long	hash;
 	u8		prefix_sha256[32];
 	u64		prefix_xxh64;
@@ -77,22 +80,13 @@ struct z_erofs_dedupe_item {
 	u8		extra_data[];
 };
 
-static int z_erofs_dedupe_rbtree_cmp(struct rb_tree *self,
-		struct rb_node *node_a, struct rb_node *node_b)
-{
-	struct z_erofs_dedupe_item *e_a = node_a->value;
-	struct z_erofs_dedupe_item *e_b = node_b->value;
-
-	return (e_a->hash > e_b->hash) - (e_a->hash < e_b->hash);
-}
-
 int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 {
 	struct z_erofs_dedupe_item e_find;
 	u8 *cur;
 	bool initial = true;
 
-	if (!dedupe_tree)
+	if (!window_size)
 		return -ENOENT;
 
 	if (ctx->cur > ctx->end - window_size)
@@ -102,8 +96,10 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 
 	/* move backward byte-by-byte */
 	for (; cur >= ctx->start; --cur) {
+		struct list_head *p;
 		struct z_erofs_dedupe_item *e;
-		unsigned int extra;
+
+		unsigned int extra = 0;
 		u64 xxh64_csum;
 		u8 sha256[32];
 
@@ -116,15 +112,19 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 				rollinghash_rm, cur[window_size], cur[0]);
 		}
 
-		e = rb_tree_find(dedupe_tree, &e_find);
-		if (!e) {
-			e = rb_tree_find(dedupe_subtree, &e_find);
-			if (!e)
+		p = &dedupe_tree[e_find.hash & (ARRAY_SIZE(dedupe_tree) - 1)];
+		list_for_each_entry(e, p, list) {
+			if (e->hash != e_find.hash)
 				continue;
+			if (!extra) {
+				xxh64_csum = xxh64(cur, window_size, 0);
+				extra = 1;
+			}
+			if (e->prefix_xxh64 == xxh64_csum)
+				break;
 		}
 
-		xxh64_csum = xxh64(cur, window_size, 0);
-		if (e->prefix_xxh64 != xxh64_csum)
+		if (&e->list == p)
 			continue;
 
 		erofs_sha256(cur, window_size, sha256);
@@ -151,9 +151,10 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 int z_erofs_dedupe_insert(struct z_erofs_inmem_extent *e,
 			  void *original_data)
 {
-	struct z_erofs_dedupe_item *di;
+	struct list_head *p;
+	struct z_erofs_dedupe_item *di, *k;
 
-	if (!dedupe_subtree || e->length < window_size)
+	if (!window_size || e->length < window_size)
 		return 0;
 
 	di = malloc(sizeof(*di) + e->length - window_size);
@@ -173,52 +174,44 @@ int z_erofs_dedupe_insert(struct z_erofs_inmem_extent *e,
 	di->partial = e->partial;
 	di->raw = e->raw;
 
-	/* with the same rolling hash */
-	if (!rb_tree_insert(dedupe_subtree, di))
-		free(di);
+	/* skip the same xxh64 hash */
+	p = &dedupe_tree[di->hash & (ARRAY_SIZE(dedupe_tree) - 1)];
+	list_for_each_entry(k, p, list) {
+		if (k->prefix_xxh64 == di->prefix_xxh64) {
+			free(di);
+			return 0;
+		}
+	}
+	di->chain = dedupe_subtree;
+	dedupe_subtree = di;
+	list_add_tail(&di->list, p);
 	return 0;
-}
-
-static void z_erofs_dedupe_node_free_cb(struct rb_tree *self,
-					struct rb_node *node)
-{
-	free(node->value);
-	rb_tree_node_dealloc_cb(self, node);
 }
 
 void z_erofs_dedupe_commit(bool drop)
 {
 	if (!dedupe_subtree)
 		return;
-	if (!drop) {
-		struct rb_iter iter;
-		struct z_erofs_dedupe_item *di;
+	if (drop) {
+		struct z_erofs_dedupe_item *di, *n;
 
-		di = rb_iter_first(&iter, dedupe_subtree);
-		while (di) {
-			if (!rb_tree_insert(dedupe_tree, di))
-				DBG_BUGON(1);
-			di = rb_iter_next(&iter);
+		for (di = dedupe_subtree; di; di = n) {
+			n = di->chain;
+			list_del(&di->list);
+			free(di);
 		}
-		/*rb_iter_dealloc(iter);*/
-		rb_tree_dealloc(dedupe_subtree, rb_tree_node_dealloc_cb);
-	} else {
-		rb_tree_dealloc(dedupe_subtree, z_erofs_dedupe_node_free_cb);
 	}
-	dedupe_subtree = rb_tree_create(z_erofs_dedupe_rbtree_cmp);
+	dedupe_subtree = NULL;
 }
 
 int z_erofs_dedupe_init(unsigned int wsiz)
 {
-	dedupe_tree = rb_tree_create(z_erofs_dedupe_rbtree_cmp);
-	if (!dedupe_tree)
-		return -ENOMEM;
+	struct list_head *p;
 
-	dedupe_subtree = rb_tree_create(z_erofs_dedupe_rbtree_cmp);
-	if (!dedupe_subtree) {
-		rb_tree_dealloc(dedupe_subtree, NULL);
-		return -ENOMEM;
-	}
+	for (p = dedupe_tree;
+		p < dedupe_tree + ARRAY_SIZE(dedupe_tree); ++p)
+		init_list_head(p);
+
 	window_size = wsiz;
 	rollinghash_rm = erofs_rollinghash_calc_rm(window_size);
 	return 0;
@@ -226,7 +219,20 @@ int z_erofs_dedupe_init(unsigned int wsiz)
 
 void z_erofs_dedupe_exit(void)
 {
+	struct z_erofs_dedupe_item *di, *n;
+	struct list_head *p;
+
+	if (!window_size)
+		return;
+
 	z_erofs_dedupe_commit(true);
-	rb_tree_dealloc(dedupe_subtree, NULL);
-	rb_tree_dealloc(dedupe_tree, z_erofs_dedupe_node_free_cb);
+
+	for (p = dedupe_tree;
+		p < dedupe_tree + ARRAY_SIZE(dedupe_tree); ++p) {
+		list_for_each_entry_safe(di, n, p, list) {
+			list_del(&di->list);
+			free(di);
+		}
+	}
+	dedupe_subtree = NULL;
 }
