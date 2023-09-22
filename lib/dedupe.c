@@ -69,7 +69,6 @@ struct z_erofs_dedupe_item {
 	struct list_head list;
 	struct z_erofs_dedupe_item *chain;
 	long long	hash;
-	u8		prefix_sha256[32];
 	u64		prefix_xxh64;
 
 	erofs_blk_t	compressed_blkaddr;
@@ -77,7 +76,7 @@ struct z_erofs_dedupe_item {
 
 	int		original_length;
 	bool		partial, raw;
-	u8		extra_data[];
+	u8		payload[];
 };
 
 int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
@@ -101,7 +100,6 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 
 		unsigned int extra = 0;
 		u64 xxh64_csum = 0;
-		u8 sha256[32];
 
 		if (initial) {
 			/* initial try */
@@ -127,13 +125,12 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 		if (&e->list == p)
 			continue;
 
-		erofs_sha256(cur, window_size, sha256);
-		if (memcmp(sha256, e->prefix_sha256, sizeof(sha256)))
+		if (memcmp(cur, e->payload, window_size))
 			continue;
 
 		extra = min_t(unsigned int, ctx->end - cur - window_size,
 			      e->original_length - window_size);
-		extra = erofs_memcmp2(cur + window_size, e->extra_data, extra);
+		extra = erofs_memcmp2(cur + window_size, e->payload + window_size, extra);
 		if (window_size + extra <= ctx->cur - cur)
 			continue;
 		ctx->cur = cur;
@@ -158,18 +155,16 @@ int z_erofs_dedupe_insert(struct z_erofs_inmem_extent *e,
 	if (!window_size || e->length < window_size)
 		return 0;
 
-	di = malloc(sizeof(*di) + e->length - window_size);
+	di = malloc(sizeof(*di) + e->length);
 	if (!di)
 		return -ENOMEM;
 
 	di->original_length = e->length;
-	erofs_sha256(original_data, window_size, di->prefix_sha256);
 
 	di->prefix_xxh64 = xxh64(original_data, window_size, 0);
 	di->hash = erofs_rolling_hash_init(original_data,
 			window_size, true);
-	memcpy(di->extra_data, original_data + window_size,
-	       e->length - window_size);
+	memcpy(di->payload, original_data, e->length);
 	di->compressed_blkaddr = e->blkaddr;
 	di->compressed_blks = e->compressedblks;
 	di->partial = e->partial;
