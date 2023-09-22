@@ -43,14 +43,14 @@
  * - xxHash homepage: https://cyan4973.github.io/xxHash/
  * - xxHash source repository: https://github.com/Cyan4973/xxHash
  */
-
 #include "erofs/defs.h"
-#include "erofs/xxhash.h"
+#include "xxhash.h"
 
 /*-*************************************
  * Macros
  **************************************/
 #define xxh_rotl32(x, r) ((x << r) | (x >> (32 - r)))
+#define xxh_rotl64(x, r) ((x << r) | (x >> (64 - r)))
 
 /*-*************************************
  * Constants
@@ -60,6 +60,12 @@ static const uint32_t PRIME32_2 = 2246822519U;
 static const uint32_t PRIME32_3 = 3266489917U;
 static const uint32_t PRIME32_4 =  668265263U;
 static const uint32_t PRIME32_5 =  374761393U;
+
+static const uint64_t PRIME64_1 = 11400714785074694791ULL;
+static const uint64_t PRIME64_2 = 14029467366897019727ULL;
+static const uint64_t PRIME64_3 =  1609587929392839161ULL;
+static const uint64_t PRIME64_4 =  9650029242287828579ULL;
+static const uint64_t PRIME64_5 =  2870177450012600261ULL;
 
 /*-***************************
  * Simple Hash Functions
@@ -123,4 +129,86 @@ uint32_t xxh32(const void *input, const size_t len, const uint32_t seed)
 	h32 ^= h32 >> 16;
 
 	return h32;
+}
+
+static uint64_t xxh64_round(uint64_t acc, const uint64_t input)
+{
+	acc += input * PRIME64_2;
+	acc = xxh_rotl64(acc, 31);
+	acc *= PRIME64_1;
+	return acc;
+}
+
+static uint64_t xxh64_merge_round(uint64_t acc, uint64_t val)
+{
+	val = xxh64_round(0, val);
+	acc ^= val;
+	acc = acc * PRIME64_1 + PRIME64_4;
+	return acc;
+}
+
+uint64_t xxh64(const void *input, const size_t len, const uint64_t seed)
+{
+	const uint8_t *p = (const uint8_t *)input;
+	const uint8_t *const b_end = p + len;
+	uint64_t h64;
+
+	if (len >= 32) {
+		const uint8_t *const limit = b_end - 32;
+		uint64_t v1 = seed + PRIME64_1 + PRIME64_2;
+		uint64_t v2 = seed + PRIME64_2;
+		uint64_t v3 = seed + 0;
+		uint64_t v4 = seed - PRIME64_1;
+
+		do {
+			v1 = xxh64_round(v1, get_unaligned_le64(p));
+			p += 8;
+			v2 = xxh64_round(v2, get_unaligned_le64(p));
+			p += 8;
+			v3 = xxh64_round(v3, get_unaligned_le64(p));
+			p += 8;
+			v4 = xxh64_round(v4, get_unaligned_le64(p));
+			p += 8;
+		} while (p <= limit);
+
+		h64 = xxh_rotl64(v1, 1) + xxh_rotl64(v2, 7) +
+			xxh_rotl64(v3, 12) + xxh_rotl64(v4, 18);
+		h64 = xxh64_merge_round(h64, v1);
+		h64 = xxh64_merge_round(h64, v2);
+		h64 = xxh64_merge_round(h64, v3);
+		h64 = xxh64_merge_round(h64, v4);
+
+	} else {
+		h64  = seed + PRIME64_5;
+	}
+
+	h64 += (uint64_t)len;
+
+	while (p + 8 <= b_end) {
+		const uint64_t k1 = xxh64_round(0, get_unaligned_le64(p));
+
+		h64 ^= k1;
+		h64 = xxh_rotl64(h64, 27) * PRIME64_1 + PRIME64_4;
+		p += 8;
+	}
+
+	if (p + 4 <= b_end) {
+		h64 ^= (uint64_t)(get_unaligned_le32(p)) * PRIME64_1;
+		h64 = xxh_rotl64(h64, 23) * PRIME64_2 + PRIME64_3;
+		p += 4;
+	}
+
+	while (p < b_end) {
+		h64 ^= (*p) * PRIME64_5;
+		h64 = xxh_rotl64(h64, 11) * PRIME64_1;
+		p++;
+	}
+
+	h64 ^= h64 >> 33;
+	h64 *= PRIME64_2;
+	h64 ^= h64 >> 29;
+	h64 *= PRIME64_3;
+	h64 ^= h64 >> 32;
+
+	return h64;
 }

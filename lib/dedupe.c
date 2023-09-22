@@ -6,6 +6,7 @@
 #include "erofs/print.h"
 #include "rb_tree.h"
 #include "rolling_hash.h"
+#include "xxhash.h"
 #include "sha256.h"
 
 unsigned long erofs_memcmp2(const u8 *s1, const u8 *s2,
@@ -66,6 +67,7 @@ static struct rb_tree *dedupe_tree, *dedupe_subtree;
 struct z_erofs_dedupe_item {
 	long long	hash;
 	u8		prefix_sha256[32];
+	u64		prefix_xxh64;
 
 	erofs_blk_t	compressed_blkaddr;
 	unsigned int	compressed_blks;
@@ -102,6 +104,7 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 	for (; cur >= ctx->start; --cur) {
 		struct z_erofs_dedupe_item *e;
 		unsigned int extra;
+		u64 xxh64_csum;
 		u8 sha256[32];
 
 		if (initial) {
@@ -119,6 +122,10 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 			if (!e)
 				continue;
 		}
+
+		xxh64_csum = xxh64(cur, window_size, 0);
+		if (e->prefix_xxh64 != xxh64_csum)
+			continue;
 
 		erofs_sha256(cur, window_size, sha256);
 		if (memcmp(sha256, e->prefix_sha256, sizeof(sha256)))
@@ -155,6 +162,8 @@ int z_erofs_dedupe_insert(struct z_erofs_inmem_extent *e,
 
 	di->original_length = e->length;
 	erofs_sha256(original_data, window_size, di->prefix_sha256);
+
+	di->prefix_xxh64 = xxh64(original_data, window_size, 0);
 	di->hash = erofs_rolling_hash_init(original_data,
 			window_size, true);
 	memcpy(di->extra_data, original_data + window_size,
