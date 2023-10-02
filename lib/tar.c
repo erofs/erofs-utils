@@ -241,7 +241,7 @@ static long long tarerofs_otoi(const char *ptr, int len)
 	val = strtol(ptr, &endp, 8);
 	if ((!val && endp == inp) |
 	     (*endp && *endp != ' '))
-		errno = -EINVAL;
+		errno = EINVAL;
 	return val;
 }
 
