@@ -284,8 +284,8 @@ AS_IF([test "x$MAX_BLOCK_SIZE" = "x"], [
     return 0;
 ]])],
                              [erofs_cv_max_block_size=`cat conftest.out`],
-                             [],
-                             []))
+                             [erofs_cv_max_block_size=4096],
+                             [erofs_cv_max_block_size=4096]))
 ], [erofs_cv_max_block_size=$MAX_BLOCK_SIZE])
 
 # Configure debug mode
