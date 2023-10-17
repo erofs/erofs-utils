@@ -159,8 +159,9 @@ struct erofs_inode {
 	union {
 		/* (erofsfuse) runtime flags */
 		unsigned int flags;
-		/* (mkfs.erofs) queued sub-directories blocking dump */
-		u32 subdirs_queued;
+
+		/* (mkfs.erofs) next pointer for directory dumping */
+		struct erofs_inode *next_dirwrite;
 	};
 	unsigned int i_count;
 	struct erofs_sb_info *sbi;

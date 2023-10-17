@@ -1210,7 +1210,6 @@ fail:
 			inode->i_parent = dir;
 			erofs_igrab(inode);
 			list_add_tail(&inode->i_subdirs, dirs);
-			++dir->subdirs_queued;
 		}
 		ftype = erofs_mode_to_ftype(inode->i_mode);
 		i_nlink += (ftype == EROFS_FT_DIR);
@@ -1235,17 +1234,10 @@ err_closedir:
 	return ret;
 }
 
-static void erofs_mkfs_dump_directory(struct erofs_inode *dir)
-{
-	erofs_write_dir_file(dir);
-	erofs_write_tail_end(dir);
-	dir->bh->op = &erofs_write_inode_bhops;
-}
-
 struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
 {
 	LIST_HEAD(dirs);
-	struct erofs_inode *inode, *root, *parent;
+	struct erofs_inode *inode, *root, *dumpdir;
 
 	root = erofs_iget_from_path(path, true);
 	if (IS_ERR(root))
@@ -1253,9 +1245,9 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
 
 	(void)erofs_igrab(root);
 	root->i_parent = root;	/* rootdir mark */
-	root->subdirs_queued = 1;
 	list_add(&root->i_subdirs, &dirs);
 
+	dumpdir = NULL;
 	do {
 		int err;
 		char *trimmed;
@@ -1275,15 +1267,18 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
 			root = ERR_PTR(err);
 			break;
 		}
-		parent = inode->i_parent;
 
-		DBG_BUGON(!parent->subdirs_queued);
-		if (S_ISDIR(inode->i_mode) && !inode->subdirs_queued)
-			erofs_mkfs_dump_directory(inode);
-		if (!--parent->subdirs_queued)
-			erofs_mkfs_dump_directory(parent);
-		erofs_iput(inode);
+		if (S_ISDIR(inode->i_mode)) {
+			inode->next_dirwrite = dumpdir;
+			dumpdir = inode;
+		}
 	} while (!list_empty(&dirs));
+
+	for (; dumpdir; dumpdir = dumpdir->next_dirwrite) {
+		erofs_write_dir_file(dumpdir);
+		erofs_write_tail_end(dumpdir);
+		dumpdir->bh->op = &erofs_write_inode_bhops;
+	}
 	return root;
 }
 
