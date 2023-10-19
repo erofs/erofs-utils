@@ -1271,13 +1271,18 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
 		if (S_ISDIR(inode->i_mode)) {
 			inode->next_dirwrite = dumpdir;
 			dumpdir = inode;
+		} else {
+			erofs_iput(inode);
 		}
 	} while (!list_empty(&dirs));
 
-	for (; dumpdir; dumpdir = dumpdir->next_dirwrite) {
-		erofs_write_dir_file(dumpdir);
-		erofs_write_tail_end(dumpdir);
-		dumpdir->bh->op = &erofs_write_inode_bhops;
+	while (dumpdir) {
+		inode = dumpdir;
+		erofs_write_dir_file(inode);
+		erofs_write_tail_end(inode);
+		inode->bh->op = &erofs_write_inode_bhops;
+		dumpdir = inode->next_dirwrite;
+		erofs_iput(inode);
 	}
 	return root;
 }
