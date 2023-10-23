@@ -79,9 +79,10 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 {
 	const unsigned int blksiz = erofs_blksiz(&sbi);
 	const unsigned int blkmask = blksiz - 1;
-	const erofs_off_t alignedoffset = roundup(bb->buffers.off, alignsize);
-	const int oob = cmpsgn(roundup(((bb->buffers.off - 1) & blkmask) + 1,
-				       alignsize) + incr + extrasize, blksiz);
+	erofs_off_t boff = bb->buffers.off;
+	const erofs_off_t alignedoffset = roundup(boff, alignsize);
+	const int oob = cmpsgn(roundup(((boff - 1) & blkmask) + 1, alignsize) +
+					incr + extrasize, blksiz);
 	bool tailupdate = false;
 	erofs_blk_t blkaddr;
 
@@ -93,7 +94,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 		blkaddr = bb->blkaddr;
 		if (blkaddr != NULL_ADDR) {
 			tailupdate = (tail_blkaddr == blkaddr +
-				      DIV_ROUND_UP(bb->buffers.off, blksiz));
+				      BLK_ROUND_UP(&sbi, boff));
 			if (oob && !tailupdate)
 				return -EINVAL;
 		}
@@ -105,11 +106,11 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 			bh->block = bb;
 			list_add_tail(&bh->list, &bb->buffers.list);
 		}
-		bb->buffers.off = alignedoffset + incr;
+		boff = alignedoffset + incr;
+		bb->buffers.off = boff;
 		/* need to update the tail_blkaddr */
 		if (tailupdate)
-			tail_blkaddr = blkaddr +
-					DIV_ROUND_UP(bb->buffers.off, blksiz);
+			tail_blkaddr = blkaddr + BLK_ROUND_UP(&sbi, boff);
 		erofs_bupdate_mapped(bb);
 	}
 	return ((alignedoffset + incr - 1) & blkmask) + 1;

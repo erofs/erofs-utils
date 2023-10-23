@@ -49,7 +49,8 @@ extern struct erofs_sb_info sbi;
 #define erofs_blknr(sbi, addr)  ((addr) >> (sbi)->blkszbits)
 #define erofs_blkoff(sbi, addr) ((addr) & (erofs_blksiz(sbi) - 1))
 #define erofs_pos(sbi, nr)      ((erofs_off_t)(nr) << (sbi)->blkszbits)
-#define BLK_ROUND_UP(sbi, addr)	DIV_ROUND_UP(addr, erofs_blksiz(sbi))
+#define BLK_ROUND_UP(sbi, addr)	\
+	(roundup(addr, erofs_blksiz(sbi)) >> (sbi)->blkszbits)
 
 struct erofs_buffer_head;
 
