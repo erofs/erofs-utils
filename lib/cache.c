@@ -380,11 +380,6 @@ bool erofs_bflush(struct erofs_buffer_block *bb)
 		if (p == bb)
 			break;
 
-		/* check if the buffer block can flush */
-		list_for_each_entry(bh, &p->buffers.list, list)
-			if (bh->op->preflush && !bh->op->preflush(bh))
-				return false;
-
 		blkaddr = __erofs_mapbh(p);
 
 		list_for_each_entry_safe(bh, nbh, &p->buffers.list, list) {
