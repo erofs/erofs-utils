@@ -117,6 +117,7 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 	list_for_each_entry_safe(d, t, &inode->i_subdirs, d_child)
 		free(d);
 
+	free(inode->compressmeta);
 	if (inode->eof_tailraw)
 		free(inode->eof_tailraw);
 	list_del(&inode->i_hash);
@@ -486,7 +487,7 @@ int erofs_write_file(struct erofs_inode *inode, int fd, u64 fpos)
 	return write_uncompressed_file_from_fd(inode, fd);
 }
 
-static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
+static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 {
 	struct erofs_inode *const inode = bh->fsprivate;
 	struct erofs_sb_info *sbi = inode->sbi;
@@ -578,19 +579,19 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 
 	ret = dev_write(sbi, &u, off, inode->inode_isize);
 	if (ret)
-		return false;
+		return ret;
 	off += inode->inode_isize;
 
 	if (inode->xattr_isize) {
 		char *xattrs = erofs_export_xattr_ibody(inode);
 
 		if (IS_ERR(xattrs))
-			return false;
+			return PTR_ERR(xattrs);
 
 		ret = dev_write(sbi, xattrs, off, inode->xattr_isize);
 		free(xattrs);
 		if (ret)
-			return false;
+			return ret;
 
 		off += inode->xattr_isize;
 	}
@@ -599,15 +600,14 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		if (inode->datalayout == EROFS_INODE_CHUNK_BASED) {
 			ret = erofs_blob_write_chunk_indexes(inode, off);
 			if (ret)
-				return false;
+				return ret;
 		} else {
 			/* write compression metadata */
 			off = roundup(off, 8);
 			ret = dev_write(sbi, inode->compressmeta, off,
 					inode->extent_isize);
 			if (ret)
-				return false;
-			free(inode->compressmeta);
+				return ret;
 		}
 	}
 
@@ -718,7 +718,7 @@ noinline:
 	return 0;
 }
 
-static bool erofs_bh_flush_write_inline(struct erofs_buffer_head *bh)
+static int erofs_bh_flush_write_inline(struct erofs_buffer_head *bh)
 {
 	struct erofs_inode *const inode = bh->fsprivate;
 	const erofs_off_t off = erofs_btell(bh, false);
@@ -726,7 +726,7 @@ static bool erofs_bh_flush_write_inline(struct erofs_buffer_head *bh)
 
 	ret = dev_write(inode->sbi, inode->idata, off, inode->idata_size);
 	if (ret)
-		return false;
+		return ret;
 
 	inode->idata_size = 0;
 	free(inode->idata);

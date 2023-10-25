@@ -21,7 +21,7 @@ static struct list_head mapped_buckets[META + 1][EROFS_MAX_BLOCK_SIZE];
 /* last mapped buffer block to accelerate erofs_mapbh() */
 static struct erofs_buffer_block *last_mapped_block = &blkh;
 
-static bool erofs_bh_flush_drop_directly(struct erofs_buffer_head *bh)
+static int erofs_bh_flush_drop_directly(struct erofs_buffer_head *bh)
 {
 	return erofs_bh_flush_generic_end(bh);
 }
@@ -30,9 +30,9 @@ const struct erofs_bhops erofs_drop_directly_bhops = {
 	.flush = erofs_bh_flush_drop_directly,
 };
 
-static bool erofs_bh_flush_skip_write(struct erofs_buffer_head *bh)
+static int erofs_bh_flush_skip_write(struct erofs_buffer_head *bh)
 {
-	return false;
+	return -EBUSY;
 }
 
 const struct erofs_bhops erofs_skip_write_bhops = {
@@ -366,7 +366,7 @@ static void erofs_bfree(struct erofs_buffer_block *bb)
 	free(bb);
 }
 
-bool erofs_bflush(struct erofs_buffer_block *bb)
+int erofs_bflush(struct erofs_buffer_block *bb)
 {
 	const unsigned int blksiz = erofs_blksiz(&sbi);
 	struct erofs_buffer_block *p, *n;
@@ -376,6 +376,7 @@ bool erofs_bflush(struct erofs_buffer_block *bb)
 		struct erofs_buffer_head *bh, *nbh;
 		unsigned int padding;
 		bool skip = false;
+		int ret;
 
 		if (p == bb)
 			break;
@@ -383,9 +384,15 @@ bool erofs_bflush(struct erofs_buffer_block *bb)
 		blkaddr = __erofs_mapbh(p);
 
 		list_for_each_entry_safe(bh, nbh, &p->buffers.list, list) {
-			/* flush and remove bh */
-			if (!bh->op->flush(bh))
+			if (bh->op == &erofs_skip_write_bhops) {
 				skip = true;
+				continue;
+			}
+
+			/* flush and remove bh */
+			ret = bh->op->flush(bh);
+			if (ret < 0)
+				return ret;
 		}
 
 		if (skip)
@@ -401,7 +408,7 @@ bool erofs_bflush(struct erofs_buffer_block *bb)
 		erofs_dbg("block %u to %u flushed", p->blkaddr, blkaddr - 1);
 		erofs_bfree(p);
 	}
-	return true;
+	return 0;
 }
 
 void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke)

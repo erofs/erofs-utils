@@ -1045,6 +1045,7 @@ err_bdrop:
 	erofs_bdrop(bh, true);	/* revoke buffer */
 err_free_meta:
 	free(compressmeta);
+	inode->compressmeta = NULL;
 	return ret;
 }
 

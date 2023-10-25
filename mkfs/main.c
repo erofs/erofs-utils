@@ -1170,10 +1170,9 @@ int main(int argc, char **argv)
 	}
 
 	/* flush all buffers except for the superblock */
-	if (!erofs_bflush(NULL)) {
-		err = -EIO;
+	err = erofs_bflush(NULL);
+	if (err)
 		goto exit;
-	}
 
 	err = erofs_mkfs_update_super_block(sb_bh, root_nid, &nblocks,
 					    packed_nid);
@@ -1181,10 +1180,11 @@ int main(int argc, char **argv)
 		goto exit;
 
 	/* flush all remaining buffers */
-	if (!erofs_bflush(NULL))
-		err = -EIO;
-	else
-		err = dev_resize(&sbi, nblocks);
+	err = erofs_bflush(NULL);
+	if (err)
+		goto exit;
+
+	err = dev_resize(&sbi, nblocks);
 
 	if (!err && erofs_sb_has_sb_chksum(&sbi))
 		err = erofs_mkfs_superblock_csum_set();

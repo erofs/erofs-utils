@@ -30,7 +30,7 @@ struct erofs_buffer_block;
 #define DEVT		5
 
 struct erofs_bhops {
-	bool (*flush)(struct erofs_buffer_head *bh);
+	int (*flush)(struct erofs_buffer_head *bh);
 };
 
 struct erofs_buffer_head {
@@ -91,11 +91,11 @@ static inline erofs_off_t erofs_btell(struct erofs_buffer_head *bh, bool end)
 		(end ? list_next_entry(bh, list)->off : bh->off);
 }
 
-static inline bool erofs_bh_flush_generic_end(struct erofs_buffer_head *bh)
+static inline int erofs_bh_flush_generic_end(struct erofs_buffer_head *bh)
 {
 	list_del(&bh->list);
 	free(bh);
-	return true;
+	return 0;
 }
 
 struct erofs_buffer_head *erofs_buffer_init(void);
@@ -108,7 +108,7 @@ struct erofs_buffer_head *erofs_battach(struct erofs_buffer_head *bh,
 					int type, unsigned int size);
 
 erofs_blk_t erofs_mapbh(struct erofs_buffer_block *bb);
-bool erofs_bflush(struct erofs_buffer_block *bb);
+int erofs_bflush(struct erofs_buffer_block *bb);
 
 void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke);
 erofs_blk_t erofs_total_metablocks(void);
