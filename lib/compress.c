@@ -338,7 +338,7 @@ static int z_erofs_fill_inline_data(struct erofs_inode *inode, void *data,
 static void tryrecompress_trailing(struct z_erofs_vle_compress_ctx *ctx,
 				   struct erofs_compress *ec,
 				   void *in, unsigned int *insize,
-				   void *out, int *compressedsize)
+				   void *out, unsigned int *compressedsize)
 {
 	struct erofs_sb_info *sbi = ctx->inode->sbi;
 	static char tmp[Z_EROFS_PCLUSTER_MAX_SIZE];
@@ -351,7 +351,7 @@ static void tryrecompress_trailing(struct z_erofs_vle_compress_ctx *ctx,
 
 	count = *insize;
 	ret = erofs_compress_destsize(ec, in, &count, (void *)tmp,
-				      rounddown(ret, erofs_blksiz(sbi)), false);
+				      rounddown(ret, erofs_blksiz(sbi)));
 	if (ret <= 0 || ret + (*insize - count) >=
 			roundup(*compressedsize, erofs_blksiz(sbi)))
 		return;
@@ -397,7 +397,8 @@ static int vle_compress_one(struct z_erofs_vle_compress_ctx *ctx)
 	static char dstbuf[EROFS_CONFIG_COMPR_MAX_SZ + EROFS_MAX_BLOCK_SIZE];
 	struct erofs_inode *inode = ctx->inode;
 	struct erofs_sb_info *sbi = inode->sbi;
-	char *const dst = dstbuf + erofs_blksiz(sbi);
+	unsigned int blksz = erofs_blksiz(sbi);
+	char *const dst = dstbuf + blksz;
 	struct erofs_compress *const h = &ctx->ccfg->handle;
 	unsigned int len = ctx->tail - ctx->head;
 	bool is_packed_inode = erofs_is_packed_inode(inode);
@@ -410,6 +411,7 @@ static int vle_compress_one(struct z_erofs_vle_compress_ctx *ctx)
 		bool may_inline = (cfg.c_ztailpacking && final &&
 				  !may_packing);
 		bool fix_dedupedfrag = ctx->fix_dedupedfrag;
+		unsigned int compressedsize;
 
 		if (z_erofs_compress_dedupe(ctx, &len) && !final)
 			break;
@@ -419,30 +421,35 @@ static int vle_compress_one(struct z_erofs_vle_compress_ctx *ctx)
 				break;
 			if (may_packing) {
 				if (inode->fragment_size && !fix_dedupedfrag) {
-					ctx->pclustersize =
-						roundup(len, erofs_blksiz(sbi));
+					ctx->pclustersize = roundup(len, blksz);
 					goto fix_dedupedfrag;
 				}
 				ctx->e.length = len;
 				goto frag_packing;
 			}
-			if (!may_inline && len <= erofs_blksiz(sbi))
+			if (!may_inline && len <= blksz)
 				goto nocompression;
 		}
 
 		ctx->e.length = min(len,
 				cfg.c_max_decompressed_extent_bytes);
-		ret = erofs_compress_destsize(h, ctx->queue + ctx->head,
-				&ctx->e.length, dst, ctx->pclustersize,
-				!(final && len == ctx->e.length));
-		if (ret <= 0) {
-			if (ret != -EAGAIN) {
-				erofs_err("failed to compress %s: %s",
-					  inode->i_srcpath,
-					  erofs_strerror(ret));
-			}
 
-			if (may_inline && len < erofs_blksiz(sbi)) {
+		ret = erofs_compress_destsize(h, ctx->queue + ctx->head,
+				&ctx->e.length, dst, ctx->pclustersize);
+		if (ret <= 0) {
+			erofs_err("failed to compress %s: %s", inode->i_srcpath,
+				  erofs_strerror(ret));
+			return ret;
+		}
+
+		compressedsize = ret;
+		/* even compressed size is smaller, there is no real gain */
+		if (!(may_inline && ctx->e.length == len && ret < blksz))
+			ret = roundup(ret, blksz);
+
+		/* check if there is enough gain to keep the compressed data */
+		if (ret * h->compress_threshold / 100 >= ctx->e.length) {
+			if (may_inline && len < blksz) {
 				ret = z_erofs_fill_inline_data(inode,
 						ctx->queue + ctx->head,
 						len, true);
@@ -465,7 +472,7 @@ nocompression:
 			ctx->e.compressedblks = 1;
 			ctx->e.raw = true;
 		} else if (may_packing && len == ctx->e.length &&
-			   ret < ctx->pclustersize &&
+			   compressedsize < ctx->pclustersize &&
 			   (!inode->fragment_size || fix_dedupedfrag)) {
 frag_packing:
 			ret = z_erofs_pack_fragments(inode,
@@ -479,8 +486,8 @@ frag_packing:
 			fix_dedupedfrag = false;
 		/* tailpcluster should be less than 1 block */
 		} else if (may_inline && len == ctx->e.length &&
-			   ret < erofs_blksiz(sbi)) {
-			if (ctx->clusterofs + len <= erofs_blksiz(sbi)) {
+			   compressedsize < blksz) {
+			if (ctx->clusterofs + len <= blksz) {
 				inode->eof_tailraw = malloc(len);
 				if (!inode->eof_tailraw)
 					return -ENOMEM;
@@ -490,7 +497,8 @@ frag_packing:
 				inode->eof_tailrawsize = len;
 			}
 
-			ret = z_erofs_fill_inline_data(inode, dst, ret, false);
+			ret = z_erofs_fill_inline_data(inode, dst,
+					compressedsize, false);
 			if (ret < 0)
 				return ret;
 			ctx->e.compressedblks = 1;
@@ -506,30 +514,33 @@ frag_packing:
 			 * Otherwise, just drop it and go to packing.
 			 */
 			if (may_packing && len == ctx->e.length &&
-			    (ret & (erofs_blksiz(sbi) - 1)) &&
+			    (compressedsize & (blksz - 1)) &&
 			    ctx->tail < sizeof(ctx->queue)) {
-				ctx->pclustersize = BLK_ROUND_UP(sbi, ret) *
-						erofs_blksiz(sbi);
+				ctx->pclustersize =
+					roundup(compressedsize, blksz);
 				goto fix_dedupedfrag;
 			}
 
 			if (may_inline && len == ctx->e.length)
 				tryrecompress_trailing(ctx, h,
 						ctx->queue + ctx->head,
-						&ctx->e.length, dst, &ret);
+						&ctx->e.length, dst,
+						&compressedsize);
 
-			tailused = ret & (erofs_blksiz(sbi) - 1);
-			padding = 0;
-			ctx->e.compressedblks = BLK_ROUND_UP(sbi, ret);
-			DBG_BUGON(ctx->e.compressedblks * erofs_blksiz(sbi) >=
+			ctx->e.compressedblks = BLK_ROUND_UP(sbi, compressedsize);
+			DBG_BUGON(ctx->e.compressedblks * blksz >=
 				  ctx->e.length);
 
+			padding = 0;
+			tailused = compressedsize & (blksz - 1);
+			if (tailused)
+				padding = blksz - tailused;
+
 			/* zero out garbage trailing data for non-0padding */
-			if (!erofs_sb_has_lz4_0padding(sbi))
-				memset(dst + ret, 0,
-				       roundup(ret, erofs_blksiz(sbi)) - ret);
-			else if (tailused)
-				padding = erofs_blksiz(sbi) - tailused;
+			if (!erofs_sb_has_lz4_0padding(sbi)) {
+				memset(dst + compressedsize, 0, padding);
+				padding = 0;
+			}
 
 			/* write compressed data */
 			erofs_dbg("Writing %u compressed data to %u of %u blocks",
@@ -559,7 +570,7 @@ frag_packing:
 
 		if (!final && ctx->head >= EROFS_CONFIG_COMPR_MAX_SZ) {
 			const unsigned int qh_aligned =
-				round_down(ctx->head, erofs_blksiz(sbi));
+				round_down(ctx->head, blksz);
 			const unsigned int qh_after = ctx->head - qh_aligned;
 
 			memmove(ctx->queue, ctx->queue + qh_aligned,

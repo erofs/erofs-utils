@@ -8,8 +8,6 @@
 #include "compressor.h"
 #include "erofs/print.h"
 
-#define EROFS_CONFIG_COMPR_DEF_BOUNDARY		(128)
-
 static const struct erofs_algorithm {
 	char *name;
 	const struct erofs_compressor *c;
@@ -77,31 +75,13 @@ const char *z_erofs_list_available_compressors(int *i)
 
 int erofs_compress_destsize(const struct erofs_compress *c,
 			    const void *src, unsigned int *srcsize,
-			    void *dst, unsigned int dstsize, bool inblocks)
+			    void *dst, unsigned int dstsize)
 {
-	unsigned int uncompressed_capacity, compressed_size;
-	int ret;
-
 	DBG_BUGON(!c->alg);
 	if (!c->alg->c->compress_destsize)
-		return -ENOTSUP;
+		return -EOPNOTSUPP;
 
-	uncompressed_capacity = *srcsize;
-	ret = c->alg->c->compress_destsize(c, src, srcsize, dst, dstsize);
-	if (ret < 0)
-		return ret;
-
-	/* XXX: ret >= destsize_alignsize is a temporary hack for ztailpacking */
-	if (inblocks || ret >= c->destsize_alignsize ||
-	    uncompressed_capacity != *srcsize)
-		compressed_size = roundup(ret, c->destsize_alignsize);
-	else
-		compressed_size = ret;
-	DBG_BUGON(c->compress_threshold < 100);
-	/* check if there is enough gains to compress */
-	if (*srcsize <= compressed_size * c->compress_threshold / 100)
-		return -EAGAIN;
-	return ret;
+	return c->alg->c->compress_destsize(c, src, srcsize, dst, dstsize);
 }
 
 int erofs_compressor_setlevel(struct erofs_compress *c, int compression_level)
@@ -125,11 +105,6 @@ int erofs_compressor_init(struct erofs_sb_info *sbi,
 
 	/* should be written in "minimum compression ratio * 100" */
 	c->compress_threshold = 100;
-
-	/* optimize for 4k size page */
-	c->destsize_alignsize = erofs_blksiz(sbi);
-	c->destsize_redzone_begin = erofs_blksiz(sbi) - 16;
-	c->destsize_redzone_end = EROFS_CONFIG_COMPR_DEF_BOUNDARY;
 
 	if (!alg_name) {
 		c->alg = NULL;

@@ -33,11 +33,6 @@ struct erofs_compress {
 	unsigned int compress_threshold;
 	unsigned int compression_level;
 
-	/* *_destsize specific */
-	unsigned int destsize_alignsize;
-	unsigned int destsize_redzone_begin;
-	unsigned int destsize_redzone_end;
-
 	void *private_data;
 };
 
@@ -51,7 +46,7 @@ extern const struct erofs_compressor erofs_compressor_libdeflate;
 int z_erofs_get_compress_algorithm_id(const struct erofs_compress *c);
 int erofs_compress_destsize(const struct erofs_compress *c,
 			    const void *src, unsigned int *srcsize,
-			    void *dst, unsigned int dstsize, bool inblocks);
+			    void *dst, unsigned int dstsize);
 
 int erofs_compressor_setlevel(struct erofs_compress *c, int compression_level);
 int erofs_compressor_init(struct erofs_sb_info *sbi,
