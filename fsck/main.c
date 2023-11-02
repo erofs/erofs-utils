@@ -98,6 +98,8 @@ static void usage(int argc, char **argv)
 		" --extract[=X]          check if all files are well encoded, optionally\n"
 		"                        extract to X\n"
 		"\n"
+		" -a, -A, -y             no-op, for compatibility with fsck of other filesystems\n"
+		"\n"
 		"Extraction options (--extract=X is required):\n"
 		" --force                allow extracting to root\n"
 		" --overwrite            overwrite files that already exist\n"
@@ -124,7 +126,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 	int opt, ret;
 	bool has_opt_preserve = false;
 
-	while ((opt = getopt_long(argc, argv, "Vd:ph",
+	while ((opt = getopt_long(argc, argv, "Vd:phaAy",
 				  long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'V':
@@ -144,6 +146,10 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 		case 'h':
 			usage(argc, argv);
 			exit(0);
+		case 'a':
+		case 'A':
+		case 'y':
+			break;
 		case 2:
 			fsckcfg.check_decomp = true;
 			if (optarg) {
