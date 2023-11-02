@@ -30,6 +30,7 @@
 #include "erofs/rebuild.h"
 #include "../lib/liberofs_private.h"
 #include "../lib/liberofs_uuid.h"
+#include "../lib/compressor.h"
 
 #define EROFS_SUPER_END (EROFS_SUPER_OFFSET + sizeof(struct erofs_super_block))
 
@@ -77,75 +78,104 @@ static void print_available_compressors(FILE *f, const char *delim)
 {
 	int i = 0;
 	bool comma = false;
-	const char *s;
+	const struct erofs_algorithm *s;
 
 	while ((s = z_erofs_list_available_compressors(&i)) != NULL) {
 		if (comma)
 			fputs(delim, f);
-		fputs(s, f);
+		fputs(s->name, f);
 		comma = true;
 	}
 	fputc('\n', f);
 }
 
-static void usage(void)
+static void usage(int argc, char **argv)
 {
-	fputs("usage: [options] FILE SOURCE(s)\n"
-	      "Generate EROFS image (FILE) from DIRECTORY, TARBALL and/or EROFS images.  And [options] are:\n"
-	      " -V, --version         print the version number of mkfs.erofs and exit\n"
-	      " -b#                   set block size to # (# = page size by default)\n"
-	      " -d#                   set output message level to # (maximum 9)\n"
-	      " -x#                   set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
-	      " -zX[,Y][:..]          X=compressor (Y=compression level, optional)\n"
-	      "                       alternative algorithms can be separated by colons(:)\n"
-	      " -C#                   specify the size of compress physical cluster in bytes\n"
-	      " -EX[,...]             X=extended options\n"
-	      " -L volume-label       set the volume label (maximum 16)\n"
-	      " -T#                   set a fixed UNIX timestamp # to all files\n"
-	      " -UX                   use a given filesystem UUID\n"
-	      " --all-root            make all files owned by root\n"
-	      " --blobdev=X           specify an extra device X to store chunked data\n"
-	      " --chunksize=#         generate chunk-based files with #-byte chunks\n"
-	      " --compress-hints=X    specify a file to configure per-file compression strategy\n"
-	      " --exclude-path=X      avoid including file X (X = exact literal path)\n"
-	      " --exclude-regex=X     avoid including files that match X (X = regular expression)\n"
+	int i = 0;
+	const struct erofs_algorithm *s;
+
+	//	"         1         2         3         4         5         6         7         8  "
+	//	"12345678901234567890123456789012345678901234567890123456789012345678901234567890\n"
+	printf(
+		"Usage: %s [OPTIONS] FILE SOURCE(s)\n"
+		"Generate EROFS image (FILE) from SOURCE(s).\n"
+		"\n"
+		"General options:\n"
+		" -V, --version         print the version number of mkfs.erofs and exit\n"
+		" -h, --help            display this help and exit\n"
+		"\n"
+		" -b#                   set block size to # (# = page size by default)\n"
+		" -d<0-9>               set output verbosity; 0=quiet, 9=verbose (default=%i)\n"
+		" -x#                   set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
+		" -zX[,Y][:...]         X=compressor (Y=compression level, optional)\n"
+		"                       alternative compressors can be separated by colons(:)\n"
+		"                       supported compressors and their level ranges are:\n",
+		argv[0], EROFS_WARN);
+	while ((s = z_erofs_list_available_compressors(&i)) != NULL) {
+		printf("                           %s", s->name);
+		if (s->c->setlevel) {
+			if (!strcmp(s->name, "lzma"))
+				/* A little kludge to show the range as disjointed
+				 * "0-9,100-109" instead of a continuous "0-109", and to
+				 * state what those two subranges respectively mean.  */
+				printf("[<0-9,100-109>]\t0-9=normal, 100-109=extreme (default=%i)",
+				       s->c->default_level);
+			else
+				printf("[,<0-%i>]\t(default=%i)",
+				       s->c->best_level, s->c->default_level);
+		}
+		putchar('\n');
+	}
+	printf(
+		" -C#                   specify the size of compress physical cluster in bytes\n"
+		" -EX[,...]             X=extended options\n"
+		" -L volume-label       set the volume label (maximum 16)\n"
+		" -T#                   set a fixed UNIX timestamp # to all files\n"
+		" -UX                   use a given filesystem UUID\n"
+		" --all-root            make all files owned by root\n"
+		" --blobdev=X           specify an extra device X to store chunked data\n"
+		" --chunksize=#         generate chunk-based files with #-byte chunks\n"
+		" --compress-hints=X    specify a file to configure per-file compression strategy\n"
+		" --exclude-path=X      avoid including file X (X = exact literal path)\n"
+		" --exclude-regex=X     avoid including files that match X (X = regular expression)\n"
 #ifdef HAVE_LIBSELINUX
-	      " --file-contexts=X     specify a file contexts file to setup selinux labels\n"
+		" --file-contexts=X     specify a file contexts file to setup selinux labels\n"
 #endif
-	      " --force-uid=#         set all file uids to # (# = UID)\n"
-	      " --force-gid=#         set all file gids to # (# = GID)\n"
-	      " --uid-offset=#        add offset # to all file uids (# = id offset)\n"
-	      " --gid-offset=#        add offset # to all file gids (# = id offset)\n"
+		" --force-uid=#         set all file uids to # (# = UID)\n"
+		" --force-gid=#         set all file gids to # (# = GID)\n"
+		" --uid-offset=#        add offset # to all file uids (# = id offset)\n"
+		" --gid-offset=#        add offset # to all file gids (# = id offset)\n"
 #ifdef HAVE_ZLIB
-	      " --gzip                try to filter the tarball stream through gzip\n"
+		" --gzip                try to filter the tarball stream through gzip\n"
 #endif
-	      " -h, --help            display this help and exit\n"
-	      " --ignore-mtime        use build time instead of strict per-file modification time\n"
-	      " --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
-	      " --preserve-mtime      keep per-file modification time strictly\n"
-	      " --aufs                replace aufs special files with overlayfs metadata\n"
-	      " --tar=[fi]            generate an image from tarball(s)\n"
-	      " --ovlfs-strip=[01]    strip overlayfs metadata in the target image (e.g. whiteouts)\n"
-	      " --quiet               quiet execution (do not write anything to standard output.)\n"
+		" --ignore-mtime        use build time instead of strict per-file modification time\n"
+		" --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
+		" --preserve-mtime      keep per-file modification time strictly\n"
+		" --aufs                replace aufs special files with overlayfs metadata\n"
+		" --tar=[fi]            generate an image from tarball(s)\n"
+		" --ovlfs-strip=<0,1>   strip overlayfs metadata in the target image (e.g. whiteouts)\n"
+		" --quiet               quiet execution (do not write anything to standard output.)\n"
 #ifndef NDEBUG
-	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
-	      " --random-algorithms   randomize per-file algorithms (debugging only)\n"
+		" --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
+		" --random-algorithms   randomize per-file algorithms (debugging only)\n"
 #endif
-	      " --xattr-prefix=X      X=extra xattr name prefix\n"
-	      " --mount-point=X       X=prefix of target fs path (default: /)\n"
+		" --xattr-prefix=X      X=extra xattr name prefix\n"
+		" --mount-point=X       X=prefix of target fs path (default: /)\n"
 #ifdef WITH_ANDROID
-	      "\nwith following android-specific options:\n"
-	      " --product-out=X       X=product_out directory\n"
-	      " --fs-config-file=X    X=fs_config file\n"
-	      " --block-list-file=X   X=block_list file\n"
+		"\n"
+		"Android-specific options:\n"
+		" --product-out=X       X=product_out directory\n"
+		" --fs-config-file=X    X=fs_config file\n"
+		" --block-list-file=X   X=block_list file\n"
 #endif
-	      "\nAvailable compressors are: ", stderr);
-	print_available_compressors(stderr, ", ");
+		);
 }
 
 static void version(void)
 {
-	printf("mkfs.erofs %s\n", cfg.c_version);
+	printf("mkfs.erofs (eorfs-utils) %s\navailable compressors: ",
+	       cfg.c_version);
+	print_available_compressors(stdout, ", ");
 }
 
 static unsigned int pclustersize_packed, pclustersize_max;
@@ -545,7 +575,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			version();
 			exit(0);
 		case 'h':
-			usage();
+			usage(argc, argv);
 			exit(0);
 
 		default: /* '?' */
@@ -947,13 +977,13 @@ int main(int argc, char **argv)
 	erofs_show_progs(argc, argv);
 	if (err) {
 		if (err == -EINVAL)
-			usage();
+			fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
 		return 1;
 	}
 
 	err = parse_source_date_epoch();
 	if (err) {
-		usage();
+		fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
 		return 1;
 	}
 
@@ -967,7 +997,7 @@ int main(int argc, char **argv)
 
 	err = dev_open(&sbi, cfg.c_img_path);
 	if (err) {
-		usage();
+		fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
 		return 1;
 	}
 

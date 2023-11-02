@@ -14,6 +14,7 @@
 #include "erofs/compress.h"
 #include "erofs/decompress.h"
 #include "erofs/dir.h"
+#include "../lib/compressor.h"
 
 static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid);
 
@@ -64,45 +65,58 @@ static void print_available_decompressors(FILE *f, const char *delim)
 {
 	int i = 0;
 	bool comma = false;
-	const char *s;
+	const struct erofs_algorithm *s;
 
 	while ((s = z_erofs_list_available_compressors(&i)) != NULL) {
 		if (comma)
 			fputs(delim, f);
-		fputs(s, f);
+		fputs(s->name, f);
 		comma = true;
 	}
 	fputc('\n', f);
 }
 
-static void usage(void)
+static void usage(int argc, char **argv)
 {
-	fputs("usage: [options] IMAGE\n\n"
-	      "Check erofs filesystem compatibility and integrity of IMAGE, and [options] are:\n"
-	      " -V, --version          print the version number of fsck.erofs and exit\n"
-	      " -d#                    set output message level to # (maximum 9)\n"
-	      " -p                     print total compression ratio of all files\n"
-	      " --device=X             specify an extra device to be used together\n"
-	      " --extract[=X]          check if all files are well encoded, optionally extract to X\n"
-	      " -h, --help             display this help and exit\n"
-	      "\nExtraction options (--extract=X is required):\n"
-	      " --force                allow extracting to root\n"
-	      " --overwrite            overwrite files that already exist\n"
-	      " --preserve             extract with the same ownership and permissions as on the filesystem\n"
-	      "                        (default for superuser)\n"
-	      " --preserve-owner       extract with the same ownership as on the filesystem\n"
-	      " --preserve-perms       extract with the same permissions as on the filesystem\n"
-	      " --no-preserve          extract as yourself and apply user's umask on permissions\n"
-	      "                        (default for ordinary users)\n"
-	      " --no-preserve-owner    extract as yourself\n"
-	      " --no-preserve-perms    apply user's umask when extracting permissions\n"
-	      "\nSupported algorithms are: ", stderr);
-	print_available_decompressors(stderr, ", ");
+	//	"         1         2         3         4         5         6         7         8  "
+	//	"12345678901234567890123456789012345678901234567890123456789012345678901234567890\n"
+	printf(
+		"Usage: %s [OPTIONS] IMAGE\n"
+		"Check erofs filesystem compatibility and integrity of IMAGE.\n"
+		"\n"
+		"This version of fsck.erofs is capable of checking images that use any of the\n"
+		"following algorithms: ", argv[0]);
+	print_available_decompressors(stdout, ", ");
+	printf("\n"
+		"General options:\n"
+		" -V, --version          print the version number of fsck.erofs and exit\n"
+		" -h, --help             display this help and exit\n"
+		"\n"
+		" -d<0-9>                set output verbosity; 0=quiet, 9=verbose (default=%i)\n"
+		" -p                     print total compression ratio of all files\n"
+		" --device=X             specify an extra device to be used together\n"
+		" --extract[=X]          check if all files are well encoded, optionally\n"
+		"                        extract to X\n"
+		"\n"
+		"Extraction options (--extract=X is required):\n"
+		" --force                allow extracting to root\n"
+		" --overwrite            overwrite files that already exist\n"
+		" --[no-]preserve        same as --[no-]preserve-owner --[no-]preserve-perms\n"
+		" --[no-]preserve-owner  whether to preserve the ownership from the\n"
+		"                        filesystem (default for superuser), or to extract as\n"
+		"                        yourself (default for ordinary users)\n"
+		" --[no-]preserve-perms  whether to preserve the exact permissions from the\n"
+		"                        filesystem without applying umask (default for\n"
+		"                        superuser), or to modify the permissions by applying\n"
+		"                        umask (default for ordinary users)\n",
+		EROFS_WARN);
 }
 
 static void erofsfsck_print_version(void)
 {
-	printf("fsck.erofs %s\n", cfg.c_version);
+	printf("fsck.erofs (erofs-utils) %s\navailable decompressors: ",
+	       cfg.c_version);
+	print_available_decompressors(stdout, ", ");
 }
 
 static int erofsfsck_parse_options_cfg(int argc, char **argv)
@@ -128,7 +142,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 			fsckcfg.print_comp_ratio = true;
 			break;
 		case 'h':
-			usage();
+			usage(argc, argv);
 			exit(0);
 		case 2:
 			fsckcfg.check_decomp = true;
@@ -919,7 +933,7 @@ int main(int argc, char *argv[])
 	err = erofsfsck_parse_options_cfg(argc, argv);
 	if (err) {
 		if (err == -EINVAL)
-			usage();
+			fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
 		goto exit;
 	}
 

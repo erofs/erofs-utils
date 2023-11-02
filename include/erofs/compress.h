@@ -24,7 +24,7 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi,
 int z_erofs_compress_exit(void);
 
 const char *z_erofs_list_supported_algorithms(int i, unsigned int *mask);
-const char *z_erofs_list_available_compressors(int *i);
+const struct erofs_algorithm *z_erofs_list_available_compressors(int *i);
 
 static inline bool erofs_is_packed_inode(struct erofs_inode *inode)
 {

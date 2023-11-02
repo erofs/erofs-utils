@@ -106,25 +106,31 @@ static struct erofsdump_feature feature_lists[] = {
 
 static int erofsdump_readdir(struct erofs_dir_context *ctx);
 
-static void usage(void)
+static void usage(int argc, char **argv)
 {
-	fputs("usage: [options] IMAGE\n\n"
-	      "Dump erofs layout from IMAGE, and [options] are:\n"
-	      " -S              show statistic information of the image\n"
-	      " -V, --version   print the version number of dump.erofs and exit.\n"
-	      " -e              show extent info (INODE required)\n"
-	      " -s              show information about superblock\n"
-	      " --device=X      specify an extra device to be used together\n"
-	      " --ls            show directory contents (INODE required)\n"
-	      " --nid=#         show the target inode info of nid #\n"
-	      " --path=X        show the target inode info of path X\n"
-	      " -h, --help      display this help and exit.\n",
-	      stderr);
+	//	"         1         2         3         4         5         6         7         8  "
+	//	"12345678901234567890123456789012345678901234567890123456789012345678901234567890\n"
+	printf(
+		"Usage: %s [OPTIONS] IMAGE\n"
+		"Dump erofs layout from IMAGE.\n"
+		"\n"
+		"General options:\n"
+		" -V, --version   print the version number of dump.erofs and exit\n"
+		" -h, --help      display this help and exit\n"
+		"\n"
+		" -S              show statistic information of the image\n"
+		" -e              show extent info (INODE required)\n"
+		" -s              show information about superblock\n"
+		" --device=X      specify an extra device to be used together\n"
+		" --ls            show directory contents (INODE required)\n"
+		" --nid=#         show the target inode info of nid #\n"
+		" --path=X        show the target inode info of path X\n",
+		argv[0]);
 }
 
 static void erofsdump_print_version(void)
 {
-	printf("dump.erofs %s\n", cfg.c_version);
+	printf("dump.erofs (erofs-utils) %s\n", cfg.c_version);
 }
 
 static int erofsdump_parse_options_cfg(int argc, char **argv)
@@ -155,7 +161,7 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 			++dumpcfg.totalshow;
 			break;
 		case 'h':
-			usage();
+			usage(argc, argv);
 			exit(0);
 		case 3:
 			err = blob_open_ro(&sbi, optarg);
@@ -663,7 +669,7 @@ int main(int argc, char **argv)
 	err = erofsdump_parse_options_cfg(argc, argv);
 	if (err) {
 		if (err == -EINVAL)
-			usage();
+			fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
 		goto exit;
 	}
 
@@ -690,7 +696,7 @@ int main(int argc, char **argv)
 		erofsdump_print_statistic();
 
 	if (dumpcfg.show_extent && !dumpcfg.show_inode) {
-		usage();
+		fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
 		goto exit_put_super;
 	}
 

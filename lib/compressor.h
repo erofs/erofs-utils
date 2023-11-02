@@ -24,7 +24,14 @@ struct erofs_compressor {
 				 void *dst, unsigned int dstsize);
 };
 
-struct erofs_algorithm;
+struct erofs_algorithm {
+	char *name;
+	const struct erofs_compressor *c;
+	unsigned int id;
+
+	/* its name won't be shown as a supported algorithm */
+	bool optimisor;
+};
 
 struct erofs_compress {
 	struct erofs_sb_info *sbi;

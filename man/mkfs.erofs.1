@@ -21,10 +21,12 @@ from \fISOURCE\fR directory.
 .SH OPTIONS
 .TP
 .BI "\-z " compression-algorithm \fR[\fP, # \fR][\fP: ... \fR]\fP
-Set a primary algorithm for data compression, which can be set with an optional
-compression level (1 to 12 for LZ4HC, 0 to 9 for LZMA and 100 to 109 for LZMA
-extreme compression) separated by a comma.  Alternative algorithms could be
-specified and separated by colons.
+Set a primary algorithm for data compression, which can be set with an
+optional compression level. Alternative algorithms could be specified
+and separated by colons.  See the output of
+.B mkfs.erofs \-\-help
+for a listing of the algorithms that \fBmkfs.erofs\fR is compiled with
+and what their respective level ranges are.
 .TP
 .BI "\-b " block-size
 Set the fundamental block size of the filesystem in bytes.  In other words,

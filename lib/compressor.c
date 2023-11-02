@@ -8,14 +8,7 @@
 #include "compressor.h"
 #include "erofs/print.h"
 
-static const struct erofs_algorithm {
-	char *name;
-	const struct erofs_compressor *c;
-	unsigned int id;
-
-	/* its name won't be shown as a supported algorithm */
-	bool optimisor;
-} erofs_algs[] = {
+static const struct erofs_algorithm erofs_algs[] = {
 	{ "lz4",
 #if LZ4_ENABLED
 		&erofs_compressor_lz4,
@@ -63,12 +56,12 @@ const char *z_erofs_list_supported_algorithms(int i, unsigned int *mask)
 	return "";
 }
 
-const char *z_erofs_list_available_compressors(int *i)
+const struct erofs_algorithm *z_erofs_list_available_compressors(int *i)
 {
 	for (;*i < ARRAY_SIZE(erofs_algs); ++*i) {
 		if (!erofs_algs[*i].c)
 			continue;
-		return erofs_algs[(*i)++].name;
+		return &erofs_algs[(*i)++];
 	}
 	return NULL;
 }
