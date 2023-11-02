@@ -35,7 +35,8 @@ struct erofsfsck_cfg {
 static struct erofsfsck_cfg fsckcfg;
 
 static struct option long_options[] = {
-	{"help", no_argument, 0, 1},
+	{"version", no_argument, 0, 'V'},
+	{"help", no_argument, 0, 'h'},
 	{"extract", optional_argument, 0, 2},
 	{"device", required_argument, 0, 3},
 	{"force", no_argument, 0, 4},
@@ -78,12 +79,12 @@ static void usage(void)
 {
 	fputs("usage: [options] IMAGE\n\n"
 	      "Check erofs filesystem compatibility and integrity of IMAGE, and [options] are:\n"
-	      " -V                     print the version number of fsck.erofs and exit\n"
+	      " -V, --version          print the version number of fsck.erofs and exit\n"
 	      " -d#                    set output message level to # (maximum 9)\n"
 	      " -p                     print total compression ratio of all files\n"
 	      " --device=X             specify an extra device to be used together\n"
 	      " --extract[=X]          check if all files are well encoded, optionally extract to X\n"
-	      " --help                 display this help and exit\n"
+	      " -h, --help             display this help and exit\n"
 	      "\nExtraction options (--extract=X is required):\n"
 	      " --force                allow extracting to root\n"
 	      " --overwrite            overwrite files that already exist\n"
@@ -109,7 +110,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 	int opt, ret;
 	bool has_opt_preserve = false;
 
-	while ((opt = getopt_long(argc, argv, "Vd:p",
+	while ((opt = getopt_long(argc, argv, "Vd:ph",
 				  long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'V':
@@ -126,7 +127,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 		case 'p':
 			fsckcfg.print_comp_ratio = true;
 			break;
-		case 1:
+		case 'h':
 			usage();
 			exit(0);
 		case 2:

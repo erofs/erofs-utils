@@ -34,7 +34,8 @@
 #define EROFS_SUPER_END (EROFS_SUPER_OFFSET + sizeof(struct erofs_super_block))
 
 static struct option long_options[] = {
-	{"help", no_argument, 0, 1},
+	{"version", no_argument, 0, 'V'},
+	{"help", no_argument, 0, 'h'},
 	{"exclude-path", required_argument, NULL, 2},
 	{"exclude-regex", required_argument, NULL, 3},
 #ifdef HAVE_LIBSELINUX
@@ -91,6 +92,7 @@ static void usage(void)
 {
 	fputs("usage: [options] FILE SOURCE(s)\n"
 	      "Generate EROFS image (FILE) from DIRECTORY, TARBALL and/or EROFS images.  And [options] are:\n"
+	      " -V, --version         print the version number of mkfs.erofs and exit\n"
 	      " -b#                   set block size to # (# = page size by default)\n"
 	      " -d#                   set output message level to # (maximum 9)\n"
 	      " -x#                   set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
@@ -117,7 +119,7 @@ static void usage(void)
 #ifdef HAVE_ZLIB
 	      " --gzip                try to filter the tarball stream through gzip\n"
 #endif
-	      " --help                display this help and exit\n"
+	      " -h, --help            display this help and exit\n"
 	      " --ignore-mtime        use build time instead of strict per-file modification time\n"
 	      " --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
 	      " --preserve-mtime      keep per-file modification time strictly\n"
@@ -139,6 +141,11 @@ static void usage(void)
 #endif
 	      "\nAvailable compressors are: ", stderr);
 	print_available_compressors(stderr, ", ");
+}
+
+static void version(void)
+{
+	printf("mkfs.erofs %s\n", cfg.c_version);
 }
 
 static unsigned int pclustersize_packed, pclustersize_max;
@@ -309,7 +316,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	int opt, i, err;
 	bool quiet = false;
 
-	while ((opt = getopt_long(argc, argv, "C:E:L:T:U:b:d:x:z:",
+	while ((opt = getopt_long(argc, argv, "C:E:L:T:U:b:d:x:z:Vh",
 				  long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'z':
@@ -534,7 +541,10 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		case 517:
 			gzip_supported = true;
 			break;
-		case 1:
+		case 'V':
+			version();
+			exit(0);
+		case 'h':
 			usage();
 			exit(0);
 

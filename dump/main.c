@@ -74,7 +74,8 @@ struct erofs_statistics {
 static struct erofs_statistics stats;
 
 static struct option long_options[] = {
-	{"help", no_argument, NULL, 1},
+	{"version", no_argument, NULL, 'V'},
+	{"help", no_argument, NULL, 'h'},
 	{"nid", required_argument, NULL, 2},
 	{"device", required_argument, NULL, 3},
 	{"path", required_argument, NULL, 4},
@@ -110,14 +111,14 @@ static void usage(void)
 	fputs("usage: [options] IMAGE\n\n"
 	      "Dump erofs layout from IMAGE, and [options] are:\n"
 	      " -S              show statistic information of the image\n"
-	      " -V              print the version number of dump.erofs and exit.\n"
+	      " -V, --version   print the version number of dump.erofs and exit.\n"
 	      " -e              show extent info (INODE required)\n"
 	      " -s              show information about superblock\n"
 	      " --device=X      specify an extra device to be used together\n"
 	      " --ls            show directory contents (INODE required)\n"
 	      " --nid=#         show the target inode info of nid #\n"
 	      " --path=X        show the target inode info of path X\n"
-	      " --help          display this help and exit.\n",
+	      " -h, --help      display this help and exit.\n",
 	      stderr);
 }
 
@@ -130,7 +131,7 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 {
 	int opt, err;
 
-	while ((opt = getopt_long(argc, argv, "SVes",
+	while ((opt = getopt_long(argc, argv, "SVesh",
 				  long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'e':
@@ -153,7 +154,7 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 			dumpcfg.nid = (erofs_nid_t)atoll(optarg);
 			++dumpcfg.totalshow;
 			break;
-		case 1:
+		case 'h':
 			usage();
 			exit(0);
 		case 3:
