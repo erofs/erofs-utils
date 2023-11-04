@@ -48,12 +48,18 @@ void erofs_show_config(void)
 
 void erofs_exit_configure(void)
 {
+	int i;
+
 #ifdef HAVE_LIBSELINUX
 	if (cfg.sehnd)
 		selabel_close(cfg.sehnd);
 #endif
 	if (cfg.c_img_path)
 		free(cfg.c_img_path);
+	if (cfg.c_src_path)
+		free(cfg.c_src_path);
+	for (i = 0; i < EROFS_MAX_COMPR_CFGS && cfg.c_compr_alg[i]; i++)
+		free(cfg.c_compr_alg[i]);
 }
 
 static unsigned int fullpath_prefix;	/* root directory prefix length */
