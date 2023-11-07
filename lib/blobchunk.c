@@ -448,6 +448,7 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 
 	pos_out = erofs_btell(bh, false);
 	remapped_base = erofs_blknr(sbi, pos_out);
+	pos_out += sbi->diskoffset;
 	if (blobfile) {
 		pos_in = 0;
 		ret = erofs_copy_file_range(fileno(blobfile), &pos_in,

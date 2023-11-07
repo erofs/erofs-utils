@@ -80,6 +80,7 @@ static struct option long_options[] = {
 	{"device", required_argument, NULL, 3},
 	{"path", required_argument, NULL, 4},
 	{"ls", no_argument, NULL, 5},
+	{"offset", required_argument, NULL, 6},
 	{0, 0, 0, 0},
 };
 
@@ -124,6 +125,7 @@ static void usage(int argc, char **argv)
 		" --device=X      specify an extra device to be used together\n"
 		" --ls            show directory contents (INODE required)\n"
 		" --nid=#         show the target inode info of nid #\n"
+		" --offset=#      skip # bytes at the beginning of IMAGE\n"
 		" --path=X        show the target inode info of path X\n",
 		argv[0]);
 }
@@ -136,6 +138,7 @@ static void erofsdump_print_version(void)
 static int erofsdump_parse_options_cfg(int argc, char **argv)
 {
 	int opt, err;
+	char *endptr;
 
 	while ((opt = getopt_long(argc, argv, "SVesh",
 				  long_options, NULL)) != -1) {
@@ -176,6 +179,13 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 			break;
 		case 5:
 			dumpcfg.show_subdirectories = true;
+			break;
+		case 6:
+			sbi.diskoffset = strtoull(optarg, &endptr, 0);
+			if (*endptr != '\0') {
+				erofs_err("invalid disk offset %s", optarg);
+				return -EINVAL;
+			}
 			break;
 		default:
 			return -EINVAL;

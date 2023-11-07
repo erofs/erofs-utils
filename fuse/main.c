@@ -547,7 +547,7 @@ static void usage(void)
 #endif
 	fputs("usage: [options] IMAGE MOUNTPOINT\n\n"
 	      "Options:\n"
-	      "    --offset=#             skip # bytes when reading IMAGE\n"
+	      "    --offset=#             skip # bytes at the beginning of IMAGE\n"
 	      "    --dbglevel=#           set output message level to # (maximum 9)\n"
 	      "    --device=#             specify an extra device to be used together\n"
 #if FUSE_MAJOR_VERSION < 3
@@ -676,8 +676,7 @@ int main(int argc, char *argv[])
 	if (fusecfg.odebug && cfg.c_dbg_lvl < EROFS_DBG)
 		cfg.c_dbg_lvl = EROFS_DBG;
 
-	cfg.c_offset = fusecfg.offset;
-
+	sbi.diskoffset = fusecfg.offset;
 	ret = dev_open_ro(&sbi, fusecfg.disk);
 	if (ret) {
 		fprintf(stderr, "failed to open: %s\n", fusecfg.disk);

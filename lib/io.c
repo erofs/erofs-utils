@@ -194,6 +194,7 @@ int dev_write(struct erofs_sb_info *sbi, const void *buf, u64 offset, size_t len
 		return -EINVAL;
 	}
 
+	offset += sbi->diskoffset;
 	if (offset >= sbi->devsz || len > sbi->devsz ||
 	    offset > sbi->devsz - len) {
 		erofs_err("Write posion[%" PRIu64 ", %zd] is too large beyond the end of device(%" PRIu64 ").",
@@ -230,7 +231,7 @@ int dev_fillzero(struct erofs_sb_info *sbi, u64 offset, size_t len, bool padding
 
 #if defined(HAVE_FALLOCATE) && defined(FALLOC_FL_PUNCH_HOLE)
 	if (!padding && fallocate(sbi->devfd, FALLOC_FL_PUNCH_HOLE |
-				  FALLOC_FL_KEEP_SIZE, offset, len) >= 0)
+	    FALLOC_FL_KEEP_SIZE, offset + sbi->diskoffset, len) >= 0)
 		return 0;
 #endif
 	while (len > erofs_blksiz(sbi)) {
@@ -255,7 +256,7 @@ int dev_fsync(struct erofs_sb_info *sbi)
 	return 0;
 }
 
-int dev_resize(struct erofs_sb_info *sbi, unsigned int blocks)
+int dev_resize(struct erofs_sb_info *sbi, erofs_blk_t blocks)
 {
 	int ret;
 	struct stat st;
@@ -271,6 +272,7 @@ int dev_resize(struct erofs_sb_info *sbi, unsigned int blocks)
 	}
 
 	length = (u64)blocks * erofs_blksiz(sbi);
+	length += sbi->diskoffset;
 	if (st.st_size == length)
 		return 0;
 	if (st.st_size > length)
@@ -281,7 +283,8 @@ int dev_resize(struct erofs_sb_info *sbi, unsigned int blocks)
 	if (fallocate(sbi->devfd, 0, st.st_size, length) >= 0)
 		return 0;
 #endif
-	return dev_fillzero(sbi, st.st_size, length, true);
+	return dev_fillzero(sbi, st.st_size - sbi->diskoffset,
+			    length, true);
 }
 
 int dev_read(struct erofs_sb_info *sbi, int device_id,
@@ -292,8 +295,6 @@ int dev_read(struct erofs_sb_info *sbi, int device_id,
 	if (cfg.c_dry_run)
 		return 0;
 
-	offset += cfg.c_offset;
-
 	if (!buf) {
 		erofs_err("buf is NULL");
 		return -EINVAL;
@@ -301,6 +302,7 @@ int dev_read(struct erofs_sb_info *sbi, int device_id,
 
 	if (!device_id) {
 		fd = sbi->devfd;
+		offset += sbi->diskoffset;
 	} else {
 		if (device_id > sbi->nblobs) {
 			erofs_err("invalid device id %d", device_id);

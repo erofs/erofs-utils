@@ -71,6 +71,7 @@ static struct option long_options[] = {
 #ifdef HAVE_ZLIB
 	{"gzip", no_argument, NULL, 517},
 #endif
+	{"offset", required_argument, NULL, 518},
 	{0, 0, 0, 0},
 };
 
@@ -151,6 +152,7 @@ static void usage(int argc, char **argv)
 		" --ignore-mtime        use build time instead of strict per-file modification time\n"
 		" --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
 		" --preserve-mtime      keep per-file modification time strictly\n"
+		" --offset=#            skip # bytes at the beginning of IMAGE.\n"
 		" --aufs                replace aufs special files with overlayfs metadata\n"
 		" --tar=[fi]            generate an image from tarball(s)\n"
 		" --ovlfs-strip=<0,1>   strip overlayfs metadata in the target image (e.g. whiteouts)\n"
@@ -570,6 +572,13 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			break;
 		case 517:
 			gzip_supported = true;
+			break;
+		case 518:
+			sbi.diskoffset = strtoull(optarg, &endptr, 0);
+			if (*endptr != '\0') {
+				erofs_err("invalid disk offset %s", optarg);
+				return -EINVAL;
+			}
 			break;
 		case 'V':
 			version();

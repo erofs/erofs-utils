@@ -110,6 +110,8 @@ struct erofs_sb_info {
 	struct erofs_xattr_prefix_item *xattr_prefixes;
 
 	int devfd, devblksz;
+	/* offset when reading multi-part images */
+	u64 diskoffset;
 	u64 devsz;
 	dev_t dev;
 	unsigned int nblobs;

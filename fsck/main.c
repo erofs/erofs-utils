@@ -48,6 +48,7 @@ static struct option long_options[] = {
 	{"no-preserve", no_argument, 0, 9},
 	{"no-preserve-owner", no_argument, 0, 10},
 	{"no-preserve-perms", no_argument, 0, 11},
+	{"offset", required_argument, 0, 12},
 	{0, 0, 0, 0},
 };
 
@@ -97,6 +98,7 @@ static void usage(int argc, char **argv)
 		" --device=X             specify an extra device to be used together\n"
 		" --extract[=X]          check if all files are well encoded, optionally\n"
 		"                        extract to X\n"
+		" --offset=#             skip # bytes at the beginning of IMAGE\n"
 		"\n"
 		" -a, -A, -y             no-op, for compatibility with fsck of other filesystems\n"
 		"\n"
@@ -123,6 +125,7 @@ static void erofsfsck_print_version(void)
 
 static int erofsfsck_parse_options_cfg(int argc, char **argv)
 {
+	char *endptr;
 	int opt, ret;
 	bool has_opt_preserve = false;
 
@@ -215,6 +218,13 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 		case 11:
 			fsckcfg.preserve_perms = false;
 			has_opt_preserve = true;
+			break;
+		case 12:
+			sbi.diskoffset = strtoull(optarg, &endptr, 0);
+			if (*endptr != '\0') {
+				erofs_err("invalid disk offset %s", optarg);
+				return -EINVAL;
+			}
 			break;
 		default:
 			return -EINVAL;
