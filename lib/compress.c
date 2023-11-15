@@ -373,9 +373,9 @@ static bool z_erofs_fixup_deduped_fragment(struct z_erofs_vle_compress_ctx *ctx,
 
 	/* try to fix again if it gets larger (should be rare) */
 	if (inode->fragment_size < newsize) {
-		ctx->pclustersize = min(z_erofs_get_max_pclustersize(inode),
-					roundup(newsize - inode->fragment_size,
-						erofs_blksiz(sbi)));
+		ctx->pclustersize = min_t(erofs_off_t, z_erofs_get_max_pclustersize(inode),
+					  roundup(newsize - inode->fragment_size,
+						  erofs_blksiz(sbi)));
 		return false;
 	}
 
@@ -1005,7 +1005,8 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 		sbi->saved_by_deduplication += inode->fragment_size;
 
 	/* if the entire file is a fragment, a simplified form is used. */
-	if (inode->i_size == inode->fragment_size) {
+	if (inode->i_size <= inode->fragment_size) {
+		DBG_BUGON(inode->i_size < inode->fragment_size);
 		DBG_BUGON(inode->fragmentoff >> 63);
 		*(__le64 *)compressmeta =
 			cpu_to_le64(inode->fragmentoff | 1ULL << 63);

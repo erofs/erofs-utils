@@ -233,16 +233,20 @@ struct erofs_inode {
 			uint8_t  z_algorithmtype[2];
 			uint8_t  z_logical_clusterbits;
 			uint8_t  z_physical_clusterblks;
-			uint64_t z_tailextent_headlcn;
-			unsigned int    z_idataoff;
+			union {
+				uint64_t z_tailextent_headlcn;
+				erofs_off_t fragment_size;
+			};
+			union {
+				unsigned int z_idataoff;
+				erofs_off_t fragmentoff;
+			};
 #define z_idata_size	idata_size
 		};
 	};
 #ifdef WITH_ANDROID
 	uint64_t capabilities;
 #endif
-	erofs_off_t fragmentoff;
-	unsigned int fragment_size;
 };
 
 static inline erofs_off_t erofs_iloc(struct erofs_inode *inode)
