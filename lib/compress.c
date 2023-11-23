@@ -627,19 +627,20 @@ static void *write_compacted_indexes(u8 *out,
 				     struct z_erofs_compressindex_vec *cv,
 				     erofs_blk_t *blkaddr_ret,
 				     unsigned int destsize,
-				     unsigned int logical_clusterbits,
+				     unsigned int lclusterbits,
 				     bool final, bool *dummy_head,
 				     bool update_blkaddr)
 {
-	unsigned int vcnt, encodebits, pos, i, cblks;
+	unsigned int vcnt, lobits, encodebits, pos, i, cblks;
 	erofs_blk_t blkaddr;
 
 	if (destsize == 4)
 		vcnt = 2;
-	else if (destsize == 2 && logical_clusterbits == 12)
+	else if (destsize == 2 && lclusterbits <= 12)
 		vcnt = 16;
 	else
 		return ERR_PTR(-EINVAL);
+	lobits = max(lclusterbits, ilog2(Z_EROFS_LI_D0_CBLKCNT) + 1U);
 	encodebits = (vcnt * destsize * 8 - 32) / vcnt;
 	blkaddr = *blkaddr_ret;
 
@@ -656,7 +657,7 @@ static void *write_compacted_indexes(u8 *out,
 				*dummy_head = false;
 			} else if (i + 1 == vcnt) {
 				offset = min_t(u16, cv[i].u.delta[1],
-						(1 << logical_clusterbits) - 1);
+						(1 << lobits) - 1);
 			} else {
 				offset = cv[i].u.delta[0];
 			}
@@ -676,7 +677,7 @@ static void *write_compacted_indexes(u8 *out,
 				DBG_BUGON(cv[i].u.blkaddr);
 			}
 		}
-		v = (cv[i].clustertype << logical_clusterbits) | offset;
+		v = (cv[i].clustertype << lobits) | offset;
 		rem = pos & 7;
 		ch = out[pos / 8] & ((1 << rem) - 1);
 		out[pos / 8] = (v << rem) | ch;
@@ -711,7 +712,7 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 	bool dummy_head;
 	bool big_pcluster = erofs_sb_has_big_pcluster(sbi);
 
-	if (logical_clusterbits < sbi->blkszbits || sbi->blkszbits < 12)
+	if (logical_clusterbits < sbi->blkszbits)
 		return -EINVAL;
 	if (logical_clusterbits > 14) {
 		erofs_err("compact format is unsupported for lcluster size %u",
@@ -720,7 +721,7 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 	}
 
 	if (inode->z_advise & Z_EROFS_ADVISE_COMPACTED_2B) {
-		if (logical_clusterbits != 12) {
+		if (logical_clusterbits > 12) {
 			erofs_err("compact 2B is unsupported for lcluster size %u",
 				  1 << logical_clusterbits);
 			return -EINVAL;
