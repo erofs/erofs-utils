@@ -38,3 +38,6 @@ stamp-h1
 /fsck/fsck.erofs
 /mount/mount.erofs
 /contrib/stress
+tests/results/
+tests/src/badlz4
+tests/src/fssum
