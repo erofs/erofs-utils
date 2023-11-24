@@ -33,6 +33,7 @@ endif
 if ENABLE_LIBLZMA
 TESTS_ENVIRONMENT += export lzma_on=1;
 endif
+TESTS_ENVIRONMENT += export deflate_on=1;
 
 # 001 - test if unknown algorithm is specificed
 TESTS += erofs/001
@@ -102,6 +103,9 @@ TESTS += erofs/022
 
 # 023 - check extended attributes in random layouts
 TESTS += erofs/023
+
+# 024 - verify deflate compressed image
+TESTS += erofs/024
 
 EXTRA_DIST = common/rc erofs
 
