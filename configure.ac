@@ -343,7 +343,13 @@ AS_IF([test "x$enable_fuse" != "xno"], [
   saved_LIBS="$LIBS"
   saved_CPPFLAGS=${CPPFLAGS}
   PKG_CHECK_MODULES([libfuse3], [fuse3 >= 3.0], [
-    AC_DEFINE([FUSE_USE_VERSION], [30], [used FUSE API version])
+    PKG_CHECK_MODULES([libfuse3_0], [fuse3 >= 3.0 fuse3 < 3.2], [
+      AC_DEFINE([FUSE_USE_VERSION], [30], [used FUSE API version])
+    ], [
+      PKG_CHECK_MODULES([libfuse3_2], [fuse3 >= 3.2], [
+        AC_DEFINE([FUSE_USE_VERSION], [32], [used FUSE API version])
+      ])
+    ])
     CPPFLAGS="${libfuse3_CFLAGS} ${CPPFLAGS}"
     LIBS="${libfuse3_LIBS} $LIBS"
     AC_CHECK_LIB(fuse3, fuse_session_new, [], [

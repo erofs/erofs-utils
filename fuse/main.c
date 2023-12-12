@@ -699,7 +699,21 @@ int main(int argc, char *argv[])
 		EROFSFUSE_MOUNT_MSG
 		if (fuse_daemonize(opts.foreground) >= 0) {
 			if (fuse_set_signal_handlers(se) >= 0) {
-				ret = fuse_session_loop(se);
+				if (opts.singlethread) {
+					ret = fuse_session_loop(se);
+				} else {
+#if FUSE_USE_VERSION == 30
+					ret = fuse_session_loop_mt(se, opts.clone_fd);
+#elif FUSE_USE_VERSION == 32
+					struct fuse_loop_config config = {
+						.clone_fd = opts.clone_fd,
+						.max_idle_threads = opts.max_idle_threads
+					};
+					ret = fuse_session_loop_mt(se, &config);
+#else
+#error "FUSE_USE_VERSION not supported"
+#endif
+				}
 				fuse_remove_signal_handlers(se);
 			}
 			fuse_session_unmount(se);
@@ -717,7 +731,10 @@ int main(int argc, char *argv[])
 		if (fuse_daemonize(opts.foreground) != -1) {
 			if (fuse_set_signal_handlers(se) != -1) {
 				fuse_session_add_chan(se, ch);
-				ret = fuse_session_loop(se);
+				if (opts.mt)
+					ret = fuse_session_loop_mt(se);
+				else
+					ret = fuse_session_loop(se);
 				fuse_remove_signal_handlers(se);
 				fuse_session_remove_chan(ch);
 			}
