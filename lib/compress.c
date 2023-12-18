@@ -166,6 +166,22 @@ static void z_erofs_write_indexes(struct z_erofs_vle_compress_ctx *ctx)
 	ctx->clusterofs = clusterofs + count;
 }
 
+static bool z_erofs_need_refill(struct z_erofs_vle_compress_ctx *ctx)
+{
+	const bool final = !ctx->remaining;
+	unsigned int qh_aligned, qh_after;
+
+	if (final || ctx->head < EROFS_CONFIG_COMPR_MAX_SZ)
+		return false;
+
+	qh_aligned = round_down(ctx->head, erofs_blksiz(ctx->inode->sbi));
+	qh_after = ctx->head - qh_aligned;
+	memmove(ctx->queue, ctx->queue + qh_aligned, ctx->tail - qh_aligned);
+	ctx->tail -= qh_aligned;
+	ctx->head = qh_after;
+	return true;
+}
+
 static int z_erofs_compress_dedupe(struct z_erofs_vle_compress_ctx *ctx,
 				   unsigned int *len)
 {
@@ -243,15 +259,7 @@ static int z_erofs_compress_dedupe(struct z_erofs_vle_compress_ctx *ctx,
 		DBG_BUGON(*len < dctx.e.length - delta);
 		*len -= dctx.e.length - delta;
 
-		if (ctx->head >= EROFS_CONFIG_COMPR_MAX_SZ) {
-			const unsigned int qh_aligned =
-				round_down(ctx->head, erofs_blksiz(sbi));
-			const unsigned int qh_after = ctx->head - qh_aligned;
-
-			memmove(ctx->queue, ctx->queue + qh_aligned,
-				*len + qh_after);
-			ctx->head = qh_after;
-			ctx->tail = qh_after + *len;
+		if (z_erofs_need_refill(ctx)) {
 			ret = -EAGAIN;
 			break;
 		}
@@ -413,7 +421,7 @@ static int vle_compress_one(struct z_erofs_vle_compress_ctx *ctx)
 		bool fix_dedupedfrag = ctx->fix_dedupedfrag;
 		unsigned int compressedsize;
 
-		if (z_erofs_compress_dedupe(ctx, &len) && !final)
+		if (z_erofs_compress_dedupe(ctx, &len))
 			break;
 
 		if (len <= ctx->pclustersize) {
@@ -568,17 +576,8 @@ frag_packing:
 		    z_erofs_fixup_deduped_fragment(ctx, len))
 			break;
 
-		if (!final && ctx->head >= EROFS_CONFIG_COMPR_MAX_SZ) {
-			const unsigned int qh_aligned =
-				round_down(ctx->head, blksz);
-			const unsigned int qh_after = ctx->head - qh_aligned;
-
-			memmove(ctx->queue, ctx->queue + qh_aligned,
-				len + qh_after);
-			ctx->head = qh_after;
-			ctx->tail = qh_after + len;
+		if (z_erofs_need_refill(ctx))
 			break;
-		}
 	}
 	return 0;
 
