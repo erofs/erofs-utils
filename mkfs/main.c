@@ -175,7 +175,7 @@ static void usage(int argc, char **argv)
 
 static void version(void)
 {
-	printf("mkfs.erofs (eorfs-utils) %s\navailable compressors: ",
+	printf("mkfs.erofs (erofs-utils) %s\navailable compressors: ",
 	       cfg.c_version);
 	print_available_compressors(stdout, ", ");
 }
