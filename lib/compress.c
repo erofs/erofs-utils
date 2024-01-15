@@ -200,9 +200,16 @@ static bool z_erofs_need_refill(struct z_erofs_vle_compress_ctx *ctx)
 	return true;
 }
 
+static struct z_erofs_extent_item dummy_pivot = {
+	.e.length = 0
+};
+
 static void z_erofs_commit_extent(struct z_erofs_vle_compress_ctx *ctx,
 				  struct z_erofs_extent_item *ei)
 {
+	if (ei == &dummy_pivot)
+		return;
+
 	list_add_tail(&ei->list, &ctx->extents);
 	ctx->clusterofs = (ctx->clusterofs + ei->e.length) &
 			(erofs_blksiz(ctx->inode->sbi) - 1);
@@ -980,7 +987,7 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 	ctx.metacur = compressmeta + Z_EROFS_LEGACY_MAP_HEADER_SIZE;
 	ctx.head = ctx.tail = 0;
 	ctx.clusterofs = 0;
-	ctx.pivot = NULL;
+	ctx.pivot = &dummy_pivot;
 	init_list_head(&ctx.extents);
 	ctx.remaining = inode->i_size - inode->fragment_size;
 	ctx.fix_dedupedfrag = false;
