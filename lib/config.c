@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <unistd.h>
 #include "erofs/print.h"
 #include "erofs/internal.h"
 #include "liberofs_private.h"
@@ -16,6 +17,7 @@
 
 struct erofs_configure cfg;
 struct erofs_sb_info sbi;
+bool erofs_stdout_tty;
 
 void erofs_init_configure(void)
 {
@@ -33,6 +35,8 @@ void erofs_init_configure(void)
 	cfg.c_pclusterblks_max = 1;
 	cfg.c_pclusterblks_def = 1;
 	cfg.c_max_decompressed_extent_bytes = -1;
+
+	erofs_stdout_tty = isatty(STDOUT_FILENO);
 }
 
 void erofs_show_config(void)
@@ -107,15 +111,19 @@ char *erofs_trim_for_progressinfo(const char *str, int placeholder)
 {
 	int col, len;
 
+	if (!erofs_stdout_tty) {
+		return strdup(str);
+	} else {
 #ifdef GWINSZ_IN_SYS_IOCTL
-	struct winsize winsize;
+		struct winsize winsize;
 
-	if(ioctl(1, TIOCGWINSZ, &winsize) >= 0 &&
-	   winsize.ws_col > 0)
-		col = winsize.ws_col;
-	else
+		if(ioctl(STDOUT_FILENO, TIOCGWINSZ, &winsize) >= 0 &&
+		   winsize.ws_col > 0)
+			col = winsize.ws_col;
+		else
 #endif
-		col = 80;
+			col = 80;
+	}
 
 	if (col <= placeholder)
 		return strdup("");
@@ -140,7 +148,7 @@ void erofs_msg(int dbglv, const char *fmt, ...)
 	FILE *f = dbglv >= EROFS_ERR ? stderr : stdout;
 
 	if (__erofs_is_progressmsg) {
-		fputc('\n', f);
+		fputc('\n', stdout);
 		__erofs_is_progressmsg = false;
 	}
 	va_start(ap, fmt);
@@ -160,7 +168,12 @@ void erofs_update_progressinfo(const char *fmt, ...)
 	vsprintf(msg, fmt, ap);
 	va_end(ap);
 
-	printf("\r\033[K%s", msg);
-	__erofs_is_progressmsg = true;
-	fflush(stdout);
+	if (erofs_stdout_tty) {
+		printf("\r\033[K%s", msg);
+		__erofs_is_progressmsg = true;
+		fflush(stdout);
+		return;
+	}
+	fputs(msg, stdout);
+	fputc('\n', stdout);
 }
