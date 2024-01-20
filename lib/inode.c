@@ -492,7 +492,7 @@ int erofs_write_file(struct erofs_inode *inode, int fd, u64 fpos)
 		return erofs_blob_write_chunked_file(inode, fd, fpos);
 	}
 
-	if (cfg.c_compr_alg[0] && erofs_file_is_compressible(inode)) {
+	if (cfg.c_compr_opts[0].alg && erofs_file_is_compressible(inode)) {
 		ret = erofs_write_compressed_file(inode, fd);
 		if (!ret || ret != -ENOSPC)
 			return ret;

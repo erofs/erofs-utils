@@ -5,6 +5,7 @@
  * Created by Li Guifu <bluce.liguifu@huawei.com>
  */
 #define _GNU_SOURCE
+#include <ctype.h>
 #include <time.h>
 #include <sys/time.h>
 #include <stdlib.h>
@@ -108,24 +109,29 @@ static void usage(int argc, char **argv)
 		" -b#                   set block size to # (# = page size by default)\n"
 		" -d<0-9>               set output verbosity; 0=quiet, 9=verbose (default=%i)\n"
 		" -x#                   set xattr tolerance to # (< 0, disable xattrs; default 2)\n"
-		" -zX[,Y][:...]         X=compressor (Y=compression level, optional)\n"
-		"                       alternative compressors can be separated by colons(:)\n"
-		"                       supported compressors and their level ranges are:\n",
+		" -zX[,level=Y]         X=compressor (Y=compression level, Z=dictionary size, optional)\n"
+		"    [,dictsize=Z]      alternative compressors can be separated by colons(:)\n"
+		"    [:...]             supported compressors and their option ranges are:\n",
 		argv[0], EROFS_WARN);
 	while ((s = z_erofs_list_available_compressors(&i)) != NULL) {
-		printf("                           %s", s->name);
+		const char spaces[] = "                         ";
+
+		printf("%s%s\n", spaces, s->name);
 		if (s->c->setlevel) {
 			if (!strcmp(s->name, "lzma"))
 				/* A little kludge to show the range as disjointed
 				 * "0-9,100-109" instead of a continuous "0-109", and to
 				 * state what those two subranges respectively mean.  */
-				printf("[<0-9,100-109>]\t0-9=normal, 100-109=extreme (default=%i)",
-				       s->c->default_level);
+				printf("%s  [,level=<0-9,100-109>]\t0-9=normal, 100-109=extreme (default=%i)\n",
+				       spaces, s->c->default_level);
 			else
-				printf("[,<0-%i>]\t(default=%i)",
-				       s->c->best_level, s->c->default_level);
+				printf("%s  [,level=<0-%i>]\t\t(default=%i)\n",
+				       spaces, s->c->best_level, s->c->default_level);
 		}
-		putchar('\n');
+		if (s->c->setdictsize) {
+			printf("%s  [,dictsize=<dictsize>]\t(default=%u, max=%u)\n",
+			       spaces, s->c->default_dictsize, s->c->max_dictsize);
+		}
 	}
 	printf(
 		" -C#                   specify the size of compress physical cluster in bytes\n"
@@ -304,27 +310,83 @@ handle_fragment:
 	return 0;
 }
 
+static int mkfs_parse_one_compress_alg(char *alg,
+				       struct erofs_compr_opts *copts)
+{
+	char *p, *q, *opt, *endptr;
+
+	copts->level = -1;
+	copts->dict_size = 0;
+
+	p = strchr(alg, ',');
+	if (p) {
+		copts->alg = strndup(alg, p - alg);
+
+		/* support old '-zlzma,9' form */
+		if (isdigit(*(p + 1))) {
+			copts->level = strtol(p + 1, &endptr, 10);
+			if (*endptr && *endptr != ',') {
+				erofs_err("invalid compression level %s",
+					  p + 1);
+				return -EINVAL;
+			}
+			return 0;
+		}
+	} else {
+		copts->alg = strdup(alg);
+		return 0;
+	}
+
+	opt = p + 1;
+	while (opt) {
+		q = strchr(opt, ',');
+		if (q)
+			*q = '\0';
+
+		if ((p = strstr(opt, "level="))) {
+			p += strlen("level=");
+			copts->level = strtol(p, &endptr, 10);
+			if ((endptr == p) || (*endptr && *endptr != ',')) {
+				erofs_err("invalid compression level %s", p);
+				return -EINVAL;
+			}
+		} else if ((p = strstr(opt, "dictsize="))) {
+			p += strlen("dictsize=");
+			copts->dict_size = strtoul(p, &endptr, 10);
+			if (*endptr == 'k' || *endptr == 'K')
+				copts->dict_size <<= 10;
+			else if (*endptr == 'm' || *endptr == 'M')
+				copts->dict_size <<= 20;
+			else if ((endptr == p) || (*endptr && *endptr != ',')) {
+				erofs_err("invalid compression dictsize %s", p);
+				return -EINVAL;
+			}
+		} else {
+			erofs_err("invalid compression option %s", opt);
+			return -EINVAL;
+		}
+
+		opt = q ? q + 1 : NULL;
+	}
+
+	return 0;
+}
+
 static int mkfs_parse_compress_algs(char *algs)
 {
 	unsigned int i;
 	char *s;
+	int ret;
 
 	for (s = strtok(algs, ":"), i = 0; s; s = strtok(NULL, ":"), ++i) {
-		const char *lv;
-
 		if (i >= EROFS_MAX_COMPR_CFGS - 1) {
 			erofs_err("too many algorithm types");
 			return -EINVAL;
 		}
 
-		lv = strchr(s, ',');
-		if (lv) {
-			cfg.c_compr_level[i] = atoi(lv + 1);
-			cfg.c_compr_alg[i] = strndup(s, lv - s);
-		} else {
-			cfg.c_compr_level[i] = -1;
-			cfg.c_compr_alg[i] = strdup(s);
-		}
+		ret = mkfs_parse_one_compress_alg(s, &cfg.c_compr_opts[i]);
+		if (ret)
+			return ret;
 	}
 	return 0;
 }
@@ -692,7 +754,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		cfg.c_showprogress = false;
 	}
 
-	if (cfg.c_compr_alg[0] && erofs_blksiz(&sbi) != getpagesize())
+	if (cfg.c_compr_opts[0].alg && erofs_blksiz(&sbi) != getpagesize())
 		erofs_warn("Please note that subpage blocksize with compression isn't yet supported in kernel. "
 			   "This compressed image will only work with bs = ps = %u bytes",
 			   erofs_blksiz(&sbi));
@@ -1119,7 +1181,7 @@ int main(int argc, char **argv)
 	}
 
 	if (cfg.c_dedupe) {
-		if (!cfg.c_compr_alg[0]) {
+		if (!cfg.c_compr_opts[0].alg) {
 			erofs_err("Compression is not enabled.  Turn on chunk-based data deduplication instead.");
 			cfg.c_chunkbits = sbi.blkszbits;
 		} else {

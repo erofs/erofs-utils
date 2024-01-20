@@ -34,6 +34,12 @@ enum {
 
 #define EROFS_MAX_COMPR_CFGS		64
 
+struct erofs_compr_opts {
+	char *alg;
+	int level;
+	u32 dict_size;
+};
+
 struct erofs_configure {
 	const char *c_version;
 	int c_dbg_lvl;
@@ -64,8 +70,7 @@ struct erofs_configure {
 	char *c_src_path;
 	char *c_blobdev_path;
 	char *c_compress_hints_file;
-	char *c_compr_alg[EROFS_MAX_COMPR_CFGS];
-	int c_compr_level[EROFS_MAX_COMPR_CFGS];
+	struct erofs_compr_opts c_compr_opts[EROFS_MAX_COMPR_CFGS];
 	char c_force_inodeversion;
 	char c_force_chunkformat;
 	/* < 0, xattr disabled and INT_MAX, always use inline xattrs */
@@ -73,7 +78,6 @@ struct erofs_configure {
 
 	u32 c_pclusterblks_max, c_pclusterblks_def, c_pclusterblks_packed;
 	u32 c_max_decompressed_extent_bytes;
-	u32 c_dict_size;
 	u64 c_unix_timestamp;
 	u32 c_uid, c_gid;
 	const char *mount_point;

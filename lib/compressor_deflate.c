@@ -47,6 +47,16 @@ static int compressor_deflate_init(struct erofs_compress *c)
 static int erofs_compressor_deflate_setlevel(struct erofs_compress *c,
 					     int compression_level)
 {
+	if (compression_level < 0)
+		compression_level = erofs_compressor_deflate.default_level;
+
+	c->compression_level = compression_level;
+	return 0;
+}
+
+static int erofs_compressor_deflate_setdictsize(struct erofs_compress *c,
+						u32 dict_size)
+{
 	void *s;
 
 	if (c->private_data) {
@@ -54,23 +64,31 @@ static int erofs_compressor_deflate_setlevel(struct erofs_compress *c,
 		c->private_data = NULL;
 	}
 
-	if (compression_level < 0)
-		compression_level = erofs_compressor_deflate.default_level;
+	if (dict_size > erofs_compressor_deflate.max_dictsize) {
+		erofs_err("dict size %u is too large", dict_size);
+		return -EINVAL;
+	}
 
-	s = kite_deflate_init(compression_level, cfg.c_dict_size);
+	if (!dict_size)
+		dict_size = erofs_compressor_deflate.default_dictsize;
+
+	s = kite_deflate_init(c->compression_level, dict_size);
 	if (IS_ERR(s))
 		return PTR_ERR(s);
 
 	c->private_data = s;
-	c->compression_level = compression_level;
+	c->dict_size = dict_size;
 	return 0;
 }
 
 const struct erofs_compressor erofs_compressor_deflate = {
 	.default_level = 1,
 	.best_level = 9,
+	.default_dictsize = 1 << 15,
+	.max_dictsize = 1 << 15,
 	.init = compressor_deflate_init,
 	.exit = compressor_deflate_exit,
 	.setlevel = erofs_compressor_deflate_setlevel,
+	.setdictsize = erofs_compressor_deflate_setdictsize,
 	.compress_destsize = deflate_compress_destsize,
 };

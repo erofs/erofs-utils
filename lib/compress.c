@@ -1123,7 +1123,8 @@ err_free_meta:
 }
 
 static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
-				    struct erofs_buffer_head *sb_bh)
+				    struct erofs_buffer_head *sb_bh,
+				    u32 *max_dict_size)
 {
 	struct erofs_buffer_head *bh = sb_bh;
 	int ret = 0;
@@ -1159,7 +1160,9 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 		} __packed lzmaalg = {
 			.size = cpu_to_le16(sizeof(struct z_erofs_lzma_cfgs)),
 			.lzma = {
-				.dict_size = cpu_to_le32(cfg.c_dict_size),
+				.dict_size = cpu_to_le32(
+					max_dict_size
+						[Z_EROFS_COMPRESSION_LZMA]),
 			}
 		};
 
@@ -1181,8 +1184,9 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 		} __packed zalg = {
 			.size = cpu_to_le16(sizeof(struct z_erofs_deflate_cfgs)),
 			.z = {
-				.windowbits =
-					cpu_to_le32(ilog2(cfg.c_dict_size)),
+				.windowbits = cpu_to_le32(ilog2(
+					max_dict_size
+						[Z_EROFS_COMPRESSION_DEFLATE])),
 			}
 		};
 
@@ -1201,32 +1205,38 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 
 int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh)
 {
-	int i, ret;
+	int i, ret, id;
+	u32 max_dict_size[Z_EROFS_COMPRESSION_MAX] = {};
 
-	for (i = 0; cfg.c_compr_alg[i]; ++i) {
+	for (i = 0; cfg.c_compr_opts[i].alg; ++i) {
 		struct erofs_compress *c = &erofs_ccfg[i].handle;
 
-		ret = erofs_compressor_init(sbi, c, cfg.c_compr_alg[i], cfg.c_compr_level[i]);
+		ret = erofs_compressor_init(sbi, c, cfg.c_compr_opts[i].alg,
+					    cfg.c_compr_opts[i].level,
+					    cfg.c_compr_opts[i].dict_size);
 		if (ret)
 			return ret;
 
-		erofs_ccfg[i].algorithmtype =
-			z_erofs_get_compress_algorithm_id(c);
+		id = z_erofs_get_compress_algorithm_id(c);
+		erofs_ccfg[i].algorithmtype = id;
 		erofs_ccfg[i].enable = true;
 		sbi->available_compr_algs |= 1 << erofs_ccfg[i].algorithmtype;
 		if (erofs_ccfg[i].algorithmtype != Z_EROFS_COMPRESSION_LZ4)
 			erofs_sb_set_compr_cfgs(sbi);
+		if (c->dict_size > max_dict_size[id])
+			max_dict_size[id] = c->dict_size;
 	}
 
 	/*
 	 * if primary algorithm is empty (e.g. compression off),
 	 * clear 0PADDING feature for old kernel compatibility.
 	 */
-	if (!cfg.c_compr_alg[0] ||
-	    (cfg.c_legacy_compress && !strncmp(cfg.c_compr_alg[0], "lz4", 3)))
+	if (!cfg.c_compr_opts[0].alg ||
+	    (cfg.c_legacy_compress &&
+	     !strncmp(cfg.c_compr_opts[0].alg, "lz4", 3)))
 		erofs_sb_clear_lz4_0padding(sbi);
 
-	if (!cfg.c_compr_alg[0])
+	if (!cfg.c_compr_opts[0].alg)
 		return 0;
 
 	/*
@@ -1248,7 +1258,7 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 	}
 
 	if (erofs_sb_has_compr_cfgs(sbi))
-		return z_erofs_build_compr_cfgs(sbi, sb_bh);
+		return z_erofs_build_compr_cfgs(sbi, sb_bh, max_dict_size);
 	return 0;
 }
 
@@ -1256,7 +1266,7 @@ int z_erofs_compress_exit(void)
 {
 	int i, ret;
 
-	for (i = 0; cfg.c_compr_alg[i]; ++i) {
+	for (i = 0; cfg.c_compr_opts[i].alg; ++i) {
 		ret = erofs_compressor_exit(&erofs_ccfg[i].handle);
 		if (ret)
 			return ret;

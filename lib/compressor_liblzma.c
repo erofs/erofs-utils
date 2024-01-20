@@ -68,19 +68,26 @@ static int erofs_compressor_liblzma_setlevel(struct erofs_compress *c,
 	if (lzma_lzma_preset(&ctx->opt, preset))
 		return -EINVAL;
 
-	/* XXX: temporary hack */
-	if (cfg.c_dict_size) {
-		if (cfg.c_dict_size > Z_EROFS_LZMA_MAX_DICT_SIZE) {
-			erofs_err("dict size %u is too large", cfg.c_dict_size);
-			return -EINVAL;
-		}
-		ctx->opt.dict_size = cfg.c_dict_size;
-	} else {
-		if (ctx->opt.dict_size > Z_EROFS_LZMA_MAX_DICT_SIZE)
-			ctx->opt.dict_size = Z_EROFS_LZMA_MAX_DICT_SIZE;
-		cfg.c_dict_size = ctx->opt.dict_size;
-	}
 	c->compression_level = compression_level;
+	return 0;
+}
+
+static int erofs_compressor_liblzma_setdictsize(struct erofs_compress *c,
+						u32 dict_size)
+{
+	struct erofs_liblzma_context *ctx = c->private_data;
+
+	if (dict_size > erofs_compressor_lzma.max_dictsize ||
+	    dict_size < 4096) {
+		erofs_err("invalid dict size %u", dict_size);
+		return -EINVAL;
+	}
+
+	if (!dict_size)
+		dict_size = erofs_compressor_lzma.default_dictsize;
+
+	ctx->opt.dict_size = dict_size;
+	c->dict_size = dict_size;
 	return 0;
 }
 
@@ -101,9 +108,12 @@ static int erofs_compressor_liblzma_init(struct erofs_compress *c)
 const struct erofs_compressor erofs_compressor_lzma = {
 	.default_level = LZMA_PRESET_DEFAULT,
 	.best_level = 109,
+	.default_dictsize = Z_EROFS_LZMA_MAX_DICT_SIZE,
+	.max_dictsize = Z_EROFS_LZMA_MAX_DICT_SIZE,
 	.init = erofs_compressor_liblzma_init,
 	.exit = erofs_compressor_liblzma_exit,
 	.setlevel = erofs_compressor_liblzma_setlevel,
+	.setdictsize = erofs_compressor_liblzma_setdictsize,
 	.compress_destsize = erofs_liblzma_compress_destsize,
 };
 #endif

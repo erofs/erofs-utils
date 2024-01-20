@@ -62,8 +62,8 @@ void erofs_exit_configure(void)
 		free(cfg.c_img_path);
 	if (cfg.c_src_path)
 		free(cfg.c_src_path);
-	for (i = 0; i < EROFS_MAX_COMPR_CFGS && cfg.c_compr_alg[i]; i++)
-		free(cfg.c_compr_alg[i]);
+	for (i = 0; i < EROFS_MAX_COMPR_CFGS && cfg.c_compr_opts[i].alg; i++)
+		free(cfg.c_compr_opts[i].alg);
 }
 
 static unsigned int fullpath_prefix;	/* root directory prefix length */
