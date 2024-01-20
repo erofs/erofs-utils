@@ -37,8 +37,6 @@ static int compressor_lz4_init(struct erofs_compress *c)
 }
 
 const struct erofs_compressor erofs_compressor_lz4 = {
-	.default_level = 0,
-	.best_level = 0,
 	.init = compressor_lz4_init,
 	.exit = compressor_lz4_exit,
 	.compress_destsize = lz4_compress_destsize,

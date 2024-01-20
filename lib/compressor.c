@@ -77,20 +77,8 @@ int erofs_compress_destsize(const struct erofs_compress *c,
 	return c->alg->c->compress_destsize(c, src, srcsize, dst, dstsize);
 }
 
-int erofs_compressor_setlevel(struct erofs_compress *c, int compression_level)
-{
-	DBG_BUGON(!c->alg);
-	if (c->alg->c->setlevel)
-		return c->alg->c->setlevel(c, compression_level);
-
-	if (compression_level >= 0)
-		return -EINVAL;
-	c->compression_level = 0;
-	return 0;
-}
-
-int erofs_compressor_init(struct erofs_sb_info *sbi,
-			  struct erofs_compress *c, char *alg_name)
+int erofs_compressor_init(struct erofs_sb_info *sbi, struct erofs_compress *c,
+			  char *alg_name, int compression_level)
 {
 	int ret, i;
 
@@ -113,6 +101,21 @@ int erofs_compressor_init(struct erofs_sb_info *sbi,
 			continue;
 
 		ret = erofs_algs[i].c->init(c);
+		if (ret)
+			return ret;
+
+		if (erofs_algs[i].c->setlevel) {
+			ret = erofs_algs[i].c->setlevel(c, compression_level);
+			if (ret) {
+				erofs_err("failed to set compression level %d for %s",
+					  compression_level, alg_name);
+				return ret;
+			}
+		} else if (compression_level >= 0) {
+			erofs_err("compression level %d is not supported for %s",
+				  compression_level, alg_name);
+			return -EINVAL;
+		}
 		if (!ret) {
 			c->alg = &erofs_algs[i];
 			return 0;
