@@ -82,7 +82,10 @@ static int compressor_libdeflate_exit(struct erofs_compress *c)
 
 static int compressor_libdeflate_init(struct erofs_compress *c)
 {
-	c->private_data = NULL;
+	libdeflate_free_compressor(c->private_data);
+	c->private_data = libdeflate_alloc_compressor(c->compression_level);
+	if (!c->private_data)
+		return -ENOMEM;
 
 	erofs_warn("EXPERIMENTAL libdeflate compressor in use. Use at your own risk!");
 	return 0;
@@ -94,10 +97,10 @@ static int erofs_compressor_libdeflate_setlevel(struct erofs_compress *c,
 	if (compression_level < 0)
 		compression_level = erofs_compressor_deflate.default_level;
 
-	libdeflate_free_compressor(c->private_data);
-	c->private_data = libdeflate_alloc_compressor(compression_level);
-	if (!c->private_data)
-		return -ENOMEM;
+	if (compression_level > erofs_compressor_deflate.best_level) {
+		erofs_err("invalid compression level %d", compression_level);
+		return -EINVAL;
+	}
 	c->compression_level = compression_level;
 	return 0;
 }

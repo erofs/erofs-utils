@@ -100,10 +100,6 @@ int erofs_compressor_init(struct erofs_sb_info *sbi, struct erofs_compress *c,
 		if (!erofs_algs[i].c)
 			continue;
 
-		ret = erofs_algs[i].c->init(c);
-		if (ret)
-			return ret;
-
 		if (erofs_algs[i].c->setlevel) {
 			ret = erofs_algs[i].c->setlevel(c, compression_level);
 			if (ret) {
@@ -129,6 +125,10 @@ int erofs_compressor_init(struct erofs_sb_info *sbi, struct erofs_compress *c,
 				  alg_name);
 			return -EINVAL;
 		}
+
+		ret = erofs_algs[i].c->init(c);
+		if (ret)
+			return ret;
 
 		if (!ret) {
 			c->alg = &erofs_algs[i];

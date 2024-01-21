@@ -7,6 +7,7 @@
 #define LZ4_HC_STATIC_LINKING_ONLY (1)
 #include <lz4hc.h>
 #include "erofs/internal.h"
+#include "erofs/print.h"
 #include "compressor.h"
 
 #ifndef LZ4_DISTANCE_MAX	/* history window size */
@@ -49,8 +50,10 @@ static int compressor_lz4hc_init(struct erofs_compress *c)
 static int compressor_lz4hc_setlevel(struct erofs_compress *c,
 				     int compression_level)
 {
-	if (compression_level > LZ4HC_CLEVEL_MAX)
+	if (compression_level > erofs_compressor_lz4hc.best_level) {
+		erofs_err("invalid compression level %d", compression_level);
 		return -EINVAL;
+	}
 
 	c->compression_level = compression_level < 0 ?
 		LZ4HC_CLEVEL_DEFAULT : compression_level;
