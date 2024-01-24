@@ -859,6 +859,17 @@ static void kite_mf_reset(struct kite_matchfinder *mf,
 	 */
 	mf->base += mf->offset + kHistorySize32 + 1;
 
+	/*
+	 * Unlike other LZ encoders like liblzma [1], we simply reset the hash
+	 * chain instead of normalization.  This avoids extra complexity, as we
+	 * don't consider extreme large input buffers in one go.
+	 *
+	 * [1] https://github.com/tukaani-project/xz/blob/v5.4.0/src/liblzma/lz/lz_encoder_mf.c#L94
+	 */
+	if (unlikely(mf->base > ((typeof(mf->base))-1) >> 1)) {
+		mf->base = kHistorySize32 + 1;
+		memset(mf->hash, 0, 0x10000 * sizeof(mf->hash[0]));
+	}
 	mf->offset = 0;
 	mf->cyclic_pos = 0;
 
