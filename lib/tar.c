@@ -106,7 +106,7 @@ int erofs_iostream_open(struct erofs_iostream *ios, int fd, int decoder)
 #ifdef HAVE_POSIX_FADVISE
 			if (posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL))
 				erofs_warn("failed to fadvise: %s, ignored.",
-					   erofs_strerror(errno));
+					   erofs_strerror(-errno));
 #endif
 		}
 		ios->bufsize = 16384;

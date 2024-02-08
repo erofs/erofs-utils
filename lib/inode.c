@@ -1146,7 +1146,7 @@ static int erofs_mkfs_build_tree(struct erofs_inode *dir, struct list_head *dirs
 	_dir = opendir(dir->i_srcpath);
 	if (!_dir) {
 		erofs_err("failed to opendir at %s: %s",
-			  dir->i_srcpath, erofs_strerror(errno));
+			  dir->i_srcpath, erofs_strerror(-errno));
 		return -errno;
 	}
 
