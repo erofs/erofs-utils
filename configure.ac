@@ -124,7 +124,7 @@ AC_ARG_ENABLE(lzma,
 
 AC_ARG_WITH(zlib,
    [AS_HELP_STRING([--without-zlib],
-      [Ignore presence of zlib inflate support @<:@default=enabled@:>@])])
+      [Ignore presence of zlib inflate support @<:@default=auto@:>@])])
 
 AC_ARG_WITH(libdeflate,
    [AS_HELP_STRING([--with-libdeflate],
@@ -426,18 +426,29 @@ if test "x$enable_lzma" = "xyes"; then
 fi
 
 # Configure zlib
+have_zlib="no"
 AS_IF([test "x$with_zlib" != "xno"], [
-  PKG_CHECK_MODULES([zlib], [zlib])
-  # Paranoia: don't trust the result reported by pkgconfig before trying out
-  saved_LIBS="$LIBS"
-  saved_CPPFLAGS=${CPPFLAGS}
-  CPPFLAGS="${zlib_CFLAGS} ${CPPFLAGS}"
-  LIBS="${zlib_LIBS} $LIBS"
-  AC_CHECK_LIB(z, inflate, [
-    have_zlib="yes" ], [
-    AC_MSG_ERROR([zlib doesn't work properly])])
-  LIBS="${saved_LIBS}"
-  CPPFLAGS="${saved_CPPFLAGS}"], [have_zlib="no"])
+  PKG_CHECK_MODULES([zlib], [zlib], [
+    # Paranoia: don't trust the result reported by pkgconfig before trying out
+    saved_LIBS="$LIBS"
+    saved_CPPFLAGS=${CPPFLAGS}
+    CPPFLAGS="${zlib_CFLAGS} ${CPPFLAGS}"
+    LIBS="${zlib_LIBS} $LIBS"
+    AC_CHECK_HEADERS([zlib.h],[
+      AC_CHECK_LIB(z, inflate, [], [
+        AC_MSG_ERROR([zlib doesn't work properly])])
+      AC_CHECK_DECL(inflate, [have_zlib="yes"],
+        [AC_MSG_ERROR([zlib doesn't work properly])], [[
+#include <zlib.h>
+      ]])
+    ])
+    LIBS="${saved_LIBS}"
+    CPPFLAGS="${saved_CPPFLAGS}"], [
+    AS_IF([test "x$with_zlib" = "xyes"], [
+      AC_MSG_ERROR([Cannot find proper zlib])
+    ])
+  ])
+])
 
 # Configure libdeflate
 AS_IF([test "x$with_libdeflate" != "xno"], [
