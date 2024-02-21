@@ -119,8 +119,8 @@ AC_ARG_ENABLE(lz4,
    [enable_lz4="$enableval"], [enable_lz4="yes"])
 
 AC_ARG_ENABLE(lzma,
-   [AS_HELP_STRING([--enable-lzma], [enable LZMA compression support @<:@default=no@:>@])],
-   [enable_lzma="$enableval"], [enable_lzma="no"])
+   [AS_HELP_STRING([--disable-lzma], [disable LZMA compression support @<:@default=auto@:>@])],
+   [enable_lzma="$enableval"])
 
 AC_ARG_WITH(zlib,
    [AS_HELP_STRING([--without-zlib],
@@ -160,14 +160,6 @@ AC_ARG_WITH(lz4-libdir,
 
 AC_ARG_VAR([LZ4_CFLAGS], [C compiler flags for lz4])
 AC_ARG_VAR([LZ4_LIBS], [linker flags for lz4])
-
-AC_ARG_WITH(liblzma-incdir,
-   [AS_HELP_STRING([--with-liblzma-incdir=DIR], [liblzma include directory])], [
-   EROFS_UTILS_PARSE_DIRECTORY(["$withval"],[withval])])
-
-AC_ARG_WITH(liblzma-libdir,
-   [AS_HELP_STRING([--with-liblzma-libdir=DIR], [liblzma lib directory])], [
-   EROFS_UTILS_PARSE_DIRECTORY(["$withval"],[withval])])
 
 # Checks for header files.
 AC_CHECK_HEADERS(m4_flatten([
@@ -400,30 +392,31 @@ if test "x$enable_lz4" = "xyes"; then
   CPPFLAGS=${saved_CPPFLAGS}
 fi
 
-if test "x$enable_lzma" = "xyes"; then
+# Configure liblzma
+have_liblzma="no"
+AS_IF([test "x$enable_lzma" != "xno"], [
   saved_CPPFLAGS=${CPPFLAGS}
-  test -z "${with_liblzma_incdir}" ||
-    CPPFLAGS="-I$with_liblzma_incdir $CPPFLAGS"
-  AC_CHECK_HEADERS([lzma.h],[have_lzmah="yes"], [])
-
-  if test "x${have_lzmah}" = "xyes" ; then
+  PKG_CHECK_MODULES([liblzma], [liblzma], [
+    # Paranoia: don't trust the result reported by pkgconfig before trying out
     saved_LIBS="$LIBS"
-    saved_LDFLAGS="$LDFLAGS"
-
-    test -z "${with_liblzma_libdir}" ||
-      LDFLAGS="-L$with_liblzma_libdir ${LDFLAGS}"
-    AC_CHECK_LIB(lzma, lzma_microlzma_encoder, [],
-      [AC_MSG_ERROR([Cannot find proper liblzma])])
-
-    AC_CHECK_DECL(lzma_microlzma_encoder, [have_liblzma="yes"],
-      [AC_MSG_ERROR([Cannot find proper liblzma])], [[
+    saved_CPPFLAGS=${CPPFLAGS}
+    CPPFLAGS="${liblzma_CFLAGS} ${CPPFLAGS}"
+    LIBS="${liblzma_LIBS} $LIBS"
+    AC_CHECK_HEADERS([lzma.h],[
+      AC_CHECK_LIB(lzma, lzma_microlzma_encoder, [
+        AC_CHECK_DECL(lzma_microlzma_encoder, [have_liblzma="yes"],
+          [], [[
 #include <lzma.h>
-    ]])
-    LDFLAGS="${saved_LDFLAGS}"
+        ]])
+      ])
+    ])
     LIBS="${saved_LIBS}"
-  fi
-  CPPFLAGS="${saved_CPPFLAGS}"
-fi
+    CPPFLAGS="${saved_CPPFLAGS}"
+  ], [[]])
+  AS_IF([test "x$enable_lzma" = "xyes" -a "x$have_liblzma" != "xyes"], [
+    AC_MSG_ERROR([Cannot find a proper liblzma version])
+  ])
+])
 
 # Configure zlib
 have_zlib="no"
