@@ -71,6 +71,7 @@ static struct option long_options[] = {
 	{"ovlfs-strip", optional_argument, NULL, 516},
 #ifdef HAVE_ZLIB
 	{"gzip", no_argument, NULL, 517},
+	{"ungzip", optional_argument, NULL, 517},
 #endif
 	{"offset", required_argument, NULL, 518},
 	{0, 0, 0, 0},
@@ -153,7 +154,8 @@ static void usage(int argc, char **argv)
 		" --uid-offset=#        add offset # to all file uids (# = id offset)\n"
 		" --gid-offset=#        add offset # to all file gids (# = id offset)\n"
 #ifdef HAVE_ZLIB
-		" --gzip                try to filter the tarball stream through gzip\n"
+		" --ungzip[=X]          try to filter the tarball stream through gzip\n"
+		"                       (and optionally dump the raw stream to X together)\n"
 #endif
 		" --ignore-mtime        use build time instead of strict per-file modification time\n"
 		" --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
@@ -633,6 +635,8 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				cfg.c_ovlfs_strip = false;
 			break;
 		case 517:
+			if (optarg)
+				erofstar.dumpfile = strdup(optarg);
 			gzip_supported = true;
 			break;
 		case 518:
@@ -712,6 +716,17 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			err = erofs_iostream_open(&erofstar.ios, fd, gzip_supported);
 			if (err)
 				return err;
+
+			if (erofstar.dumpfile) {
+				fd = open(erofstar.dumpfile,
+					  O_WRONLY | O_CREAT | O_TRUNC, 0644);
+				if (fd < 0) {
+					erofs_err("failed to open dumpfile: %s",
+						  erofstar.dumpfile);
+					return -errno;
+				}
+				erofstar.ios.dumpfd = fd;
+			}
 		} else {
 			err = lstat(cfg.c_src_path, &st);
 			if (err)
@@ -1315,8 +1330,11 @@ exit:
 	erofs_rebuild_cleanup();
 	erofs_diskbuf_exit();
 	erofs_exit_configure();
-	if (tar_mode)
+	if (tar_mode) {
 		erofs_iostream_close(&erofstar.ios);
+		if (erofstar.ios.dumpfd >= 0)
+			close(erofstar.ios.dumpfd);
+	}
 
 	if (err) {
 		erofs_err("\tCould not format the device : %s\n",

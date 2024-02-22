@@ -35,14 +35,14 @@ struct erofs_iostream {
 	u64 sz;
 	char *buffer;
 	unsigned int head, tail, bufsize;
-	int decoder;
+	int decoder, dumpfd;
 	bool feof;
 };
 
 struct erofs_tarfile {
 	struct erofs_pax_header global;
 	struct erofs_iostream ios;
-	char *mapfile;
+	char *mapfile, *dumpfile;
 
 	int fd;
 	u64 offset;

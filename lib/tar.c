@@ -82,6 +82,7 @@ int erofs_iostream_open(struct erofs_iostream *ios, int fd, int decoder)
 
 	ios->tail = ios->head = 0;
 	ios->decoder = decoder;
+	ios->dumpfd = -1;
 	if (decoder == EROFS_IOS_DECODER_GZIP) {
 #if defined(HAVE_ZLIB)
 		ios->handler = gzdopen(fd, "r");
@@ -170,6 +171,10 @@ int erofs_iostream_read(struct erofs_iostream *ios, void **buf, u64 bytes)
 			if (ret < ios->bufsize - rabytes)
 				ios->feof = true;
 		}
+		if (unlikely(ios->dumpfd >= 0))
+			if (write(ios->dumpfd, ios->buffer + rabytes, ret) < ret)
+				erofs_err("failed to dump %d bytes of the raw stream: %s",
+					  ret, erofs_strerror(-errno));
 	}
 	*buf = ios->buffer;
 	ret = min_t(int, ios->tail, bytes);
@@ -210,7 +215,7 @@ int erofs_iostream_lskip(struct erofs_iostream *ios, u64 sz)
 	if (ios->feof)
 		return sz;
 
-	if (ios->sz) {
+	if (ios->sz && likely(ios->dumpfd < 0)) {
 		s64 cur = lseek(ios->fd, sz, SEEK_CUR);
 
 		if (cur > ios->sz)
