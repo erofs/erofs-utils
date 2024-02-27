@@ -46,7 +46,7 @@ struct erofs_tarfile {
 
 	int fd;
 	u64 offset;
-	bool index_mode, aufs;
+	bool index_mode, headeronly_mode, aufs;
 };
 
 void erofs_iostream_close(struct erofs_iostream *ios);

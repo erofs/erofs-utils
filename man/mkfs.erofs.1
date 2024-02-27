@@ -17,7 +17,7 @@ achieve high performance for embedded devices with limited memory since it has
 unnoticable memory overhead and page cache thrashing.
 .PP
 mkfs.erofs is used to create such EROFS filesystem \fIDESTINATION\fR image file
-from \fISOURCE\fR directory.
+from \fISOURCE\fR directory or tarball.
 .SH OPTIONS
 .TP
 .BI "\-z " compression-algorithm \fR[\fP, # \fR][\fP: ... \fR]\fP
@@ -186,11 +186,22 @@ Use extended inodes instead of compact inodes if the file modification time
 would overflow compact inodes. This is the default. Overrides
 .BR --ignore-mtime .
 .TP
-.B "\-\-tar=f"
-Generate a full EROFS image from a tarball.
-.TP
-.B "\-\-tar=i"
-Generate an meta-only EROFS image from a tarball.
+.BI "\-\-tar, \-\-tar="MODE
+Treat \fISOURCE\fR as a tarball or tarball-like "headerball" rather than as a
+directory.
+
+\fIMODE\fR may be one of \fBf\fR, \fBi\fR, or \fBheaderball\fR.
+
+\fBf\fR: Generate a full EROFS image from a regular tarball. (default)
+
+\fBi\fR: Generate a meta-only EROFS image from a regular tarball. Only
+metadata such as dentries, inodes, and xattrs will be added to the image,
+without file data. Uses for such images include as a layer in an overlay
+filesystem with other data-only layers.
+
+\fBheaderball\fR: Generate a meta-only EROFS image from a stream identical
+to a tarball except that file data is not present after each file header.
+It can improve performance especially when \fISOURCE\fR is not seekable.
 .TP
 .BI "\-\-uid-offset=" UIDOFFSET
 Add \fIUIDOFFSET\fR to all file UIDs.

@@ -589,7 +589,7 @@ static int tarerofs_write_file_index(struct erofs_inode *inode,
 	ret = tarerofs_write_chunkes(inode, data_offset);
 	if (ret)
 		return ret;
-	if (erofs_iostream_lskip(&tar->ios, inode->i_size))
+	if (!tar->headeronly_mode && erofs_iostream_lskip(&tar->ios, inode->i_size))
 		return -EIO;
 	return 0;
 }

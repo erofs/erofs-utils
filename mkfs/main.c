@@ -162,7 +162,9 @@ static void usage(int argc, char **argv)
 		" --preserve-mtime      keep per-file modification time strictly\n"
 		" --offset=#            skip # bytes at the beginning of IMAGE.\n"
 		" --aufs                replace aufs special files with overlayfs metadata\n"
-		" --tar=[fi]            generate an image from tarball(s)\n"
+		" --tar=X               generate a full or index-only image from a tarball(-ish) source\n"
+		"                       (X = f|i|headerball; f=full mode, i=index mode,\n"
+		"                                            headerball=file data is omited in the source stream)\n"
 		" --ovlfs-strip=<0,1>   strip overlayfs metadata in the target image (e.g. whiteouts)\n"
 		" --quiet               quiet execution (do not write anything to standard output.)\n"
 #ifndef NDEBUG
@@ -617,11 +619,13 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			cfg.c_extra_ea_name_prefixes = true;
 			break;
 		case 20:
-			if (optarg && (!strcmp(optarg, "i") ||
-				!strcmp(optarg, "0") || !memcmp(optarg, "0,", 2))) {
+			if (optarg && (!strcmp(optarg, "i") || (!strcmp(optarg, "headerball") ||
+				!strcmp(optarg, "0") || !memcmp(optarg, "0,", 2)))) {
 				erofstar.index_mode = true;
 				if (!memcmp(optarg, "0,", 2))
 					erofstar.mapfile = strdup(optarg + 2);
+				if (!strcmp(optarg, "headerball"))
+					erofstar.headeronly_mode = true;
 			}
 			tar_mode = true;
 			break;
