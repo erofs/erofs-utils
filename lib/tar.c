@@ -72,6 +72,13 @@ void erofs_iostream_close(struct erofs_iostream *ios)
 		gzclose(ios->handler);
 #endif
 		return;
+	} else if (ios->decoder == EROFS_IOS_DECODER_LIBLZMA) {
+#if defined(HAVE_LIBLZMA)
+		lzma_end(&ios->lzma->strm);
+		close(ios->lzma->fd);
+		free(ios->lzma);
+#endif
+		return;
 	}
 	close(ios->fd);
 }
@@ -80,6 +87,7 @@ int erofs_iostream_open(struct erofs_iostream *ios, int fd, int decoder)
 {
 	s64 fsz;
 
+	ios->feof = false;
 	ios->tail = ios->head = 0;
 	ios->decoder = decoder;
 	ios->dumpfd = -1;
@@ -93,6 +101,24 @@ int erofs_iostream_open(struct erofs_iostream *ios, int fd, int decoder)
 #else
 		return -EOPNOTSUPP;
 #endif
+	} else if (decoder == EROFS_IOS_DECODER_LIBLZMA) {
+#ifdef HAVE_LIBLZMA
+		lzma_ret ret;
+
+		ios->lzma = malloc(sizeof(*ios->lzma));
+		if (!ios->lzma)
+			return -ENOMEM;
+		ios->lzma->fd = fd;
+		ios->lzma->strm = (lzma_stream)LZMA_STREAM_INIT;
+		ret = lzma_auto_decoder(&ios->lzma->strm,
+					UINT64_MAX, LZMA_CONCATENATED);
+		if (ret != LZMA_OK)
+			return -EFAULT;
+		ios->sz = fsz = 0;
+		ios->bufsize = 32768;
+#else
+		return -EOPNOTSUPP;
+#endif
 	} else {
 		ios->fd = fd;
 		fsz = lseek(fd, 0, SEEK_END);
@@ -100,7 +126,6 @@ int erofs_iostream_open(struct erofs_iostream *ios, int fd, int decoder)
 			ios->feof = !fsz;
 			ios->sz = 0;
 		} else {
-			ios->feof = false;
 			ios->sz = fsz;
 			if (lseek(fd, 0, SEEK_SET))
 				return -EIO;
@@ -158,6 +183,37 @@ int erofs_iostream_read(struct erofs_iostream *ios, void **buf, u64 bytes)
 				}
 				ios->feof = true;
 			}
+			ios->tail += ret;
+#else
+			return -EOPNOTSUPP;
+#endif
+		} else if (ios->decoder == EROFS_IOS_DECODER_LIBLZMA) {
+#ifdef HAVE_LIBLZMA
+			struct erofs_iostream_liblzma *lzma = ios->lzma;
+			lzma_action action = LZMA_RUN;
+			lzma_ret ret2;
+
+			if (!lzma->strm.avail_in) {
+				lzma->strm.next_in = lzma->inbuf;
+				ret = read(lzma->fd, lzma->inbuf,
+					   sizeof(lzma->inbuf));
+				if (ret < 0)
+					return -errno;
+				lzma->strm.avail_in = ret;
+				if (ret < sizeof(lzma->inbuf))
+					action = LZMA_FINISH;
+			}
+			lzma->strm.next_out = (u8 *)ios->buffer + rabytes;
+			lzma->strm.avail_out = ios->bufsize - rabytes;
+
+			ret2 = lzma_code(&lzma->strm, action);
+			if (ret2 != LZMA_OK) {
+				if (ret2 == LZMA_STREAM_END)
+					ios->feof = true;
+				else
+					return -EIO;
+			}
+			ret = ios->bufsize - rabytes - lzma->strm.avail_out;
 			ios->tail += ret;
 #else
 			return -EOPNOTSUPP;

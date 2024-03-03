@@ -26,11 +26,24 @@ struct erofs_pax_header {
 
 #define EROFS_IOS_DECODER_NONE		0
 #define EROFS_IOS_DECODER_GZIP		1
+#define EROFS_IOS_DECODER_LIBLZMA	2
+
+#ifdef HAVE_LIBLZMA
+#include <lzma.h>
+struct erofs_iostream_liblzma {
+	u8 inbuf[32768];
+	lzma_stream strm;
+	int fd;
+};
+#endif
 
 struct erofs_iostream {
 	union {
 		int fd;			/* original fd */
 		void *handler;
+#ifdef HAVE_LIBLZMA
+		struct erofs_iostream_liblzma *lzma;
+#endif
 	};
 	u64 sz;
 	char *buffer;

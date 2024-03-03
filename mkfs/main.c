@@ -69,11 +69,15 @@ static struct option long_options[] = {
 	{"block-list-file", required_argument, NULL, 515},
 #endif
 	{"ovlfs-strip", optional_argument, NULL, 516},
+	{"offset", required_argument, NULL, 517},
 #ifdef HAVE_ZLIB
-	{"gzip", no_argument, NULL, 517},
-	{"ungzip", optional_argument, NULL, 517},
+	{"gzip", no_argument, NULL, 518},
+	{"ungzip", optional_argument, NULL, 518},
 #endif
-	{"offset", required_argument, NULL, 518},
+#ifdef HAVE_LIBLZMA
+	{"unlzma", optional_argument, NULL, 519},
+	{"unxz", optional_argument, NULL, 519},
+#endif
 	{0, 0, 0, 0},
 };
 
@@ -153,10 +157,6 @@ static void usage(int argc, char **argv)
 		" --force-gid=#         set all file gids to # (# = GID)\n"
 		" --uid-offset=#        add offset # to all file uids (# = id offset)\n"
 		" --gid-offset=#        add offset # to all file gids (# = id offset)\n"
-#ifdef HAVE_ZLIB
-		" --ungzip[=X]          try to filter the tarball stream through gzip\n"
-		"                       (and optionally dump the raw stream to X together)\n"
-#endif
 		" --ignore-mtime        use build time instead of strict per-file modification time\n"
 		" --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
 		" --preserve-mtime      keep per-file modification time strictly\n"
@@ -170,6 +170,14 @@ static void usage(int argc, char **argv)
 #ifndef NDEBUG
 		" --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
 		" --random-algorithms   randomize per-file algorithms (debugging only)\n"
+#endif
+#ifdef HAVE_ZLIB
+		" --ungzip[=X]          try to filter the tarball stream through gzip\n"
+		"                       (and optionally dump the raw stream to X together)\n"
+#endif
+#ifdef HAVE_LIBLZMA
+		" --unxz[=X]            try to filter the tarball stream through xz/lzma/lzip\n"
+		"                       (and optionally dump the raw stream to X together)\n"
 #endif
 		" --xattr-prefix=X      X=extra xattr name prefix\n"
 		" --mount-point=X       X=prefix of target fs path (default: /)\n"
@@ -194,7 +202,7 @@ static unsigned int pclustersize_packed, pclustersize_max;
 static struct erofs_tarfile erofstar = {
 	.global.xattrs = LIST_HEAD_INIT(erofstar.global.xattrs)
 };
-static bool tar_mode, rebuild_mode, gzip_supported;
+static bool tar_mode, rebuild_mode;
 
 static unsigned int rebuild_src_count;
 static LIST_HEAD(rebuild_src_list);
@@ -413,6 +421,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	char *endptr;
 	int opt, i, err;
 	bool quiet = false;
+	int tarerofs_decoder = 0;
 
 	while ((opt = getopt_long(argc, argv, "C:E:L:T:U:b:d:x:z:Vh",
 				  long_options, NULL)) != -1) {
@@ -639,16 +648,17 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				cfg.c_ovlfs_strip = false;
 			break;
 		case 517:
-			if (optarg)
-				erofstar.dumpfile = strdup(optarg);
-			gzip_supported = true;
-			break;
-		case 518:
 			sbi.diskoffset = strtoull(optarg, &endptr, 0);
 			if (*endptr != '\0') {
 				erofs_err("invalid disk offset %s", optarg);
 				return -EINVAL;
 			}
+			break;
+		case 518:
+		case 519:
+			if (optarg)
+				erofstar.dumpfile = strdup(optarg);
+			tarerofs_decoder = EROFS_IOS_DECODER_GZIP + (opt - 518);
 			break;
 		case 'V':
 			version();
@@ -696,7 +706,8 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 					  strerror(errno));
 				return -errno;
 			}
-			err = erofs_iostream_open(&erofstar.ios, dupfd, gzip_supported);
+			err = erofs_iostream_open(&erofstar.ios, dupfd,
+						  tarerofs_decoder);
 			if (err)
 				return err;
 		}
@@ -717,7 +728,8 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				erofs_err("failed to open file: %s", cfg.c_src_path);
 				return -errno;
 			}
-			err = erofs_iostream_open(&erofstar.ios, fd, gzip_supported);
+			err = erofs_iostream_open(&erofstar.ios, fd,
+						  tarerofs_decoder);
 			if (err)
 				return err;
 
