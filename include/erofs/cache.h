@@ -3,7 +3,7 @@
  * Copyright (C) 2018 HUAWEI, Inc.
  *             http://www.huawei.com/
  * Created by Miao Xie <miaoxie@huawei.com>
- * with heavy changes by Gao Xiang <gaoxiang25@huawei.com>
+ * with heavy changes by Gao Xiang <xiang@kernel.org>
  */
 #ifndef __EROFS_CACHE_H
 #define __EROFS_CACHE_H

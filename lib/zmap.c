@@ -4,7 +4,7 @@
  *
  * Copyright (C) 2018-2019 HUAWEI, Inc.
  *             https://www.huawei.com/
- * Created by Gao Xiang <gaoxiang25@huawei.com>
+ * Created by Gao Xiang <xiang@kernel.org>
  * Modified by Huang Jianan <huangjianan@oppo.com>
  */
 #include "erofs/io.h"

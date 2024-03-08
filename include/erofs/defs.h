@@ -3,7 +3,7 @@
  * Copyright (C) 2018 HUAWEI, Inc.
  *             http://www.huawei.com/
  * Created by Li Guifu <bluce.liguifu@huawei.com>
- * Modified by Gao Xiang <gaoxiang25@huawei.com>
+ * Modified by Gao Xiang <xiang@kernel.org>
  */
 #ifndef __EROFS_DEFS_H
 #define __EROFS_DEFS_H

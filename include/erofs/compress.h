@@ -2,7 +2,7 @@
 /*
  * Copyright (C) 2019 HUAWEI, Inc.
  *             http://www.huawei.com/
- * Created by Gao Xiang <gaoxiang25@huawei.com>
+ * Created by Gao Xiang <xiang@kernel.org>
  */
 #ifndef __EROFS_COMPRESS_H
 #define __EROFS_COMPRESS_H

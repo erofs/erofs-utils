@@ -3,7 +3,7 @@
  * Copyright (C) 2018-2019 HUAWEI, Inc.
  *             http://www.huawei.com/
  * Created by Li Guifu <bluce.liguifu@huawei.com>
- * with heavy changes by Gao Xiang <gaoxiang25@huawei.com>
+ * with heavy changes by Gao Xiang <xiang@kernel.org>
  */
 #define _GNU_SOURCE
 #include <string.h>

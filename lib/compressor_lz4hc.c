@@ -2,7 +2,7 @@
 /*
  * Copyright (C) 2018-2019 HUAWEI, Inc.
  *             http://www.huawei.com/
- * Created by Gao Xiang <gaoxiang25@huawei.com>
+ * Created by Gao Xiang <xiang@kernel.org>
  */
 #define LZ4_HC_STATIC_LINKING_ONLY (1)
 #include <lz4hc.h>
