@@ -78,6 +78,9 @@ static struct option long_options[] = {
 	{"unlzma", optional_argument, NULL, 519},
 	{"unxz", optional_argument, NULL, 519},
 #endif
+#ifdef EROFS_MT_ENABLED
+	{"workers", required_argument, NULL, 520},
+#endif
 	{0, 0, 0, 0},
 };
 
@@ -178,6 +181,9 @@ static void usage(int argc, char **argv)
 #ifdef HAVE_LIBLZMA
 		" --unxz[=X]            try to filter the tarball stream through xz/lzma/lzip\n"
 		"                       (and optionally dump the raw stream to X together)\n"
+#endif
+#ifdef EROFS_MT_ENABLED
+		" --workers=#           set the number of worker threads to # (default=1)\n"
 #endif
 		" --xattr-prefix=X      X=extra xattr name prefix\n"
 		" --mount-point=X       X=prefix of target fs path (default: /)\n"
@@ -660,6 +666,23 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				erofstar.dumpfile = strdup(optarg);
 			tarerofs_decoder = EROFS_IOS_DECODER_GZIP + (opt - 518);
 			break;
+#ifdef EROFS_MT_ENABLED
+		case 520: {
+			unsigned int processors;
+
+			cfg.c_mt_workers = strtoul(optarg, &endptr, 0);
+			if (errno || *endptr != '\0') {
+				erofs_err("invalid worker number %s", optarg);
+				return -EINVAL;
+			}
+
+			processors = erofs_get_available_processors();
+			if (cfg.c_mt_workers > processors)
+				erofs_warn("%d workers exceed %d processors, potentially impacting performance.",
+					   cfg.c_mt_workers, processors);
+			break;
+		}
+#endif
 		case 'V':
 			version();
 			exit(0);
