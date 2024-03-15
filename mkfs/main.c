@@ -838,6 +838,12 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		}
 		cfg.c_pclusterblks_packed = pclustersize_packed >> sbi.blkszbits;
 	}
+#ifdef EROFS_MT_ENABLED
+	if (cfg.c_mt_workers > 1 && (cfg.c_dedupe || cfg.c_fragments)) {
+		erofs_warn("Note that dedupe/fragments are NOT supported in multi-threaded mode for now, resetting --workers=1.");
+		cfg.c_mt_workers = 1;
+	}
+#endif
 	return 0;
 }
 
