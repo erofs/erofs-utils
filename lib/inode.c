@@ -493,7 +493,7 @@ int erofs_write_file(struct erofs_inode *inode, int fd, u64 fpos)
 	}
 
 	if (cfg.c_compr_opts[0].alg && erofs_file_is_compressible(inode)) {
-		ret = erofs_write_compressed_file(inode, fd);
+		ret = erofs_write_compressed_file(inode, fd, fpos);
 		if (!ret || ret != -ENOSPC)
 			return ret;
 
@@ -1340,7 +1340,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
 		inode->nid = inode->sbi->packed_nid;
 	}
 
-	ret = erofs_write_compressed_file(inode, fd);
+	ret = erofs_write_compressed_file(inode, fd, 0);
 	if (ret == -ENOSPC) {
 		ret = lseek(fd, 0, SEEK_SET);
 		if (ret < 0)

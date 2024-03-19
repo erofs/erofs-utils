@@ -38,8 +38,9 @@ struct z_erofs_extent_item {
 
 struct z_erofs_compress_ictx {		/* inode context */
 	struct erofs_inode *inode;
-	int fd;
 	unsigned int pclustersize;
+	int fd;
+	u64 fpos;
 
 	u32 tof_chksum;
 	bool fix_dedupedfrag;
@@ -990,7 +991,8 @@ void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 int z_erofs_compress_segment(struct z_erofs_compress_sctx *ctx,
 			     u64 offset, erofs_blk_t blkaddr)
 {
-	int fd = ctx->ictx->fd;
+	struct z_erofs_compress_ictx *ictx = ctx->ictx;
+	int fd = ictx->fd;
 
 	ctx->blkaddr = blkaddr;
 	while (ctx->remaining) {
@@ -1000,7 +1002,8 @@ int z_erofs_compress_segment(struct z_erofs_compress_sctx *ctx,
 
 		ret = (offset == -1 ?
 			read(fd, ctx->queue + ctx->tail, rx) :
-			pread(fd, ctx->queue + ctx->tail, rx, offset));
+			pread(fd, ctx->queue + ctx->tail, rx,
+			      ictx->fpos + offset));
 		if (ret != rx)
 			return -errno;
 
@@ -1238,7 +1241,7 @@ int z_erofs_mt_compress(struct z_erofs_compress_ictx *ictx,
 }
 #endif
 
-int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
+int erofs_write_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 {
 	static u8 g_queue[Z_EROFS_COMPR_QUEUE_SZ];
 	struct erofs_buffer_head *bh;
@@ -1313,9 +1316,10 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 	blkaddr = erofs_mapbh(bh->block);	/* start_blkaddr */
 	ctx.inode = inode;
 	ctx.pclustersize = z_erofs_get_max_pclustersize(inode);
+	ctx.fd = fd;
+	ctx.fpos = fpos;
 	ctx.metacur = compressmeta + Z_EROFS_LEGACY_MAP_HEADER_SIZE;
 	init_list_head(&ctx.extents);
-	ctx.fd = fd;
 	ctx.fix_dedupedfrag = false;
 	ctx.fragemitted = false;
 	sctx = (struct z_erofs_compress_sctx) { .ictx = &ctx, };
