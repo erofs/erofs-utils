@@ -645,7 +645,7 @@ static int tarerofs_write_file_index(struct erofs_inode *inode,
 	ret = tarerofs_write_chunkes(inode, data_offset);
 	if (ret)
 		return ret;
-	if (!tar->headeronly_mode && erofs_iostream_lskip(&tar->ios, inode->i_size))
+	if (erofs_iostream_lskip(&tar->ios, inode->i_size))
 		return -EIO;
 	return 0;
 }
@@ -1002,7 +1002,9 @@ new_inode:
 			inode->i_link = malloc(inode->i_size + 1);
 			memcpy(inode->i_link, eh.link, inode->i_size + 1);
 		} else if (inode->i_size) {
-			if (tar->index_mode)
+			if (tar->headeronly_mode)
+				ret = erofs_write_zero_inode(inode);
+			else if (tar->index_mode)
 				ret = tarerofs_write_file_index(inode, tar,
 								data_offset);
 			else

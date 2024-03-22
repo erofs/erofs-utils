@@ -1260,12 +1260,14 @@ int main(int argc, char **argv)
 			return 1;
 	}
 
-	if ((erofstar.index_mode && !erofstar.mapfile) || cfg.c_blobdev_path)
+	if (((erofstar.index_mode && !erofstar.headeronly_mode) &&
+	    !erofstar.mapfile) || cfg.c_blobdev_path) {
 		err = erofs_mkfs_init_devices(&sbi, 1);
-	if (err) {
-		erofs_err("failed to generate device table: %s",
-			  erofs_strerror(err));
-		goto exit;
+		if (err) {
+			erofs_err("failed to generate device table: %s",
+				  erofs_strerror(err));
+			goto exit;
+		}
 	}
 
 	erofs_inode_manager_init();
@@ -1318,10 +1320,10 @@ int main(int argc, char **argv)
 	root_nid = erofs_lookupnid(root_inode);
 	erofs_iput(root_inode);
 
+	if (erofstar.index_mode && sbi.extra_devices && !erofstar.mapfile)
+		sbi.devs[0].blocks = BLK_ROUND_UP(&sbi, erofstar.offset);
+
 	if (erofstar.index_mode || cfg.c_chunkbits || sbi.extra_devices) {
-		if (erofstar.index_mode && !erofstar.mapfile)
-			sbi.devs[0].blocks =
-				BLK_ROUND_UP(&sbi, erofstar.offset);
 		err = erofs_mkfs_dump_blobs(&sbi);
 		if (err)
 			goto exit;

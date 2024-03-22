@@ -338,6 +338,47 @@ err:
 	return ret;
 }
 
+int erofs_write_zero_inode(struct erofs_inode *inode)
+{
+	struct erofs_sb_info *sbi = inode->sbi;
+	unsigned int chunkbits = ilog2(inode->i_size - 1) + 1;
+	unsigned int count;
+	erofs_off_t chunksize, len, pos;
+	struct erofs_inode_chunk_index *idx;
+
+	if (chunkbits < sbi->blkszbits)
+		chunkbits = sbi->blkszbits;
+	if (chunkbits - sbi->blkszbits > EROFS_CHUNK_FORMAT_BLKBITS_MASK)
+		chunkbits = EROFS_CHUNK_FORMAT_BLKBITS_MASK + sbi->blkszbits;
+
+	inode->u.chunkformat |= chunkbits - sbi->blkszbits;
+
+	chunksize = 1ULL << chunkbits;
+	count = DIV_ROUND_UP(inode->i_size, chunksize);
+
+	inode->extent_isize = count * EROFS_BLOCK_MAP_ENTRY_SIZE;
+	idx = calloc(count, max(sizeof(*idx), sizeof(void *)));
+	if (!idx)
+		return -ENOMEM;
+	inode->chunkindexes = idx;
+
+	for (pos = 0; pos < inode->i_size; pos += len) {
+		struct erofs_blobchunk *chunk;
+
+		len = min_t(erofs_off_t, inode->i_size - pos, chunksize);
+		chunk = erofs_get_unhashed_chunk(0, EROFS_NULL_ADDR, -1);
+		if (IS_ERR(chunk)) {
+			free(inode->chunkindexes);
+			inode->chunkindexes = NULL;
+			return PTR_ERR(chunk);
+		}
+
+		*(void **)idx++ = chunk;
+	}
+	inode->datalayout = EROFS_INODE_CHUNK_BASED;
+	return 0;
+}
+
 int tarerofs_write_chunkes(struct erofs_inode *inode, erofs_off_t data_offset)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
