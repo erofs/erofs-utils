@@ -497,8 +497,7 @@ int erofs_write_file(struct erofs_inode *inode, int fd, u64 fpos)
 		if (!ret || ret != -ENOSPC)
 			return ret;
 
-		ret = lseek(fd, fpos, SEEK_SET);
-		if (ret < 0)
+		if (lseek(fd, fpos, SEEK_SET) < 0)
 			return -errno;
 	}
 
