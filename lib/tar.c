@@ -909,6 +909,11 @@ restart:
 	} else if (opq) {
 		DBG_BUGON(d->type == EROFS_FT_UNKNOWN);
 		DBG_BUGON(!d->inode);
+		/*
+		 * needed if the tar tree is used soon, thus we have no chance
+		 * to generate it from xattrs.  No impact to mergefs.
+		 */
+		d->inode->opaque = true;
 		ret = erofs_set_opaque_xattr(d->inode);
 		goto out;
 	} else if (th->typeflag == '1') {	/* hard link cases */
