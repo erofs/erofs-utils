@@ -223,6 +223,15 @@ out:
 	return 0;
 }
 
+static void erofs_update_minextblks(struct erofs_sb_info *sbi,
+		    erofs_off_t start, erofs_off_t end, erofs_blk_t *minextblks)
+{
+	erofs_blk_t lb;
+	lb = lowbit((end - start) >> sbi->blkszbits);
+	if (lb && lb < *minextblks)
+		*minextblks = lb;
+}
+
 int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 				  erofs_off_t startoff)
 {
@@ -231,8 +240,8 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 	unsigned int count, unit;
 	struct erofs_blobchunk *chunk, *lastch;
 	struct erofs_inode_chunk_index *idx;
-	erofs_off_t pos, len, chunksize;
-	erofs_blk_t lb, minextblks;
+	erofs_off_t pos, len, chunksize, interval_start;
+	erofs_blk_t minextblks;
 	u8 *chunkdata;
 	int ret;
 
@@ -267,9 +276,10 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 		goto err;
 	}
 	idx = inode->chunkindexes;
-
 	lastch = NULL;
 	minextblks = BLK_ROUND_UP(sbi, inode->i_size);
+	interval_start = 0;
+
 	for (pos = 0; pos < inode->i_size; pos += len) {
 #ifdef SEEK_DATA
 		off_t offset = lseek(fd, pos + startoff, SEEK_DATA);
@@ -294,12 +304,15 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 
 		if (offset > pos) {
 			len = 0;
+			erofs_update_minextblks(sbi, interval_start, pos,
+						&minextblks);
 			do {
 				*(void **)idx++ = &erofs_holechunk;
 				pos += chunksize;
 			} while (pos < offset);
 			DBG_BUGON(pos != offset);
 			lastch = NULL;
+			interval_start = pos;
 			continue;
 		}
 #endif
@@ -320,13 +333,14 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 		if (lastch && (lastch->device_id != chunk->device_id ||
 		    erofs_pos(sbi, lastch->blkaddr) + lastch->chunksize !=
 		    erofs_pos(sbi, chunk->blkaddr))) {
-			lb = lowbit(pos >> sbi->blkszbits);
-			if (lb && lb < minextblks)
-				minextblks = lb;
+			erofs_update_minextblks(sbi, interval_start, pos,
+						&minextblks);
+			interval_start = pos;
 		}
 		*(void **)idx++ = chunk;
 		lastch = chunk;
 	}
+	erofs_update_minextblks(sbi, interval_start, pos, &minextblks);
 	inode->datalayout = EROFS_INODE_CHUNK_BASED;
 	free(chunkdata);
 	return erofs_blob_mergechunks(inode, chunkbits,
