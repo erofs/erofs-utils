@@ -162,7 +162,8 @@ struct erofs_dentry *erofs_d_alloc(struct erofs_inode *parent,
 
 	strncpy(d->name, name, EROFS_NAME_LEN - 1);
 	d->name[EROFS_NAME_LEN - 1] = '\0';
-
+	d->inode = NULL;
+	d->type = EROFS_FT_UNKNOWN;
 	list_add_tail(&d->d_child, &parent->i_subdirs);
 	return d;
 }
@@ -1131,7 +1132,7 @@ static int erofs_mkfs_handle_nondirectory(struct erofs_inode *inode)
 	return 0;
 }
 
-static int erofs_mkfs_handle_directory(struct erofs_inode *dir, struct list_head *dirs)
+static int erofs_mkfs_handle_directory(struct erofs_inode *dir)
 {
 	DIR *_dir;
 	struct dirent *dp;
@@ -1147,18 +1148,28 @@ static int erofs_mkfs_handle_directory(struct erofs_inode *dir, struct list_head
 	}
 
 	nr_subdirs = 0;
+	i_nlink = 0;
 	while (1) {
+		char buf[PATH_MAX];
+		struct erofs_inode *inode;
+
 		/*
 		 * set errno to 0 before calling readdir() in order to
 		 * distinguish end of stream and from an error.
 		 */
 		errno = 0;
 		dp = readdir(_dir);
-		if (!dp)
-			break;
+		if (!dp) {
+			if (!errno)
+				break;
+			ret = -errno;
+			goto err_closedir;
+		}
 
-		if (is_dot_dotdot(dp->d_name))
+		if (is_dot_dotdot(dp->d_name)) {
+			++i_nlink;
 			continue;
+		}
 
 		/* skip if it's a exclude file */
 		if (erofs_is_exclude_path(dir->i_srcpath, dp->d_name))
@@ -1169,12 +1180,21 @@ static int erofs_mkfs_handle_directory(struct erofs_inode *dir, struct list_head
 			ret = PTR_ERR(d);
 			goto err_closedir;
 		}
-		nr_subdirs++;
-	}
 
-	if (errno) {
-		ret = -errno;
-		goto err_closedir;
+		ret = snprintf(buf, PATH_MAX, "%s/%s", dir->i_srcpath, d->name);
+		if (ret < 0 || ret >= PATH_MAX)
+			goto err_closedir;
+
+		inode = erofs_iget_from_path(buf, true);
+		if (IS_ERR(inode)) {
+			ret = PTR_ERR(inode);
+			goto err_closedir;
+		}
+		d->inode = inode;
+		d->type = erofs_mode_to_ftype(inode->i_mode);
+		i_nlink += S_ISDIR(inode->i_mode);
+		erofs_dbg("file %s added (type %u)", buf, d->type);
+		nr_subdirs++;
 	}
 	closedir(_dir);
 
@@ -1182,57 +1202,6 @@ static int erofs_mkfs_handle_directory(struct erofs_inode *dir, struct list_head
 	if (ret)
 		return ret;
 
-	ret = erofs_prepare_inode_buffer(dir);
-	if (ret)
-		return ret;
-	dir->bh->op = &erofs_skip_write_bhops;
-
-	if (IS_ROOT(dir))
-		erofs_fixup_meta_blkaddr(dir);
-
-	i_nlink = 0;
-	list_for_each_entry(d, &dir->i_subdirs, d_child) {
-		char buf[PATH_MAX];
-		unsigned char ftype;
-		struct erofs_inode *inode;
-
-		if (is_dot_dotdot(d->name)) {
-			++i_nlink;
-			continue;
-		}
-
-		ret = snprintf(buf, PATH_MAX, "%s/%s",
-			       dir->i_srcpath, d->name);
-		if (ret < 0 || ret >= PATH_MAX) {
-			/* ignore the too long path */
-			goto fail;
-		}
-
-		inode = erofs_iget_from_path(buf, true);
-
-		if (IS_ERR(inode)) {
-			ret = PTR_ERR(inode);
-fail:
-			d->inode = NULL;
-			d->type = EROFS_FT_UNKNOWN;
-			return ret;
-		}
-
-		/* a hardlink to the existed inode */
-		if (inode->i_parent) {
-			++inode->i_nlink;
-		} else {
-			inode->i_parent = dir;
-			erofs_igrab(inode);
-			list_add_tail(&inode->i_subdirs, dirs);
-		}
-		ftype = erofs_mode_to_ftype(inode->i_mode);
-		i_nlink += (ftype == EROFS_FT_DIR);
-		d->inode = inode;
-		d->type = ftype;
-		erofs_info("file %s/%s dumped (type %u)",
-			   dir->i_srcpath, d->name, d->type);
-	}
 	/*
 	 * if there're too many subdirs as compact form, set nlink=1
 	 * rather than upgrade to use extented form instead.
@@ -1242,6 +1211,11 @@ fail:
 		dir->i_nlink = 1;
 	else
 		dir->i_nlink = i_nlink;
+
+	ret = erofs_prepare_inode_buffer(dir);
+	if (ret)
+		return ret;
+	dir->bh->op = &erofs_skip_write_bhops;
 	return 0;
 
 err_closedir:
@@ -1249,9 +1223,15 @@ err_closedir:
 	return ret;
 }
 
-static int erofs_mkfs_build_tree(struct erofs_inode *inode, struct list_head *dirs)
+static int erofs_mkfs_handle_inode(struct erofs_inode *inode)
 {
+	char *trimmed;
 	int ret;
+
+	trimmed = erofs_trim_for_progressinfo(erofs_fspath(inode->i_srcpath),
+					      sizeof("Processing  ...") - 1);
+	erofs_update_progressinfo("Processing %s ...", trimmed);
+	free(trimmed);
 
 	ret = erofs_scan_file_xattrs(inode);
 	if (ret < 0)
@@ -1262,60 +1242,71 @@ static int erofs_mkfs_build_tree(struct erofs_inode *inode, struct list_head *di
 		return ret;
 
 	if (!S_ISDIR(inode->i_mode))
-		return erofs_mkfs_handle_nondirectory(inode);
-	return erofs_mkfs_handle_directory(inode, dirs);
+		ret = erofs_mkfs_handle_nondirectory(inode);
+	else
+		ret = erofs_mkfs_handle_directory(inode);
+	erofs_info("file %s dumped (mode %05o)", erofs_fspath(inode->i_srcpath),
+		   inode->i_mode);
+	return ret;
 }
 
 struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
 {
-	LIST_HEAD(dirs);
-	struct erofs_inode *inode, *root, *dumpdir;
+	struct erofs_inode *root, *dumpdir;
+	int err;
 
 	root = erofs_iget_from_path(path, true);
 	if (IS_ERR(root))
 		return root;
 
-	(void)erofs_igrab(root);
 	root->i_parent = root;	/* rootdir mark */
-	list_add(&root->i_subdirs, &dirs);
+	root->next_dirwrite = NULL;
+	(void)erofs_igrab(root);
+	dumpdir = root;
 
-	dumpdir = NULL;
+	err = erofs_mkfs_handle_inode(root);
+	if (err)
+		return ERR_PTR(err);
+	erofs_fixup_meta_blkaddr(root);
+
 	do {
 		int err;
-		char *trimmed;
+		struct erofs_inode *dir = dumpdir;
+		/* used for adding sub-directories in reverse order due to FIFO */
+		struct erofs_inode *head, **last = &head;
+		struct erofs_dentry *d;
 
-		inode = list_first_entry(&dirs, struct erofs_inode, i_subdirs);
-		list_del(&inode->i_subdirs);
-		init_list_head(&inode->i_subdirs);
+		dumpdir = dir->next_dirwrite;
+		list_for_each_entry(d, &dir->i_subdirs, d_child) {
+			struct erofs_inode *inode = d->inode;
 
-		trimmed = erofs_trim_for_progressinfo(
-				erofs_fspath(inode->i_srcpath),
-				sizeof("Processing  ...") - 1);
-		erofs_update_progressinfo("Processing %s ...", trimmed);
-		free(trimmed);
+			if (is_dot_dotdot(d->name))
+				continue;
+			if (inode->i_parent) {
+				++inode->i_nlink;
+			} else {
+				inode->i_parent = dir;
 
-		err = erofs_mkfs_build_tree(inode, &dirs);
-		if (err) {
-			root = ERR_PTR(err);
-			break;
+				err = erofs_mkfs_handle_inode(inode);
+				if (err) {
+					root = ERR_PTR(err);
+					break;
+				}
+				if (S_ISDIR(inode->i_mode)) {
+					*last = inode;
+					last = &inode->next_dirwrite;
+					(void)erofs_igrab(inode);
+				}
+			}
 		}
+		*last = dumpdir;	/* fixup the last (or the only) one */
+		dumpdir = head;
+		erofs_write_dir_file(dir);
+		erofs_write_tail_end(dir);
+		dir->bh->op = &erofs_write_inode_bhops;
+		erofs_iput(dir);
+	} while (dumpdir);
 
-		if (S_ISDIR(inode->i_mode)) {
-			inode->next_dirwrite = dumpdir;
-			dumpdir = inode;
-		} else {
-			erofs_iput(inode);
-		}
-	} while (!list_empty(&dirs));
-
-	while (dumpdir) {
-		inode = dumpdir;
-		erofs_write_dir_file(inode);
-		erofs_write_tail_end(inode);
-		inode->bh->op = &erofs_write_inode_bhops;
-		dumpdir = inode->next_dirwrite;
-		erofs_iput(inode);
-	}
 	return root;
 }
 
