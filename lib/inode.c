@@ -477,12 +477,8 @@ static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 	return 0;
 }
 
-int erofs_write_file(struct erofs_inode *inode, int fd, u64 fpos)
+int erofs_write_unencoded_file(struct erofs_inode *inode, int fd, u64 fpos)
 {
-	int ret;
-
-	DBG_BUGON(!inode->i_size);
-
 	if (cfg.c_chunkbits) {
 		inode->u.chunkbits = cfg.c_chunkbits;
 		/* chunk indexes when explicitly specified */
@@ -492,7 +488,17 @@ int erofs_write_file(struct erofs_inode *inode, int fd, u64 fpos)
 		return erofs_blob_write_chunked_file(inode, fd, fpos);
 	}
 
+	/* fallback to all data uncompressed */
+	return write_uncompressed_file_from_fd(inode, fd);
+}
+
+int erofs_write_file(struct erofs_inode *inode, int fd, u64 fpos)
+{
+	DBG_BUGON(!inode->i_size);
+
 	if (cfg.c_compr_opts[0].alg && erofs_file_is_compressible(inode)) {
+		int ret;
+
 		ret = erofs_write_compressed_file(inode, fd, fpos);
 		if (!ret || ret != -ENOSPC)
 			return ret;
@@ -500,9 +506,8 @@ int erofs_write_file(struct erofs_inode *inode, int fd, u64 fpos)
 		if (lseek(fd, fpos, SEEK_SET) < 0)
 			return -errno;
 	}
-
 	/* fallback to all data uncompressed */
-	return write_uncompressed_file_from_fd(inode, fd);
+	return erofs_write_unencoded_file(inode, fd, fpos);
 }
 
 static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
@@ -1095,52 +1100,44 @@ static void erofs_fixup_meta_blkaddr(struct erofs_inode *rootdir)
 	rootdir->nid = (off - meta_offset) >> EROFS_ISLOTBITS;
 }
 
-static int erofs_mkfs_build_tree(struct erofs_inode *dir, struct list_head *dirs)
+static int erofs_mkfs_handle_nondirectory(struct erofs_inode *inode)
 {
-	int ret;
+	int ret = 0;
+
+	if (S_ISLNK(inode->i_mode)) {
+		char *const symlink = malloc(inode->i_size);
+
+		if (!symlink)
+			return -ENOMEM;
+		ret = readlink(inode->i_srcpath, symlink, inode->i_size);
+		if (ret < 0) {
+			free(symlink);
+			return -errno;
+		}
+		ret = erofs_write_file_from_buffer(inode, symlink);
+		free(symlink);
+	} else if (inode->i_size) {
+		int fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
+
+		if (fd < 0)
+			return -errno;
+		ret = erofs_write_file(inode, fd, 0);
+		close(fd);
+	}
+	if (ret)
+		return ret;
+	erofs_prepare_inode_buffer(inode);
+	erofs_write_tail_end(inode);
+	return 0;
+}
+
+static int erofs_mkfs_handle_directory(struct erofs_inode *dir, struct list_head *dirs)
+{
 	DIR *_dir;
 	struct dirent *dp;
 	struct erofs_dentry *d;
 	unsigned int nr_subdirs, i_nlink;
-
-	ret = erofs_scan_file_xattrs(dir);
-	if (ret < 0)
-		return ret;
-
-	ret = erofs_prepare_xattr_ibody(dir);
-	if (ret < 0)
-		return ret;
-
-	if (!S_ISDIR(dir->i_mode)) {
-		if (S_ISLNK(dir->i_mode)) {
-			char *const symlink = malloc(dir->i_size);
-
-			if (!symlink)
-				return -ENOMEM;
-			ret = readlink(dir->i_srcpath, symlink, dir->i_size);
-			if (ret < 0) {
-				free(symlink);
-				return -errno;
-			}
-			ret = erofs_write_file_from_buffer(dir, symlink);
-			free(symlink);
-		} else if (dir->i_size) {
-			int fd = open(dir->i_srcpath, O_RDONLY | O_BINARY);
-			if (fd < 0)
-				return -errno;
-
-			ret = erofs_write_file(dir, fd, 0);
-			close(fd);
-		} else {
-			ret = 0;
-		}
-		if (ret)
-			return ret;
-
-		erofs_prepare_inode_buffer(dir);
-		erofs_write_tail_end(dir);
-		return 0;
-	}
+	int ret;
 
 	_dir = opendir(dir->i_srcpath);
 	if (!_dir) {
@@ -1250,6 +1247,23 @@ fail:
 err_closedir:
 	closedir(_dir);
 	return ret;
+}
+
+static int erofs_mkfs_build_tree(struct erofs_inode *inode, struct list_head *dirs)
+{
+	int ret;
+
+	ret = erofs_scan_file_xattrs(inode);
+	if (ret < 0)
+		return ret;
+
+	ret = erofs_prepare_xattr_ibody(inode);
+	if (ret < 0)
+		return ret;
+
+	if (!S_ISDIR(inode->i_mode))
+		return erofs_mkfs_handle_nondirectory(inode);
+	return erofs_mkfs_handle_directory(inode, dirs);
 }
 
 struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
