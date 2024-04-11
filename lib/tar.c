@@ -233,7 +233,7 @@ int erofs_iostream_read(struct erofs_iostream *ios, void **buf, u64 bytes)
 					  ret, erofs_strerror(-errno));
 	}
 	*buf = ios->buffer;
-	ret = min_t(int, ios->tail, bytes);
+	ret = min_t(int, ios->tail, min_t(u64, bytes, INT_MAX));
 	ios->head = ret;
 	return ret;
 }
@@ -605,10 +605,9 @@ void tarerofs_remove_inode(struct erofs_inode *inode)
 static int tarerofs_write_file_data(struct erofs_inode *inode,
 				    struct erofs_tarfile *tar)
 {
-	unsigned int j;
 	void *buf;
 	int fd, nread;
-	u64 off;
+	u64 off, j;
 
 	if (!inode->i_diskbuf) {
 		inode->i_diskbuf = calloc(1, sizeof(*inode->i_diskbuf));
