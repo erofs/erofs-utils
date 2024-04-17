@@ -69,8 +69,15 @@ static struct erofs_blobchunk *erofs_blob_getchunk(struct erofs_sb_info *sbi,
 	chunk = hashmap_get_from_hash(&blob_hashmap, hash, sha256);
 	if (chunk) {
 		DBG_BUGON(chunksize != chunk->chunksize);
+
 		sbi->saved_by_deduplication += chunksize;
-		erofs_dbg("Found duplicated chunk at %u", chunk->blkaddr);
+		if (chunk->blkaddr == erofs_holechunk.blkaddr) {
+			chunk = &erofs_holechunk;
+			erofs_dbg("Found duplicated hole chunk");
+		} else {
+			erofs_dbg("Found duplicated chunk at %u",
+				  chunk->blkaddr);
+		}
 		return chunk;
 	}
 
@@ -231,7 +238,21 @@ static void erofs_update_minextblks(struct erofs_sb_info *sbi,
 	if (lb && lb < *minextblks)
 		*minextblks = lb;
 }
+static bool erofs_blob_can_merge(struct erofs_sb_info *sbi,
+				 struct erofs_blobchunk *lastch,
+				 struct erofs_blobchunk *chunk)
+{
+	if (!lastch)
+		return true;
+	if (lastch == &erofs_holechunk && chunk == &erofs_holechunk)
+		return true;
+	if (lastch->device_id == chunk->device_id &&
+		erofs_pos(sbi, lastch->blkaddr) + lastch->chunksize ==
+		erofs_pos(sbi, chunk->blkaddr))
+		return true;
 
+	return false;
+}
 int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 				  erofs_off_t startoff)
 {
@@ -303,16 +324,19 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 		}
 
 		if (offset > pos) {
-			len = 0;
-			erofs_update_minextblks(sbi, interval_start, pos,
-						&minextblks);
+			if (!erofs_blob_can_merge(sbi, lastch,
+							&erofs_holechunk)) {
+				erofs_update_minextblks(sbi, interval_start,
+							pos, &minextblks);
+				interval_start = pos;
+			}
 			do {
 				*(void **)idx++ = &erofs_holechunk;
 				pos += chunksize;
 			} while (pos < offset);
 			DBG_BUGON(pos != offset);
-			lastch = NULL;
-			interval_start = pos;
+			lastch = &erofs_holechunk;
+			len = 0;
 			continue;
 		}
 #endif
@@ -330,9 +354,7 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 			goto err;
 		}
 
-		if (lastch && (lastch->device_id != chunk->device_id ||
-		    erofs_pos(sbi, lastch->blkaddr) + lastch->chunksize !=
-		    erofs_pos(sbi, chunk->blkaddr))) {
+		if (!erofs_blob_can_merge(sbi, lastch, chunk)) {
 			erofs_update_minextblks(sbi, interval_start, pos,
 						&minextblks);
 			interval_start = pos;
@@ -540,7 +562,36 @@ void erofs_blob_exit(void)
 	}
 }
 
-int erofs_blob_init(const char *blobfile_path)
+static int erofs_insert_zerochunk(erofs_off_t chunksize)
+{
+	u8 *zeros;
+	struct erofs_blobchunk *chunk;
+	u8 sha256[32];
+	unsigned int hash;
+	int ret = 0;
+
+	zeros = calloc(1, chunksize);
+	if (!zeros)
+		return -ENOMEM;
+
+	erofs_sha256(zeros, chunksize, sha256);
+	free(zeros);
+	hash = memhash(sha256, sizeof(sha256));
+	chunk = malloc(sizeof(struct erofs_blobchunk));
+	if (!chunk)
+		return -ENOMEM;
+
+	chunk->chunksize = chunksize;
+	/* treat chunk filled with zeros as hole */
+	chunk->blkaddr = erofs_holechunk.blkaddr;
+	memcpy(chunk->sha256, sha256, sizeof(sha256));
+
+	hashmap_entry_init(&chunk->ent, hash);
+	hashmap_add(&blob_hashmap, chunk);
+	return ret;
+}
+
+int erofs_blob_init(const char *blobfile_path, erofs_off_t chunksize)
 {
 	if (!blobfile_path) {
 #ifdef HAVE_TMPFILE64
@@ -557,7 +608,7 @@ int erofs_blob_init(const char *blobfile_path)
 		return -EACCES;
 
 	hashmap_init(&blob_hashmap, erofs_blob_hashmap_cmp, 0);
-	return 0;
+	return erofs_insert_zerochunk(chunksize);
 }
 
 int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices)
