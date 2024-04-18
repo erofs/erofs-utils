@@ -305,6 +305,7 @@ static int z_erofs_compress_dedupe(struct z_erofs_compress_sctx *ctx,
 		if (z_erofs_dedupe_match(&dctx))
 			break;
 
+		DBG_BUGON(dctx.e.inlined);
 		delta = ctx->queue + ctx->head - dctx.cur;
 		/*
 		 * For big pcluster dedupe, leave two indices at least to store
@@ -519,6 +520,7 @@ static int __z_erofs_compress_one(struct z_erofs_compress_sctx *ctx,
 	unsigned int compressedsize;
 	int ret;
 
+	*e = (struct z_erofs_inmem_extent){};
 	if (len <= ctx->pclustersize) {
 		if (!final || !len)
 			return 1;
@@ -553,16 +555,18 @@ static int __z_erofs_compress_one(struct z_erofs_compress_sctx *ctx,
 		if (may_inline && len < blksz) {
 			ret = z_erofs_fill_inline_data(inode,
 					ctx->queue + ctx->head, len, true);
+			if (ret < 0)
+				return ret;
+			e->inlined = true;
 		} else {
 			may_inline = false;
 			may_packing = false;
 nocompression:
 			/* TODO: reset clusterofs to 0 if permitted */
 			ret = write_uncompressed_extent(ctx, len, dst);
+			if (ret < 0)
+				return ret;
 		}
-
-		if (ret < 0)
-			return ret;
 		e->length = ret;
 
 		/*
@@ -598,6 +602,7 @@ frag_packing:
 				compressedsize, false);
 		if (ret < 0)
 			return ret;
+		e->inlined = true;
 		e->compressedblks = 1;
 		e->raw = false;
 	} else {
@@ -1151,6 +1156,9 @@ int z_erofs_merge_segment(struct z_erofs_compress_ictx *ictx,
 		ei->e.blkaddr = sctx->blkaddr;
 		sctx->blkaddr += ei->e.compressedblks;
 
+		/* skip write data but leave blkaddr for inline fallback */
+		if (ei->e.inlined)
+			continue;
 		ret2 = blk_write(sbi, sctx->membuf + blkoff * erofs_blksiz(sbi),
 				 ei->e.blkaddr, ei->e.compressedblks);
 		blkoff += ei->e.compressedblks;
