@@ -633,6 +633,8 @@ static void erofsdump_show_superblock(void)
 
 	fprintf(stdout, "Filesystem magic number:                      0x%04X\n",
 			EROFS_SUPER_MAGIC_V1);
+	fprintf(stdout, "Filesystem blocksize:                         %u\n",
+			erofs_blksiz(&sbi));
 	fprintf(stdout, "Filesystem blocks:                            %llu\n",
 			sbi.total_blocks | 0ULL);
 	fprintf(stdout, "Filesystem inode metadata start block:        %u\n",
