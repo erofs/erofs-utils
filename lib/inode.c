@@ -1135,6 +1135,57 @@ static int erofs_mkfs_handle_nondirectory(struct erofs_inode *inode)
 	return 0;
 }
 
+enum erofs_mkfs_jobtype {	/* ordered job types */
+	EROFS_MKFS_JOB_NDIR,
+	EROFS_MKFS_JOB_DIR,
+	EROFS_MKFS_JOB_DIR_BH,
+};
+
+struct erofs_mkfs_jobitem {
+	enum erofs_mkfs_jobtype type;
+	union {
+		struct erofs_inode *inode;
+	} u;
+};
+
+static int erofs_mkfs_jobfn(struct erofs_mkfs_jobitem *item)
+{
+	struct erofs_inode *inode = item->u.inode;
+	int ret;
+
+	if (item->type == EROFS_MKFS_JOB_NDIR)
+		return erofs_mkfs_handle_nondirectory(inode);
+
+	if (item->type == EROFS_MKFS_JOB_DIR) {
+		ret = erofs_prepare_inode_buffer(inode);
+		if (ret)
+			return ret;
+		inode->bh->op = &erofs_skip_write_bhops;
+		if (IS_ROOT(inode))	/* assign root NID */
+			erofs_fixup_meta_blkaddr(inode);
+		return 0;
+	}
+
+	if (item->type == EROFS_MKFS_JOB_DIR_BH) {
+		erofs_write_dir_file(inode);
+		erofs_write_tail_end(inode);
+		inode->bh->op = &erofs_write_inode_bhops;
+		erofs_iput(inode);
+		return 0;
+	}
+	return -EINVAL;
+}
+
+int erofs_mkfs_go(struct erofs_sb_info *sbi,
+		  enum erofs_mkfs_jobtype type, void *elem, int size)
+{
+	struct erofs_mkfs_jobitem item;
+
+	item.type = type;
+	memcpy(&item.u, elem, size);
+	return erofs_mkfs_jobfn(&item);
+}
+
 static int erofs_mkfs_handle_directory(struct erofs_inode *dir)
 {
 	DIR *_dir;
@@ -1215,11 +1266,7 @@ static int erofs_mkfs_handle_directory(struct erofs_inode *dir)
 	else
 		dir->i_nlink = i_nlink;
 
-	ret = erofs_prepare_inode_buffer(dir);
-	if (ret)
-		return ret;
-	dir->bh->op = &erofs_skip_write_bhops;
-	return 0;
+	return erofs_mkfs_go(dir->sbi, EROFS_MKFS_JOB_DIR, &dir, sizeof(dir));
 
 err_closedir:
 	closedir(_dir);
@@ -1245,7 +1292,8 @@ static int erofs_mkfs_handle_inode(struct erofs_inode *inode)
 		return ret;
 
 	if (!S_ISDIR(inode->i_mode))
-		ret = erofs_mkfs_handle_nondirectory(inode);
+		ret = erofs_mkfs_go(inode->sbi, EROFS_MKFS_JOB_NDIR,
+				    &inode, sizeof(inode));
 	else
 		ret = erofs_mkfs_handle_directory(inode);
 	erofs_info("file %s dumped (mode %05o)", erofs_fspath(inode->i_srcpath),
@@ -1270,7 +1318,6 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
 	err = erofs_mkfs_handle_inode(root);
 	if (err)
 		return ERR_PTR(err);
-	erofs_fixup_meta_blkaddr(root);
 
 	do {
 		int err;
@@ -1304,10 +1351,10 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
 		}
 		*last = dumpdir;	/* fixup the last (or the only) one */
 		dumpdir = head;
-		erofs_write_dir_file(dir);
-		erofs_write_tail_end(dir);
-		dir->bh->op = &erofs_write_inode_bhops;
-		erofs_iput(dir);
+		err = erofs_mkfs_go(dir->sbi, EROFS_MKFS_JOB_DIR_BH,
+				    &dir, sizeof(dir));
+		if (err)
+			return ERR_PTR(err);
 	} while (dumpdir);
 
 	return root;
