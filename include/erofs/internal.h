@@ -25,6 +25,7 @@ typedef unsigned short umode_t;
 #ifdef HAVE_PTHREAD_H
 #include <pthread.h>
 #endif
+#include "atomic.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX        4096    /* # chars in a path name including nul */
@@ -169,7 +170,7 @@ struct erofs_inode {
 		/* (mkfs.erofs) next pointer for directory dumping */
 		struct erofs_inode *next_dirwrite;
 	};
-	unsigned int i_count;
+	erofs_atomic_t i_count;
 	struct erofs_sb_info *sbi;
 	struct erofs_inode *i_parent;
 

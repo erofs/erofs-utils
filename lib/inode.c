@@ -129,9 +129,10 @@ struct erofs_inode *erofs_iget_by_nid(erofs_nid_t nid)
 unsigned int erofs_iput(struct erofs_inode *inode)
 {
 	struct erofs_dentry *d, *t;
+	unsigned long got = erofs_atomic_dec_return(&inode->i_count);
 
-	if (inode->i_count > 1)
-		return --inode->i_count;
+	if (got >= 1)
+		return got;
 
 	list_for_each_entry_safe(d, t, &inode->i_subdirs, d_child)
 		free(d);

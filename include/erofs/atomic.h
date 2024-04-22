@@ -25,4 +25,14 @@ __n;})
 #define erofs_atomic_test_and_set(ptr) \
 	__atomic_test_and_set(ptr, __ATOMIC_RELAXED)
 
+#define erofs_atomic_add_return(ptr, i) \
+	__atomic_add_fetch(ptr, i, __ATOMIC_RELAXED)
+
+#define erofs_atomic_sub_return(ptr, i) \
+	__atomic_sub_fetch(ptr, i, __ATOMIC_RELAXED)
+
+#define erofs_atomic_inc_return(ptr) erofs_atomic_add_return(ptr, 1)
+
+#define erofs_atomic_dec_return(ptr) erofs_atomic_sub_return(ptr, 1)
+
 #endif

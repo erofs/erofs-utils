@@ -17,7 +17,7 @@ extern "C"
 
 static inline struct erofs_inode *erofs_igrab(struct erofs_inode *inode)
 {
-	++inode->i_count;
+	(void)erofs_atomic_inc_return(&inode->i_count);
 	return inode;
 }
 
