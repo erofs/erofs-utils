@@ -470,8 +470,17 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 		pos += map.m_llen;
 
 		/* should skip decomp? */
-		if (!(map.m_flags & EROFS_MAP_MAPPED) || !fsckcfg.check_decomp)
+		if (map.m_la >= inode->i_size || !fsckcfg.check_decomp)
 			continue;
+
+		if (outfd >= 0 && !(map.m_flags & EROFS_MAP_MAPPED)) {
+			ret = lseek(outfd, map.m_llen, SEEK_CUR);
+			if (ret < 0) {
+				ret = -errno;
+				goto out;
+			}
+			continue;
+		}
 
 		if (map.m_plen > Z_EROFS_PCLUSTER_MAX_SIZE) {
 			if (compressed) {
