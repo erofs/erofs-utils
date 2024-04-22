@@ -71,6 +71,7 @@ struct erofs_xattr_prefix_item {
 
 #define EROFS_PACKED_NID_UNALLOCATED	-1
 
+struct erofs_mkfs_dfops;
 struct erofs_sb_info {
 	struct erofs_device_info *devs;
 	char *devname;
@@ -124,6 +125,11 @@ struct erofs_sb_info {
 	struct list_head list;
 
 	u64 saved_by_deduplication;
+
+#ifdef EROFS_MT_ENABLED
+	pthread_t dfops_worker;
+	struct erofs_mkfs_dfops *mkfs_dfops;
+#endif
 };
 
 /* make sure that any user of the erofs headers has atleast 64bit off_t type */
