@@ -1109,8 +1109,36 @@ static void erofs_fixup_meta_blkaddr(struct erofs_inode *rootdir)
 	rootdir->nid = (off - meta_offset) >> EROFS_ISLOTBITS;
 }
 
-static int erofs_mkfs_handle_nondirectory(struct erofs_inode *inode)
+struct erofs_mkfs_job_ndir_ctx {
+	struct erofs_inode *inode;
+	void *ictx;
+	int fd;
+};
+
+static int erofs_mkfs_job_write_file(struct erofs_mkfs_job_ndir_ctx *ctx)
 {
+	struct erofs_inode *inode = ctx->inode;
+	int ret;
+
+	if (ctx->ictx) {
+		ret = erofs_write_compressed_file(ctx->ictx);
+		if (ret != -ENOSPC)
+			goto out;
+		if (lseek(ctx->fd, 0, SEEK_SET) < 0) {
+			ret = -errno;
+			goto out;
+		}
+	}
+	/* fallback to all data uncompressed */
+	ret = erofs_write_unencoded_file(inode, ctx->fd, 0);
+out:
+	close(ctx->fd);
+	return ret;
+}
+
+static int erofs_mkfs_handle_nondirectory(struct erofs_mkfs_job_ndir_ctx *ctx)
+{
+	struct erofs_inode *inode = ctx->inode;
 	int ret = 0;
 
 	if (S_ISLNK(inode->i_mode)) {
@@ -1126,12 +1154,7 @@ static int erofs_mkfs_handle_nondirectory(struct erofs_inode *inode)
 		ret = erofs_write_file_from_buffer(inode, symlink);
 		free(symlink);
 	} else if (inode->i_size) {
-		int fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
-
-		if (fd < 0)
-			return -errno;
-		ret = erofs_write_file(inode, fd, 0);
-		close(fd);
+		ret = erofs_mkfs_job_write_file(ctx);
 	}
 	if (ret)
 		return ret;
@@ -1150,6 +1173,7 @@ struct erofs_mkfs_jobitem {
 	enum erofs_mkfs_jobtype type;
 	union {
 		struct erofs_inode *inode;
+		struct erofs_mkfs_job_ndir_ctx ndir;
 	} u;
 };
 
@@ -1159,7 +1183,7 @@ static int erofs_mkfs_jobfn(struct erofs_mkfs_jobitem *item)
 	int ret;
 
 	if (item->type == EROFS_MKFS_JOB_NDIR)
-		return erofs_mkfs_handle_nondirectory(inode);
+		return erofs_mkfs_handle_nondirectory(&item->u.ndir);
 
 	if (item->type == EROFS_MKFS_JOB_DIR) {
 		ret = erofs_prepare_inode_buffer(inode);
@@ -1296,11 +1320,27 @@ static int erofs_mkfs_handle_inode(struct erofs_inode *inode)
 	if (ret < 0)
 		return ret;
 
-	if (!S_ISDIR(inode->i_mode))
+	if (!S_ISDIR(inode->i_mode)) {
+		struct erofs_mkfs_job_ndir_ctx ctx = { .inode = inode };
+
+		if (!S_ISLNK(inode->i_mode) && inode->i_size) {
+			ctx.fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
+			if (ctx.fd < 0)
+				return -errno;
+
+			if (cfg.c_compr_opts[0].alg &&
+			    erofs_file_is_compressible(inode)) {
+				ctx.ictx = erofs_begin_compressed_file(inode,
+								ctx.fd, 0);
+				if (IS_ERR(ctx.ictx))
+					return PTR_ERR(ctx.ictx);
+			}
+		}
 		ret = erofs_mkfs_go(inode->sbi, EROFS_MKFS_JOB_NDIR,
-				    &inode, sizeof(inode));
-	else
+				    &ctx, sizeof(ctx));
+	} else {
 		ret = erofs_mkfs_handle_directory(inode);
+	}
 	erofs_info("file %s dumped (mode %05o)", erofs_fspath(inode->i_srcpath),
 		   inode->i_mode);
 	return ret;
