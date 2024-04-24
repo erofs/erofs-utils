@@ -664,6 +664,8 @@ static int erofs_prepare_tail_block(struct erofs_inode *inode)
 	} else {
 		inode->lazy_tailblock = true;
 	}
+	if (is_inode_layout_compression(inode))
+		inode->u.i_blocks += 1;
 	return 0;
 }
 
