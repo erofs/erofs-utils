@@ -38,11 +38,6 @@ void erofs_init_configure(void)
 	cfg.c_pclusterblks_max = 1;
 	cfg.c_pclusterblks_def = 1;
 	cfg.c_max_decompressed_extent_bytes = -1;
-#ifdef EROFS_MT_ENABLED
-	cfg.c_segment_size = 16ULL * 1024 * 1024;
-	cfg.c_mt_workers = 1;
-#endif
-
 	erofs_stdout_tty = isatty(STDOUT_FILENO);
 }
 

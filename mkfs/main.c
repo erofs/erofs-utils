@@ -838,12 +838,6 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		}
 		cfg.c_pclusterblks_packed = pclustersize_packed >> sbi.blkszbits;
 	}
-#ifdef EROFS_MT_ENABLED
-	if (cfg.c_mt_workers > 1 && (cfg.c_dedupe || cfg.c_fragments)) {
-		erofs_warn("Note that dedupe/fragments are NOT supported in multi-threaded mode for now, resetting --workers=1.");
-		cfg.c_mt_workers = 1;
-	}
-#endif
 	return 0;
 }
 
@@ -954,6 +948,10 @@ static void erofs_mkfs_default_options(void)
 	cfg.c_legacy_compress = false;
 	cfg.c_inline_data = true;
 	cfg.c_xattr_name_filter = true;
+#ifdef EROFS_MT_ENABLED
+	cfg.c_mt_workers = erofs_get_available_processors();
+	cfg.c_mkfs_segment_size = 16ULL * 1024 * 1024;
+#endif
 	sbi.blkszbits = ilog2(min_t(u32, getpagesize(), EROFS_MAX_BLOCK_SIZE));
 	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_ZERO_PADDING;
 	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM |

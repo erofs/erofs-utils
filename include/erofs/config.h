@@ -76,10 +76,9 @@ struct erofs_configure {
 	/* < 0, xattr disabled and INT_MAX, always use inline xattrs */
 	int c_inline_xattr_tolerance;
 #ifdef EROFS_MT_ENABLED
-	u64 c_segment_size;
+	u64 c_mkfs_segment_size;
 	u32 c_mt_workers;
 #endif
-
 	u32 c_pclusterblks_max, c_pclusterblks_def, c_pclusterblks_packed;
 	u32 c_max_decompressed_extent_bytes;
 	u64 c_unix_timestamp;

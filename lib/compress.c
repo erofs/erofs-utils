@@ -1255,7 +1255,7 @@ void z_erofs_mt_workfn(struct erofs_work *work, void *tlsp)
 	}
 	sctx->memoff = 0;
 
-	ret = z_erofs_compress_segment(sctx, sctx->seg_idx * cfg.c_segment_size,
+	ret = z_erofs_compress_segment(sctx, sctx->seg_idx * cfg.c_mkfs_segment_size,
 				       EROFS_NULL_ADDR);
 
 out:
@@ -1304,7 +1304,7 @@ int z_erofs_mt_compress(struct z_erofs_compress_ictx *ictx)
 	struct erofs_compress_work *cur, *head = NULL, **last = &head;
 	struct erofs_compress_cfg *ccfg = ictx->ccfg;
 	struct erofs_inode *inode = ictx->inode;
-	int nsegs = DIV_ROUND_UP(inode->i_size, cfg.c_segment_size);
+	int nsegs = DIV_ROUND_UP(inode->i_size, cfg.c_mkfs_segment_size);
 	int i;
 
 	ictx->seg_num = nsegs;
@@ -1338,9 +1338,9 @@ int z_erofs_mt_compress(struct z_erofs_compress_ictx *ictx)
 		if (i == nsegs - 1)
 			cur->ctx.remaining = inode->i_size -
 					      inode->fragment_size -
-					      i * cfg.c_segment_size;
+					      i * cfg.c_mkfs_segment_size;
 		else
-			cur->ctx.remaining = cfg.c_segment_size;
+			cur->ctx.remaining = cfg.c_mkfs_segment_size;
 
 		cur->alg_id = ccfg->handle.alg->id;
 		cur->alg_name = ccfg->handle.alg->name;
@@ -1718,6 +1718,14 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 
 	z_erofs_mt_enabled = false;
 #ifdef EROFS_MT_ENABLED
+	if (cfg.c_mt_workers > 1 && (cfg.c_dedupe || cfg.c_fragments)) {
+		if (cfg.c_dedupe)
+			erofs_warn("multi-threaded dedupe is NOT implemented for now");
+		if (cfg.c_fragments)
+			erofs_warn("multi-threaded fragments is NOT implemented for now");
+		cfg.c_mt_workers = 0;
+	}
+
 	if (cfg.c_mt_workers > 1) {
 		ret = erofs_alloc_workqueue(&z_erofs_mt_ctrl.wq,
 					    cfg.c_mt_workers,
