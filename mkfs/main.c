@@ -137,8 +137,12 @@ static void usage(int argc, char **argv)
 				       spaces, s->c->best_level, s->c->default_level);
 		}
 		if (s->c->setdictsize) {
-			printf("%s  [,dictsize=<dictsize>]\t(default=%u, max=%u)\n",
-			       spaces, s->c->default_dictsize, s->c->max_dictsize);
+			if (s->c->default_dictsize)
+				printf("%s  [,dictsize=<dictsize>]\t(default=%u, max=%u)\n",
+				       spaces, s->c->default_dictsize, s->c->max_dictsize);
+			else
+				printf("%s  [,dictsize=<dictsize>]\t(default=<auto>, max=%u)\n",
+				       spaces, s->c->max_dictsize);
 		}
 	}
 	printf(

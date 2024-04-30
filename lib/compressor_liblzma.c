@@ -70,11 +70,18 @@ static int erofs_compressor_liblzma_setlevel(struct erofs_compress *c,
 static int erofs_compressor_liblzma_setdictsize(struct erofs_compress *c,
 						u32 dict_size)
 {
-	if (!dict_size)
-		dict_size = erofs_compressor_lzma.default_dictsize;
+	if (!dict_size) {
+		if (erofs_compressor_lzma.default_dictsize) {
+			dict_size = erofs_compressor_lzma.default_dictsize;
+		} else {
+			dict_size = min_t(u32, Z_EROFS_LZMA_MAX_DICT_SIZE,
+					  cfg.c_mkfs_pclustersize_max << 3);
+			if (dict_size < 32768)
+				dict_size = 32768;
+		}
+	}
 
-	if (dict_size > erofs_compressor_lzma.max_dictsize ||
-	    dict_size < 4096) {
+	if (dict_size > Z_EROFS_LZMA_MAX_DICT_SIZE || dict_size < 4096) {
 		erofs_err("invalid dictionary size %u", dict_size);
 		return -EINVAL;
 	}
@@ -86,7 +93,6 @@ static int erofs_compressor_liblzma_init(struct erofs_compress *c)
 {
 	struct erofs_liblzma_context *ctx;
 	u32 preset;
-	static erofs_atomic_bool_t __warnonce;
 
 	ctx = malloc(sizeof(*ctx));
 	if (!ctx)
@@ -105,15 +111,12 @@ static int erofs_compressor_liblzma_init(struct erofs_compress *c)
 	ctx->opt.dict_size = c->dict_size;
 
 	c->private_data = ctx;
-	if (!erofs_atomic_test_and_set(&__warnonce))
-		erofs_warn("It may take a longer time since MicroLZMA is still single-threaded for now.");
 	return 0;
 }
 
 const struct erofs_compressor erofs_compressor_lzma = {
 	.default_level = LZMA_PRESET_DEFAULT,
 	.best_level = 109,
-	.default_dictsize = Z_EROFS_LZMA_MAX_DICT_SIZE,
 	.max_dictsize = Z_EROFS_LZMA_MAX_DICT_SIZE,
 	.init = erofs_compressor_liblzma_init,
 	.exit = erofs_compressor_liblzma_exit,
