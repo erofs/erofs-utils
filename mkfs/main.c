@@ -820,8 +820,8 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				  pclustersize_max);
 			return -EINVAL;
 		}
-		cfg.c_pclusterblks_max = pclustersize_max >> sbi.blkszbits;
-		cfg.c_pclusterblks_def = cfg.c_pclusterblks_max;
+		cfg.c_mkfs_pclustersize_max = pclustersize_max;
+		cfg.c_mkfs_pclustersize_def = cfg.c_mkfs_pclustersize_max;
 	}
 	if (cfg.c_chunkbits && cfg.c_chunkbits < sbi.blkszbits) {
 		erofs_err("chunksize %u must be larger than block size",
@@ -830,13 +830,13 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	}
 
 	if (pclustersize_packed) {
-		if (pclustersize_max < erofs_blksiz(&sbi) ||
-		    pclustersize_max % erofs_blksiz(&sbi)) {
+		if (pclustersize_packed < erofs_blksiz(&sbi) ||
+		    pclustersize_packed % erofs_blksiz(&sbi)) {
 			erofs_err("invalid pcluster size for the packed file %u",
 				  pclustersize_packed);
 			return -EINVAL;
 		}
-		cfg.c_pclusterblks_packed = pclustersize_packed >> sbi.blkszbits;
+		cfg.c_mkfs_pclustersize_packed = pclustersize_packed;
 	}
 	return 0;
 }
@@ -953,6 +953,8 @@ static void erofs_mkfs_default_options(void)
 	cfg.c_mkfs_segment_size = 16ULL * 1024 * 1024;
 #endif
 	sbi.blkszbits = ilog2(min_t(u32, getpagesize(), EROFS_MAX_BLOCK_SIZE));
+	cfg.c_mkfs_pclustersize_max = erofs_blksiz(&sbi);
+	cfg.c_mkfs_pclustersize_def = cfg.c_mkfs_pclustersize_max;
 	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_ZERO_PADDING;
 	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM |
 			     EROFS_FEATURE_COMPAT_MTIME;
@@ -1153,8 +1155,8 @@ int main(int argc, char **argv)
 #endif
 	erofs_show_config();
 	if (cfg.c_fragments || cfg.c_extra_ea_name_prefixes) {
-		if (!cfg.c_pclusterblks_packed)
-			cfg.c_pclusterblks_packed = cfg.c_pclusterblks_def;
+		if (!cfg.c_mkfs_pclustersize_packed)
+			cfg.c_mkfs_pclustersize_packed = cfg.c_mkfs_pclustersize_def;
 
 		packedfile = erofs_packedfile_init();
 		if (IS_ERR(packedfile)) {

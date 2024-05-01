@@ -55,7 +55,7 @@ bool z_erofs_apply_compress_hints(struct erofs_inode *inode)
 		return true;
 
 	s = erofs_fspath(inode->i_srcpath);
-	pclusterblks = cfg.c_pclusterblks_def;
+	pclusterblks = cfg.c_mkfs_pclustersize_def >> inode->sbi->blkszbits;
 	algorithmtype = 0;
 
 	list_for_each_entry(r, &compress_hints_head, list) {
@@ -136,7 +136,7 @@ int erofs_load_compress_hints(struct erofs_sb_info *sbi)
 		if (pclustersize % erofs_blksiz(sbi)) {
 			erofs_warn("invalid physical clustersize %u, "
 				   "use default pclusterblks %u",
-				   pclustersize, cfg.c_pclusterblks_def);
+				   pclustersize, cfg.c_mkfs_pclustersize_def);
 			continue;
 		}
 		erofs_insert_compress_hints(pattern,
@@ -146,9 +146,10 @@ int erofs_load_compress_hints(struct erofs_sb_info *sbi)
 			max_pclustersize = pclustersize;
 	}
 
-	if (cfg.c_pclusterblks_max * erofs_blksiz(sbi) < max_pclustersize) {
-		cfg.c_pclusterblks_max = max_pclustersize / erofs_blksiz(sbi);
-		erofs_warn("update max pclusterblks to %u", cfg.c_pclusterblks_max);
+	if (cfg.c_mkfs_pclustersize_max < max_pclustersize) {
+		cfg.c_mkfs_pclustersize_max = max_pclustersize;
+		erofs_warn("update max pclustersize to %u",
+			   cfg.c_mkfs_pclustersize_max);
 	}
 out:
 	fclose(f);

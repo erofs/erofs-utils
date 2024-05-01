@@ -416,22 +416,21 @@ static int write_uncompressed_extent(struct z_erofs_compress_sctx *ctx,
 
 static unsigned int z_erofs_get_max_pclustersize(struct erofs_inode *inode)
 {
-	unsigned int pclusterblks;
-
-	if (erofs_is_packed_inode(inode))
-		pclusterblks = cfg.c_pclusterblks_packed;
+	if (erofs_is_packed_inode(inode)) {
+		return cfg.c_mkfs_pclustersize_packed;
 #ifndef NDEBUG
-	else if (cfg.c_random_pclusterblks)
-		pclusterblks = 1 + rand() % cfg.c_pclusterblks_max;
+	} else if (cfg.c_random_pclusterblks) {
+		unsigned int pclusterblks =
+			cfg.c_mkfs_pclustersize_max >> inode->sbi->blkszbits;
+
+		return (1 + rand() % pclusterblks) << inode->sbi->blkszbits;
 #endif
-	else if (cfg.c_compress_hints_file) {
+	} else if (cfg.c_compress_hints_file) {
 		z_erofs_apply_compress_hints(inode);
 		DBG_BUGON(!inode->z_physical_clusterblks);
-		pclusterblks = inode->z_physical_clusterblks;
-	} else {
-		pclusterblks = cfg.c_pclusterblks_def;
+		return inode->z_physical_clusterblks << inode->sbi->blkszbits;
 	}
-	return pclusterblks * erofs_blksiz(inode->sbi);
+	return cfg.c_mkfs_pclustersize_def;
 }
 
 static int z_erofs_fill_inline_data(struct erofs_inode *inode, void *data,
@@ -1591,7 +1590,8 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 			.lz4 = {
 				.max_distance =
 					cpu_to_le16(sbi->lz4_max_distance),
-				.max_pclusterblks = cfg.c_pclusterblks_max,
+				.max_pclusterblks =
+					cfg.c_mkfs_pclustersize_max >> sbi->blkszbits,
 			}
 		};
 
@@ -1696,17 +1696,17 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 	 * if big pcluster is enabled, an extra CBLKCNT lcluster index needs
 	 * to be loaded in order to get those compressed block counts.
 	 */
-	if (cfg.c_pclusterblks_max > 1) {
-		if (cfg.c_pclusterblks_max >
-		    Z_EROFS_PCLUSTER_MAX_SIZE / erofs_blksiz(sbi)) {
-			erofs_err("unsupported clusterblks %u (too large)",
-				  cfg.c_pclusterblks_max);
+	if (cfg.c_mkfs_pclustersize_max > erofs_blksiz(sbi)) {
+		if (cfg.c_mkfs_pclustersize_max > Z_EROFS_PCLUSTER_MAX_SIZE) {
+			erofs_err("unsupported pclustersize %u (too large)",
+				  cfg.c_mkfs_pclustersize_max);
 			return -EINVAL;
 		}
 		erofs_sb_set_big_pcluster(sbi);
 	}
-	if (cfg.c_pclusterblks_packed > cfg.c_pclusterblks_max) {
-		erofs_err("invalid physical cluster size for the packed file");
+	if (cfg.c_mkfs_pclustersize_packed > cfg.c_mkfs_pclustersize_max) {
+		erofs_err("invalid pclustersize for the packed file %u",
+			  cfg.c_mkfs_pclustersize_packed);
 		return -EINVAL;
 	}
 

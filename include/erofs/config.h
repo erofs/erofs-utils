@@ -79,7 +79,9 @@ struct erofs_configure {
 	u64 c_mkfs_segment_size;
 	u32 c_mt_workers;
 #endif
-	u32 c_pclusterblks_max, c_pclusterblks_def, c_pclusterblks_packed;
+	u32 c_mkfs_pclustersize_max;
+	u32 c_mkfs_pclustersize_def;
+	u32 c_mkfs_pclustersize_packed;
 	u32 c_max_decompressed_extent_bytes;
 	u64 c_unix_timestamp;
 	u32 c_uid, c_gid;
