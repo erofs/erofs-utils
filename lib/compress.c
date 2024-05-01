@@ -1260,8 +1260,10 @@ void z_erofs_mt_workfn(struct erofs_work *work, void *tlsp)
 out:
 	cwork->errcode = ret;
 	pthread_mutex_lock(&ictx->mutex);
-	++ictx->nfini;
-	pthread_cond_signal(&ictx->cond);
+	if (++ictx->nfini >= ictx->seg_num) {
+		DBG_BUGON(ictx->nfini > ictx->seg_num);
+		pthread_cond_signal(&ictx->cond);
+	}
 	pthread_mutex_unlock(&ictx->mutex);
 }
 
