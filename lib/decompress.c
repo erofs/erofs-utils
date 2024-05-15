@@ -9,6 +9,69 @@
 #include "erofs/err.h"
 #include "erofs/print.h"
 
+#ifdef HAVE_LIBZSTD
+#include <zstd.h>
+#include <zstd_errors.h>
+
+/* also a very preliminary userspace version */
+static int z_erofs_decompress_zstd(struct z_erofs_decompress_req *rq)
+{
+	struct erofs_sb_info *sbi = rq->sbi;
+	int ret = 0;
+	char *dest = rq->out;
+	char *src = rq->in;
+	char *buff = NULL;
+	unsigned int inputmargin = 0;
+	unsigned long long total;
+
+	while (!src[inputmargin & (erofs_blksiz(sbi) - 1)])
+		if (!(++inputmargin & (erofs_blksiz(sbi) - 1)))
+			break;
+
+	if (inputmargin >= rq->inputsize)
+		return -EFSCORRUPTED;
+
+#ifdef HAVE_ZSTD_GETFRAMECONTENTSIZE
+	total = ZSTD_getFrameContentSize(src + inputmargin,
+					 rq->inputsize - inputmargin);
+	if (total == ZSTD_CONTENTSIZE_UNKNOWN ||
+	    total == ZSTD_CONTENTSIZE_ERROR)
+		return -EFSCORRUPTED;
+#else
+	total = ZSTD_getDecompressedSize(src + inputmargin,
+					 rq->inputsize - inputmargin);
+#endif
+	if (rq->decodedskip || total != rq->decodedlength) {
+		buff = malloc(total);
+		if (!buff)
+			return -ENOMEM;
+		dest = buff;
+	}
+
+	ret = ZSTD_decompress(dest, total,
+			      src + inputmargin, rq->inputsize - inputmargin);
+	if (ZSTD_isError(ret)) {
+		erofs_err("ZSTD decompress failed %d: %s", ZSTD_getErrorCode(ret),
+			  ZSTD_getErrorName(ret));
+		ret = -EIO;
+		goto out;
+	}
+
+	if (ret != (int)total) {
+		erofs_err("ZSTD decompress length mismatch %d, expected %d",
+			  ret, total);
+		goto out;
+	}
+	if (rq->decodedskip || total != rq->decodedlength)
+		memcpy(rq->out, dest + rq->decodedskip,
+		       rq->decodedlength - rq->decodedskip);
+out:
+	if (buff)
+		free(buff);
+	return ret;
+}
+#endif
+
 #ifdef HAVE_LIBDEFLATE
 /* if libdeflate is available, use libdeflate instead. */
 #include <libdeflate.h>
@@ -322,6 +385,10 @@ int z_erofs_decompress(struct z_erofs_decompress_req *rq)
 #if defined(HAVE_ZLIB) || defined(HAVE_LIBDEFLATE)
 	if (rq->alg == Z_EROFS_COMPRESSION_DEFLATE)
 		return z_erofs_decompress_deflate(rq);
+#endif
+#ifdef HAVE_LIBZSTD
+	if (rq->alg == Z_EROFS_COMPRESSION_ZSTD)
+		return z_erofs_decompress_zstd(rq);
 #endif
 	return -EOPNOTSUPP;
 }

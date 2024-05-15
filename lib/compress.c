@@ -1655,6 +1655,30 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 				sizeof(zalg));
 		bh->op = &erofs_drop_directly_bhops;
 	}
+#ifdef HAVE_LIBZSTD
+	if (sbi->available_compr_algs & (1 << Z_EROFS_COMPRESSION_ZSTD)) {
+		struct {
+			__le16 size;
+			struct z_erofs_zstd_cfgs z;
+		} __packed zalg = {
+			.size = cpu_to_le16(sizeof(struct z_erofs_zstd_cfgs)),
+			.z = {
+				.windowlog =
+					ilog2(max_dict_size[Z_EROFS_COMPRESSION_ZSTD]) - 10,
+			}
+		};
+
+		bh = erofs_battach(bh, META, sizeof(zalg));
+		if (IS_ERR(bh)) {
+			DBG_BUGON(1);
+			return PTR_ERR(bh);
+		}
+		erofs_mapbh(bh->block);
+		ret = dev_write(sbi, &zalg, erofs_btell(bh, false),
+				sizeof(zalg));
+		bh->op = &erofs_drop_directly_bhops;
+	}
+#endif
 	return ret;
 }
 

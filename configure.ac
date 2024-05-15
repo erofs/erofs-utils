@@ -139,6 +139,10 @@ AC_ARG_WITH(libdeflate,
       [Enable and build with libdeflate inflate support @<:@default=disabled@:>@])], [],
       [with_libdeflate="no"])
 
+AC_ARG_WITH(libzstd,
+   [AS_HELP_STRING([--with-libzstd],
+      [Enable and build with of libzstd support @<:@default=auto@:>@])])
+
 AC_ARG_ENABLE(fuse,
    [AS_HELP_STRING([--enable-fuse], [enable erofsfuse @<:@default=no@:>@])],
    [enable_fuse="$enableval"], [enable_fuse="no"])
@@ -474,6 +478,32 @@ AS_IF([test "x$with_libdeflate" != "xno"], [
   LIBS="${saved_LIBS}"
   CPPFLAGS="${saved_CPPFLAGS}"], [have_libdeflate="no"])
 
+# Configure libzstd
+have_libzstd="no"
+AS_IF([test "x$with_libzstd" != "xno"], [
+  PKG_CHECK_MODULES([libzstd], [libzstd >= 1.4.0], [
+    # Paranoia: don't trust the result reported by pkgconfig before trying out
+    saved_LIBS="$LIBS"
+    saved_CPPFLAGS=${CPPFLAGS}
+    CPPFLAGS="${libzstd_CFLAGS} ${CPPFLAGS}"
+    LIBS="${libzstd_LIBS} $LIBS"
+    AC_CHECK_HEADERS([zstd.h],[
+      AC_CHECK_LIB(zstd, ZSTD_compress2, [], [
+        AC_MSG_ERROR([libzstd doesn't work properly])])
+      AC_CHECK_DECL(ZSTD_compress2, [have_libzstd="yes"],
+        [AC_MSG_ERROR([libzstd doesn't work properly])], [[
+#include <zstd.h>
+      ]])
+      AC_CHECK_FUNCS([ZSTD_getFrameContentSize])
+    ])
+    LIBS="${saved_LIBS}"
+    CPPFLAGS="${saved_CPPFLAGS}"], [
+    AS_IF([test "x$with_libzstd" = "xyes"], [
+      AC_MSG_ERROR([Cannot find proper libzstd])
+    ])
+  ])
+])
+
 # Enable 64-bit off_t
 CFLAGS+=" -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
 
@@ -494,6 +524,7 @@ AM_CONDITIONAL([ENABLE_LZ4HC], [test "x${have_lz4hc}" = "xyes"])
 AM_CONDITIONAL([ENABLE_FUSE], [test "x${have_fuse}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LIBLZMA], [test "x${have_liblzma}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LIBDEFLATE], [test "x${have_libdeflate}" = "xyes"])
+AM_CONDITIONAL([ENABLE_LIBZSTD], [test "x${have_libzstd}" = "xyes"])
 
 if test "x$have_uuid" = "xyes"; then
   AC_DEFINE([HAVE_LIBUUID], 1, [Define to 1 if libuuid is found])
@@ -537,6 +568,10 @@ fi
 
 if test "x$have_libdeflate" = "xyes"; then
   AC_DEFINE([HAVE_LIBDEFLATE], 1, [Define to 1 if libdeflate is found])
+fi
+
+if test "x$have_libzstd" = "xyes"; then
+  AC_DEFINE([HAVE_LIBZSTD], 1, [Define to 1 if libzstd is found])
 fi
 
 # Dump maximum block size

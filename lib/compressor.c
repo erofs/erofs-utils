@@ -37,6 +37,14 @@ static const struct erofs_algorithm erofs_algs[] = {
 	{ "libdeflate", &erofs_compressor_libdeflate,
 	  Z_EROFS_COMPRESSION_DEFLATE, true },
 #endif
+
+	{ "zstd",
+#ifdef HAVE_LIBZSTD
+		&erofs_compressor_libzstd,
+#else
+		NULL,
+#endif
+	  Z_EROFS_COMPRESSION_ZSTD, false },
 };
 
 int z_erofs_get_compress_algorithm_id(const struct erofs_compress *c)
