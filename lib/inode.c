@@ -1373,10 +1373,11 @@ err_closedir:
 
 static int erofs_mkfs_handle_inode(struct erofs_inode *inode)
 {
+	const char *relpath = erofs_fspath(inode->i_srcpath);
 	char *trimmed;
 	int ret;
 
-	trimmed = erofs_trim_for_progressinfo(erofs_fspath(inode->i_srcpath),
+	trimmed = erofs_trim_for_progressinfo(relpath[0] ? relpath : "/",
 					      sizeof("Processing  ...") - 1);
 	erofs_update_progressinfo("Processing %s ...", trimmed);
 	free(trimmed);
@@ -1410,8 +1411,7 @@ static int erofs_mkfs_handle_inode(struct erofs_inode *inode)
 	} else {
 		ret = erofs_mkfs_handle_directory(inode);
 	}
-	erofs_info("file %s dumped (mode %05o)", erofs_fspath(inode->i_srcpath),
-		   inode->i_mode);
+	erofs_info("file /%s dumped (mode %05o)", relpath, inode->i_mode);
 	return ret;
 }
 
