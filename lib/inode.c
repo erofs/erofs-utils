@@ -264,7 +264,7 @@ int erofs_init_empty_dir(struct erofs_inode *dir)
 	d = erofs_d_alloc(dir, "..");
 	if (IS_ERR(d))
 		return PTR_ERR(d);
-	d->inode = erofs_igrab(dir->i_parent);
+	d->inode = erofs_igrab(erofs_parent_inode(dir));
 	d->type = EROFS_FT_DIR;
 
 	dir->i_nlink = 2;
@@ -492,29 +492,6 @@ int erofs_write_unencoded_file(struct erofs_inode *inode, int fd, u64 fpos)
 
 	/* fallback to all data uncompressed */
 	return write_uncompressed_file_from_fd(inode, fd);
-}
-
-int erofs_write_file(struct erofs_inode *inode, int fd, u64 fpos)
-{
-	DBG_BUGON(!inode->i_size);
-
-	if (cfg.c_compr_opts[0].alg && erofs_file_is_compressible(inode)) {
-		void *ictx;
-		int ret;
-
-		ictx = erofs_begin_compressed_file(inode, fd, fpos);
-		if (IS_ERR(ictx))
-			return PTR_ERR(ictx);
-
-		ret = erofs_write_compressed_file(ictx);
-		if (ret != -ENOSPC)
-			return ret;
-
-		if (lseek(fd, fpos, SEEK_SET) < 0)
-			return -errno;
-	}
-	/* fallback to all data uncompressed */
-	return erofs_write_unencoded_file(inode, fd, fpos);
 }
 
 static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
@@ -1113,6 +1090,7 @@ struct erofs_mkfs_job_ndir_ctx {
 	struct erofs_inode *inode;
 	void *ictx;
 	int fd;
+	u64 fpos;
 };
 
 static int erofs_mkfs_job_write_file(struct erofs_mkfs_job_ndir_ctx *ctx)
@@ -1120,19 +1098,31 @@ static int erofs_mkfs_job_write_file(struct erofs_mkfs_job_ndir_ctx *ctx)
 	struct erofs_inode *inode = ctx->inode;
 	int ret;
 
+	if (inode->with_diskbuf && lseek(ctx->fd, ctx->fpos, SEEK_SET) < 0) {
+		ret = -errno;
+		goto out;
+	}
+
 	if (ctx->ictx) {
 		ret = erofs_write_compressed_file(ctx->ictx);
 		if (ret != -ENOSPC)
 			goto out;
-		if (lseek(ctx->fd, 0, SEEK_SET) < 0) {
+		if (lseek(ctx->fd, ctx->fpos, SEEK_SET) < 0) {
 			ret = -errno;
 			goto out;
 		}
 	}
 	/* fallback to all data uncompressed */
-	ret = erofs_write_unencoded_file(inode, ctx->fd, 0);
+	ret = erofs_write_unencoded_file(inode, ctx->fd, ctx->fpos);
 out:
-	close(ctx->fd);
+	if (inode->with_diskbuf) {
+		erofs_diskbuf_close(inode->i_diskbuf);
+		free(inode->i_diskbuf);
+		inode->i_diskbuf = NULL;
+		inode->with_diskbuf = false;
+	} else {
+		close(ctx->fd);
+	}
 	return ret;
 }
 
@@ -1142,17 +1132,21 @@ static int erofs_mkfs_handle_nondirectory(struct erofs_mkfs_job_ndir_ctx *ctx)
 	int ret = 0;
 
 	if (S_ISLNK(inode->i_mode)) {
-		char *const symlink = malloc(inode->i_size);
+		char *symlink = inode->i_link;
 
-		if (!symlink)
-			return -ENOMEM;
-		ret = readlink(inode->i_srcpath, symlink, inode->i_size);
-		if (ret < 0) {
-			free(symlink);
-			return -errno;
+		if (!symlink) {
+			symlink = malloc(inode->i_size);
+			if (!symlink)
+				return -ENOMEM;
+			ret = readlink(inode->i_srcpath, symlink, inode->i_size);
+			if (ret < 0) {
+				free(symlink);
+				return -errno;
+			}
 		}
 		ret = erofs_write_file_from_buffer(inode, symlink);
 		free(symlink);
+		inode->i_link = NULL;
 	} else if (inode->i_size) {
 		ret = erofs_mkfs_job_write_file(ctx);
 	}
@@ -1371,6 +1365,43 @@ err_closedir:
 	return ret;
 }
 
+static int erofs_rebuild_handle_directory(struct erofs_inode *dir)
+{
+	struct erofs_dentry *d, *n;
+	unsigned int nr_subdirs, i_nlink;
+	int ret;
+
+	nr_subdirs = 0;
+	i_nlink = 2;
+	list_for_each_entry_safe(d, n, &dir->i_subdirs, d_child) {
+		if (cfg.c_ovlfs_strip && erofs_inode_is_whiteout(d->inode)) {
+			erofs_dbg("remove whiteout %s", d->inode->i_srcpath);
+			list_del(&d->d_child);
+			erofs_d_invalidate(d);
+			free(d);
+			continue;
+		}
+		i_nlink += S_ISDIR(d->inode->i_mode);
+		++nr_subdirs;
+	}
+
+	ret = erofs_prepare_dir_layout(dir, nr_subdirs);
+	if (ret)
+		return ret;
+
+	/*
+	 * if there're too many subdirs as compact form, set nlink=1
+	 * rather than upgrade to use extented form instead.
+	 */
+	if (i_nlink > USHRT_MAX &&
+	    dir->inode_isize == sizeof(struct erofs_inode_compact))
+		dir->i_nlink = 1;
+	else
+		dir->i_nlink = i_nlink;
+
+	return erofs_mkfs_go(dir->sbi, EROFS_MKFS_JOB_DIR, &dir, sizeof(dir));
+}
+
 static int erofs_mkfs_handle_inode(struct erofs_inode *inode)
 {
 	const char *relpath = erofs_fspath(inode->i_srcpath);
@@ -1415,27 +1446,89 @@ static int erofs_mkfs_handle_inode(struct erofs_inode *inode)
 	return ret;
 }
 
-#ifndef EROFS_MT_ENABLED
-#define __erofs_mkfs_build_tree_from_path erofs_mkfs_build_tree_from_path
-#endif
-
-struct erofs_inode *__erofs_mkfs_build_tree_from_path(const char *path)
+static int erofs_rebuild_handle_inode(struct erofs_inode *inode)
 {
-	struct erofs_inode *root, *dumpdir;
+	char *trimmed;
+	int ret;
+
+	trimmed = erofs_trim_for_progressinfo(erofs_fspath(inode->i_srcpath),
+					      sizeof("Processing  ...") - 1);
+	erofs_update_progressinfo("Processing %s ...", trimmed);
+	free(trimmed);
+
+	if (erofs_should_use_inode_extended(inode)) {
+		if (cfg.c_force_inodeversion == FORCE_INODE_COMPACT) {
+			erofs_err("file %s cannot be in compact form",
+				  inode->i_srcpath);
+			return -EINVAL;
+		}
+		inode->inode_isize = sizeof(struct erofs_inode_extended);
+	} else {
+		inode->inode_isize = sizeof(struct erofs_inode_compact);
+	}
+
+	/* strip all unnecessary overlayfs xattrs when ovlfs_strip is enabled */
+	if (cfg.c_ovlfs_strip)
+		erofs_clear_opaque_xattr(inode);
+	else if (inode->whiteouts)
+		erofs_set_origin_xattr(inode);
+
+	ret = erofs_prepare_xattr_ibody(inode);
+	if (ret < 0)
+		return ret;
+
+	if (!S_ISDIR(inode->i_mode)) {
+		struct erofs_mkfs_job_ndir_ctx ctx = { .inode = inode };
+
+		if (!S_ISLNK(inode->i_mode) && inode->i_size) {
+			DBG_BUGON(!inode->with_diskbuf);
+			ctx.fd = erofs_diskbuf_getfd(inode->i_diskbuf, &ctx.fpos);
+			if (ctx.fd < 0)
+				return ret;
+
+			if (cfg.c_compr_opts[0].alg &&
+			    erofs_file_is_compressible(inode)) {
+				ctx.ictx = erofs_begin_compressed_file(inode,
+							ctx.fd, ctx.fpos);
+				if (IS_ERR(ctx.ictx))
+					return PTR_ERR(ctx.ictx);
+			}
+		}
+		ret = erofs_mkfs_go(inode->sbi, EROFS_MKFS_JOB_NDIR,
+				    &ctx, sizeof(ctx));
+	} else {
+		ret = erofs_rebuild_handle_directory(inode);
+	}
+	erofs_info("file %s dumped (mode %05o)", erofs_fspath(inode->i_srcpath),
+		   inode->i_mode);
+	return ret;
+}
+
+static bool erofs_inode_visited(struct erofs_inode *inode)
+{
+	return (unsigned long)inode->i_parent & 1UL;
+}
+
+static void erofs_mark_parent_inode(struct erofs_inode *inode,
+				    struct erofs_inode *dir)
+{
+	inode->i_parent = (void *)((unsigned long)dir | 1);
+}
+
+static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild)
+{
+	struct erofs_inode *dumpdir;
 	int err;
 
-	root = erofs_iget_from_path(path, true);
-	if (IS_ERR(root))
-		return root;
-
-	root->i_parent = root;	/* rootdir mark */
+	erofs_mark_parent_inode(root, root);	/* rootdir mark */
 	root->next_dirwrite = NULL;
 	(void)erofs_igrab(root);
 	dumpdir = root;
 
-	err = erofs_mkfs_handle_inode(root);
+	err = !rebuild ? erofs_mkfs_handle_inode(root) :
+			erofs_rebuild_handle_inode(root);
 	if (err)
-		return ERR_PTR(err);
+		return err;
 
 	do {
 		int err;
@@ -1450,21 +1543,25 @@ struct erofs_inode *__erofs_mkfs_build_tree_from_path(const char *path)
 
 			if (is_dot_dotdot(d->name))
 				continue;
-			if (inode->i_parent) {
-				++inode->i_nlink;
-			} else {
-				inode->i_parent = dir;
 
-				err = erofs_mkfs_handle_inode(inode);
-				if (err) {
-					root = ERR_PTR(err);
+			if (!erofs_inode_visited(inode)) {
+				DBG_BUGON(rebuild &&
+					  erofs_parent_inode(inode) != dir);
+				erofs_mark_parent_inode(inode, dir);
+
+				if (!rebuild)
+					err = erofs_mkfs_handle_inode(inode);
+				else
+					err = erofs_rebuild_handle_inode(inode);
+				if (err)
 					break;
-				}
 				if (S_ISDIR(inode->i_mode)) {
 					*last = inode;
 					last = &inode->next_dirwrite;
 					(void)erofs_igrab(inode);
 				}
+			} else if (!rebuild) {
+				++inode->i_nlink;
 			}
 		}
 		*last = dumpdir;	/* fixup the last (or the only) one */
@@ -1472,28 +1569,61 @@ struct erofs_inode *__erofs_mkfs_build_tree_from_path(const char *path)
 		err = erofs_mkfs_go(dir->sbi, EROFS_MKFS_JOB_DIR_BH,
 				    &dir, sizeof(dir));
 		if (err)
-			return ERR_PTR(err);
+			return err;
 	} while (dumpdir);
 
-	return root;
+	return err;
 }
 
-#ifdef EROFS_MT_ENABLED
-struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
+struct erofs_mkfs_buildtree_ctx {
+	union {
+		const char *path;
+		struct erofs_inode *root;
+	} u;
+	bool from_path;
+};
+#ifndef EROFS_MT_ENABLED
+#define __erofs_mkfs_build_tree erofs_mkfs_build_tree
+#endif
+
+static int __erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 {
-	struct erofs_mkfs_dfops *q;
 	struct erofs_inode *root;
 	int err;
 
+	if (ctx->from_path) {
+		root = erofs_iget_from_path(ctx->u.path, true);
+		if (IS_ERR(root))
+			return PTR_ERR(root);
+	} else {
+		root = ctx->u.root;
+	}
+
+	err = erofs_mkfs_dump_tree(root, !ctx->from_path);
+	if (err) {
+		if (ctx->from_path)
+			erofs_iput(root);
+		return err;
+	}
+	ctx->u.root = root;
+	return 0;
+}
+
+#ifdef EROFS_MT_ENABLED
+static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
+{
+	struct erofs_mkfs_dfops *q;
+	int err, err2;
+
 	q = malloc(sizeof(*q));
 	if (!q)
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 
 	q->entries = EROFS_MT_QUEUE_SIZE;
 	q->queue = malloc(q->entries * sizeof(*q->queue));
 	if (!q->queue) {
 		free(q);
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 	}
 	pthread_mutex_init(&q->lock, NULL);
 	pthread_cond_init(&q->empty, NULL);
@@ -1506,10 +1636,12 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
 			     z_erofs_mt_dfops_worker, &sbi);
 	if (err)
 		goto fail;
-	root = __erofs_mkfs_build_tree_from_path(path);
 
+	err = __erofs_mkfs_build_tree(ctx);
 	erofs_mkfs_go(&sbi, ~0, NULL, 0);
-	err = pthread_join(sbi.dfops_worker, NULL);
+	err2 = pthread_join(sbi.dfops_worker, NULL);
+	if (!err)
+		err = err2;
 
 fail:
 	pthread_cond_destroy(&q->empty);
@@ -1517,9 +1649,31 @@ fail:
 	pthread_mutex_destroy(&q->lock);
 	free(q->queue);
 	free(q);
-	return err ? ERR_PTR(err) : root;
+	return err;
 }
 #endif
+
+struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
+{
+	struct erofs_mkfs_buildtree_ctx ctx = {
+		.from_path = true,
+		.u.path = path,
+	};
+	int err;
+
+	err = erofs_mkfs_build_tree(&ctx);
+	if (err)
+		return ERR_PTR(err);
+	return ctx.u.root;
+}
+
+int erofs_rebuild_dump_tree(struct erofs_inode *root)
+{
+	return erofs_mkfs_build_tree(&((struct erofs_mkfs_buildtree_ctx) {
+		.from_path = false,
+		.u.root = root,
+	}));
+}
 
 struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
 {
@@ -1577,103 +1731,4 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
 	erofs_prepare_inode_buffer(inode);
 	erofs_write_tail_end(inode);
 	return inode;
-}
-
-int erofs_rebuild_dump_tree(struct erofs_inode *dir)
-{
-	struct erofs_dentry *d, *n;
-	unsigned int nr_subdirs;
-	int ret;
-
-	if (erofs_should_use_inode_extended(dir)) {
-		if (cfg.c_force_inodeversion == FORCE_INODE_COMPACT) {
-			erofs_err("file %s cannot be in compact form",
-				  dir->i_srcpath);
-			return -EINVAL;
-		}
-		dir->inode_isize = sizeof(struct erofs_inode_extended);
-	} else {
-		dir->inode_isize = sizeof(struct erofs_inode_compact);
-	}
-
-	/* strip all unnecessary overlayfs xattrs when ovlfs_strip is enabled */
-	if (cfg.c_ovlfs_strip)
-		erofs_clear_opaque_xattr(dir);
-	else if (dir->whiteouts)
-		erofs_set_origin_xattr(dir);
-
-	ret = erofs_prepare_xattr_ibody(dir);
-	if (ret < 0)
-		return ret;
-
-	if (!S_ISDIR(dir->i_mode)) {
-		if (dir->bh)
-			return 0;
-		if (S_ISLNK(dir->i_mode)) {
-			ret = erofs_write_file_from_buffer(dir, dir->i_link);
-			free(dir->i_link);
-			dir->i_link = NULL;
-		} else if (dir->with_diskbuf) {
-			u64 fpos;
-
-			ret = erofs_diskbuf_getfd(dir->i_diskbuf, &fpos);
-			if (ret >= 0)
-				ret = erofs_write_file(dir, ret, fpos);
-			erofs_diskbuf_close(dir->i_diskbuf);
-			free(dir->i_diskbuf);
-			dir->i_diskbuf = NULL;
-			dir->with_diskbuf = false;
-		} else {
-			ret = 0;
-		}
-		if (ret)
-			return ret;
-		ret = erofs_prepare_inode_buffer(dir);
-		if (ret)
-			return ret;
-		erofs_write_tail_end(dir);
-		return 0;
-	}
-
-	nr_subdirs = 0;
-	list_for_each_entry_safe(d, n, &dir->i_subdirs, d_child) {
-		if (cfg.c_ovlfs_strip && erofs_inode_is_whiteout(d->inode)) {
-			erofs_dbg("remove whiteout %s", d->inode->i_srcpath);
-			list_del(&d->d_child);
-			erofs_d_invalidate(d);
-			free(d);
-			continue;
-		}
-		++nr_subdirs;
-	}
-
-	ret = erofs_prepare_dir_layout(dir, nr_subdirs);
-	if (ret)
-		return ret;
-
-	ret = erofs_prepare_inode_buffer(dir);
-	if (ret)
-		return ret;
-	dir->bh->op = &erofs_skip_write_bhops;
-
-	if (IS_ROOT(dir))
-		erofs_fixup_meta_blkaddr(dir);
-
-	list_for_each_entry(d, &dir->i_subdirs, d_child) {
-		struct erofs_inode *inode;
-
-		if (is_dot_dotdot(d->name))
-			continue;
-
-		inode = erofs_igrab(d->inode);
-		ret = erofs_rebuild_dump_tree(inode);
-		dir->i_nlink += (erofs_mode_to_ftype(inode->i_mode) == EROFS_FT_DIR);
-		erofs_iput(inode);
-		if (ret)
-			return ret;
-	}
-	erofs_write_dir_file(dir);
-	erofs_write_tail_end(dir);
-	dir->bh->op = &erofs_write_inode_bhops;
-	return 0;
 }

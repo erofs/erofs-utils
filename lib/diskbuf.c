@@ -10,7 +10,7 @@
 
 /* A simple approach to avoid creating too many temporary files */
 static struct erofs_diskbufstrm {
-	u64 count;
+	erofs_atomic_t count;
 	u64 tailoffset, devpos;
 	int fd;
 	unsigned int alignsize;
@@ -25,8 +25,6 @@ int erofs_diskbuf_getfd(struct erofs_diskbuf *db, u64 *fpos)
 	if (!strm)
 		return -1;
 	offset = db->offset + strm->devpos;
-	if (lseek(strm->fd, offset, SEEK_SET) != offset)
-		return -E2BIG;
 	if (fpos)
 		*fpos = offset;
 	return strm->fd;
@@ -46,7 +44,7 @@ int erofs_diskbuf_reserve(struct erofs_diskbuf *db, int sid, u64 *off)
 	if (off)
 		*off = db->offset + strm->devpos;
 	db->sp = strm;
-	++strm->count;
+	(void)erofs_atomic_inc_return(&strm->count);
 	strm->locked = true;	/* TODO: need a real lock for MT */
 	return strm->fd;
 }
@@ -66,8 +64,8 @@ void erofs_diskbuf_close(struct erofs_diskbuf *db)
 	struct erofs_diskbufstrm *strm = db->sp;
 
 	DBG_BUGON(!strm);
-	DBG_BUGON(strm->count <= 1);
-	--strm->count;
+	DBG_BUGON(erofs_atomic_read(&strm->count) <= 1);
+	(void)erofs_atomic_dec_return(&strm->count);
 	db->sp = NULL;
 }
 
@@ -122,7 +120,7 @@ int erofs_diskbuf_init(unsigned int nstrms)
 			return -ENOSPC;
 setupone:
 		strm->tailoffset = 0;
-		strm->count = 1;
+		erofs_atomic_set(&strm->count, 1);
 		if (fstat(strm->fd, &st))
 			return -errno;
 		strm->alignsize = max_t(u32, st.st_blksize, getpagesize());
@@ -138,7 +136,7 @@ void erofs_diskbuf_exit(void)
 		return;
 
 	for (strm = dbufstrm; strm->fd >= 0; ++strm) {
-		DBG_BUGON(strm->count != 1);
+		DBG_BUGON(erofs_atomic_read(&strm->count) != 1);
 
 		close(strm->fd);
 		strm->fd = -1;

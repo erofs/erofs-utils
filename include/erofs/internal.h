@@ -290,7 +290,12 @@ static inline unsigned int erofs_inode_datalayout(unsigned int value)
 			      EROFS_I_DATALAYOUT_BITS);
 }
 
-#define IS_ROOT(x)	((x) == (x)->i_parent)
+static inline struct erofs_inode *erofs_parent_inode(struct erofs_inode *inode)
+{
+	return (void *)((unsigned long)inode->i_parent & ~1UL);
+}
+
+#define IS_ROOT(x)	((x) == erofs_parent_inode(x))
 
 struct erofs_dentry {
 	struct list_head d_child;	/* child of parent list */
