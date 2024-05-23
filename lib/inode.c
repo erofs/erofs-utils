@@ -1710,24 +1710,24 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
 		inode->nid = inode->sbi->packed_nid;
 	}
 
-	ictx = erofs_begin_compressed_file(inode, fd, 0);
-	if (IS_ERR(ictx))
-		return ERR_CAST(ictx);
+	if (cfg.c_compr_opts[0].alg &&
+	    erofs_file_is_compressible(inode)) {
+		ictx = erofs_begin_compressed_file(inode, fd, 0);
+		if (IS_ERR(ictx))
+			return ERR_CAST(ictx);
 
-	DBG_BUGON(!ictx);
-	ret = erofs_write_compressed_file(ictx);
-	if (ret == -ENOSPC) {
+		DBG_BUGON(!ictx);
+		ret = erofs_write_compressed_file(ictx);
+		if (ret && ret != -ENOSPC)
+			 return ERR_PTR(ret);
+
 		ret = lseek(fd, 0, SEEK_SET);
 		if (ret < 0)
 			return ERR_PTR(-errno);
-
-		ret = write_uncompressed_file_from_fd(inode, fd);
 	}
-
-	if (ret) {
-		DBG_BUGON(ret == -ENOSPC);
+	ret = write_uncompressed_file_from_fd(inode, fd);
+	if (ret)
 		return ERR_PTR(ret);
-	}
 	erofs_prepare_inode_buffer(inode);
 	erofs_write_tail_end(inode);
 	return inode;
