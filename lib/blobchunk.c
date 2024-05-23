@@ -548,11 +548,17 @@ void erofs_blob_exit(void)
 	if (blobfile)
 		fclose(blobfile);
 
-	while ((e = hashmap_iter_first(&blob_hashmap, &iter))) {
+	/* Disable hashmap shrink, effectively disabling rehash.
+	 * This way we can iterate over entire hashmap efficiently
+	 * and safely by using hashmap_iter_next() */
+	hashmap_disable_shrink(&blob_hashmap);
+	e = hashmap_iter_first(&blob_hashmap, &iter);
+	while (e) {
 		bc = container_of((struct hashmap_entry *)e,
 				  struct erofs_blobchunk, ent);
 		DBG_BUGON(hashmap_remove(&blob_hashmap, e) != e);
 		free(bc);
+		e = hashmap_iter_next(&iter);
 	}
 	DBG_BUGON(hashmap_free(&blob_hashmap));
 
