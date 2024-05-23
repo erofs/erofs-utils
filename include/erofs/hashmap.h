@@ -97,6 +97,10 @@ static inline void *hashmap_iter_first(struct hashmap *map,
 	return hashmap_iter_next(iter);
 }
 
+static inline void hashmap_disable_shrink(struct hashmap * map)
+{
+	map->shrink_at = 0;
+}
 /* string interning */
 const void *memintern(const void *data, size_t len);
 static inline const char *strintern(const char *string)
