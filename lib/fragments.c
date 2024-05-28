@@ -289,6 +289,8 @@ int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd,
 	if (memblock)
 		rc = z_erofs_fragments_dedupe_insert(memblock,
 			inode->fragment_size, inode->fragmentoff, tofcrc);
+	else
+		rc = 0;
 out:
 	if (memblock)
 		munmap(memblock, inode->i_size);

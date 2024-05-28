@@ -100,7 +100,7 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 		struct z_erofs_dedupe_item *e;
 
 		unsigned int extra = 0;
-		u64 xxh64_csum;
+		u64 xxh64_csum = 0;
 		u8 sha256[32];
 
 		if (initial) {

@@ -420,7 +420,7 @@ static void *erofs_read_metadata_bdi(struct erofs_sb_info *sbi,
 	ret = blk_read(sbi, 0, data, erofs_blknr(sbi, *offset), 1);
 	if (ret)
 		return ERR_PTR(ret);
-	len = le16_to_cpu(*(__le16 *)&data[erofs_blkoff(sbi, *offset)]);
+	len = le16_to_cpu(*(__le16 *)(data + erofs_blkoff(sbi, *offset)));
 	if (!len)
 		return ERR_PTR(-EFSCORRUPTED);
 
