@@ -166,14 +166,6 @@ static unsigned int BKDRHash(char *str, unsigned int len)
 	return hash;
 }
 
-static unsigned int xattr_item_hash(char *buf, unsigned int len[2],
-				    unsigned int hash[2])
-{
-	hash[0] = BKDRHash(buf, len[0]);	/* key */
-	hash[1] = BKDRHash(buf + len[0], len[1]);	/* value */
-	return hash[0] ^ hash[1];
-}
-
 static unsigned int put_xattritem(struct xattr_item *item)
 {
 	if (item->count > 1)
@@ -188,11 +180,13 @@ static struct xattr_item *get_xattritem(char *kvbuf, unsigned int len[2])
 	struct ea_type_node *tnode;
 	unsigned int hash[2], hkey;
 
-	hkey = xattr_item_hash(kvbuf, len, hash);
+	hash[0] = BKDRHash(kvbuf, len[0]);
+	hash[1] = BKDRHash(kvbuf + EROFS_XATTR_KSIZE(len), len[1]);
+	hkey = hash[0] ^ hash[1];
 	hash_for_each_possible(ea_hashtable, item, node, hkey) {
 		if (item->len[0] == len[0] && item->len[1] == len[1] &&
 		    item->hash[0] == hash[0] && item->hash[1] == hash[1] &&
-		    !memcmp(kvbuf, item->kvbuf, len[0] + len[1])) {
+		    !memcmp(kvbuf, item->kvbuf, EROFS_XATTR_KVSIZE(len))) {
 			free(kvbuf);
 			++item->count;
 			return item;
