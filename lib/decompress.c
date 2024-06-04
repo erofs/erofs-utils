@@ -9,6 +9,15 @@
 #include "erofs/err.h"
 #include "erofs/print.h"
 
+static unsigned int z_erofs_fixup_insize(const u8 *padbuf, unsigned int padbufsize)
+{
+	unsigned int inputmargin;
+
+	for (inputmargin = 0; inputmargin < padbufsize &&
+	     !padbuf[inputmargin]; ++inputmargin);
+	return inputmargin;
+}
+
 #ifdef HAVE_LIBZSTD
 #include <zstd.h>
 #include <zstd_errors.h>
@@ -16,7 +25,6 @@
 /* also a very preliminary userspace version */
 static int z_erofs_decompress_zstd(struct z_erofs_decompress_req *rq)
 {
-	struct erofs_sb_info *sbi = rq->sbi;
 	int ret = 0;
 	char *dest = rq->out;
 	char *src = rq->in;
@@ -24,10 +32,7 @@ static int z_erofs_decompress_zstd(struct z_erofs_decompress_req *rq)
 	unsigned int inputmargin = 0;
 	unsigned long long total;
 
-	while (!src[inputmargin & (erofs_blksiz(sbi) - 1)])
-		if (!(++inputmargin & (erofs_blksiz(sbi) - 1)))
-			break;
-
+	inputmargin = z_erofs_fixup_insize((u8 *)src, rq->inputsize);
 	if (inputmargin >= rq->inputsize)
 		return -EFSCORRUPTED;
 
@@ -78,19 +83,15 @@ out:
 
 static int z_erofs_decompress_deflate(struct z_erofs_decompress_req *rq)
 {
-	struct erofs_sb_info *sbi = rq->sbi;
 	u8 *dest = (u8 *)rq->out;
 	u8 *src = (u8 *)rq->in;
 	u8 *buff = NULL;
 	size_t actual_out;
-	unsigned int inputmargin = 0;
+	unsigned int inputmargin;
 	struct libdeflate_decompressor *inf;
 	enum libdeflate_result ret;
 
-	while (!src[inputmargin & (erofs_blksiz(sbi) - 1)])
-		if (!(++inputmargin & (erofs_blksiz(sbi) - 1)))
-			break;
-
+	inputmargin = z_erofs_fixup_insize(src, rq->inputsize);
 	if (inputmargin >= rq->inputsize)
 		return -EFSCORRUPTED;
 
@@ -160,18 +161,14 @@ static int zerr(int ret)
 
 static int z_erofs_decompress_deflate(struct z_erofs_decompress_req *rq)
 {
-	struct erofs_sb_info *sbi = rq->sbi;
 	u8 *dest = (u8 *)rq->out;
 	u8 *src = (u8 *)rq->in;
 	u8 *buff = NULL;
-	unsigned int inputmargin = 0;
+	unsigned int inputmargin;
 	z_stream strm;
 	int ret;
 
-	while (!src[inputmargin & (erofs_blksiz(sbi) - 1)])
-		if (!(++inputmargin & (erofs_blksiz(sbi) - 1)))
-			break;
-
+	inputmargin = z_erofs_fixup_insize(src, rq->inputsize);
 	if (inputmargin >= rq->inputsize)
 		return -EFSCORRUPTED;
 
@@ -225,18 +222,14 @@ out_inflate_end:
 static int z_erofs_decompress_lzma(struct z_erofs_decompress_req *rq)
 {
 	int ret = 0;
-	struct erofs_sb_info *sbi = rq->sbi;
 	u8 *dest = (u8 *)rq->out;
 	u8 *src = (u8 *)rq->in;
 	u8 *buff = NULL;
-	unsigned int inputmargin = 0;
+	unsigned int inputmargin;
 	lzma_stream strm;
 	lzma_ret ret2;
 
-	while (!src[inputmargin & (erofs_blksiz(sbi) - 1)])
-		if (!(++inputmargin & (erofs_blksiz(sbi) - 1)))
-			break;
-
+	inputmargin = z_erofs_fixup_insize(src, rq->inputsize);
 	if (inputmargin >= rq->inputsize)
 		return -EFSCORRUPTED;
 
@@ -297,12 +290,9 @@ static int z_erofs_decompress_lz4(struct z_erofs_decompress_req *rq)
 	if (erofs_sb_has_lz4_0padding(sbi)) {
 		support_0padding = true;
 
-		while (!src[inputmargin & (erofs_blksiz(sbi) - 1)])
-			if (!(++inputmargin & (erofs_blksiz(sbi) - 1)))
-				break;
-
+		inputmargin = z_erofs_fixup_insize((u8 *)src, rq->inputsize);
 		if (inputmargin >= rq->inputsize)
-			return -EIO;
+			return -EFSCORRUPTED;
 	}
 
 	if (rq->decodedskip) {
