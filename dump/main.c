@@ -654,8 +654,8 @@ static void erofsdump_show_superblock(void)
 		fprintf(stdout, "Filesystem lz4_max_distance:                  %u\n",
 			sbi.lz4_max_distance | 0U);
 	}
-	fprintf(stdout, "Filesystem sb_extslots:                       %u\n",
-			sbi.extslots | 0U);
+	fprintf(stdout, "Filesystem sb_size:                           %u\n",
+			sbi.sb_size | 0U);
 	fprintf(stdout, "Filesystem inode count:                       %llu\n",
 			sbi.inos | 0ULL);
 	fprintf(stdout, "Filesystem created:                           %s",

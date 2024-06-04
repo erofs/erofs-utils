@@ -84,12 +84,13 @@ struct erofs_sb_info {
 
 	u32 feature_compat;
 	u32 feature_incompat;
-	u64 build_time;
-	u32 build_time_nsec;
 
-	u8  extslots;
 	unsigned char islotbits;
 	unsigned char blkszbits;
+
+	u32 sb_size;			/* total superblock size */
+	u32 build_time_nsec;
+	u64 build_time;
 
 	/* what we really care is nid, rather than ino.. */
 	erofs_nid_t root_nid;
