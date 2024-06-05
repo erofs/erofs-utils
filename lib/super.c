@@ -126,10 +126,9 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 
 	memcpy(&sbi->uuid, dsb->uuid, sizeof(dsb->uuid));
 
-	if (erofs_sb_has_compr_cfgs(sbi))
-		sbi->available_compr_algs = le16_to_cpu(dsb->u1.available_compr_algs);
-	else
-		sbi->lz4_max_distance = le16_to_cpu(dsb->u1.lz4_max_distance);
+	ret = z_erofs_parse_cfgs(sbi, dsb);
+	if (ret)
+		return ret;
 
 	ret = erofs_init_devices(sbi, dsb);
 	if (ret)

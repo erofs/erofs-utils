@@ -410,6 +410,7 @@ int z_erofs_read_one_data(struct erofs_inode *inode,
 			erofs_off_t skip, erofs_off_t length, bool trimmed);
 void *erofs_read_metadata(struct erofs_sb_info *sbi, erofs_nid_t nid,
 			  erofs_off_t *offset, int *lengthp);
+int z_erofs_parse_cfgs(struct erofs_sb_info *sbi, struct erofs_super_block *dsb);
 
 static inline int erofs_get_occupied_size(const struct erofs_inode *inode,
 					  erofs_off_t *size)

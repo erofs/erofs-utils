@@ -382,3 +382,44 @@ int z_erofs_decompress(struct z_erofs_decompress_req *rq)
 #endif
 	return -EOPNOTSUPP;
 }
+
+int z_erofs_parse_cfgs(struct erofs_sb_info *sbi, struct erofs_super_block *dsb)
+{
+	unsigned int algs, alg;
+	erofs_off_t offset;
+	int size, ret = 0;
+
+	if (!erofs_sb_has_compr_cfgs(sbi)) {
+		sbi->available_compr_algs = 1 << Z_EROFS_COMPRESSION_LZ4;
+		sbi->lz4_max_distance = le16_to_cpu(dsb->u1.lz4_max_distance);
+		return 0;
+	}
+
+	sbi->available_compr_algs = le16_to_cpu(dsb->u1.available_compr_algs);
+	if (sbi->available_compr_algs & ~Z_EROFS_ALL_COMPR_ALGS) {
+		erofs_err("unidentified algorithms %x, please upgrade erofs-utils",
+			  sbi->available_compr_algs & ~Z_EROFS_ALL_COMPR_ALGS);
+		return -EOPNOTSUPP;
+	}
+
+	offset = EROFS_SUPER_OFFSET + sbi->sb_size;
+	alg = 0;
+	for (algs = sbi->available_compr_algs; algs; algs >>= 1, ++alg) {
+		void *data;
+
+		if (!(algs & 1))
+			continue;
+
+		data = erofs_read_metadata(sbi, 0, &offset, &size);
+		if (IS_ERR(data)) {
+			ret = PTR_ERR(data);
+			break;
+		}
+
+		ret = 0;
+		free(data);
+		if (ret)
+			break;
+	}
+	return ret;
+}
