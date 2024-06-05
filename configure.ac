@@ -143,6 +143,11 @@ AC_ARG_WITH(libzstd,
    [AS_HELP_STRING([--with-libzstd],
       [Enable and build with of libzstd support @<:@default=auto@:>@])])
 
+AC_ARG_WITH(qpl,
+   [AS_HELP_STRING([--with-qpl],
+      [Enable and build with Intel QPL support @<:@default=disabled@:>@])], [],
+      [with_qpl="no"])
+
 AC_ARG_ENABLE(fuse,
    [AS_HELP_STRING([--enable-fuse], [enable erofsfuse @<:@default=no@:>@])],
    [enable_fuse="$enableval"], [enable_fuse="no"])
@@ -504,6 +509,31 @@ AS_IF([test "x$with_libzstd" != "xno"], [
   ])
 ])
 
+# Configure Intel QPL
+have_qpl="no"
+AS_IF([test "x$with_qpl" != "xno"], [
+  PKG_CHECK_MODULES([libqpl], [qpl >= 1.5.0], [
+    # Paranoia: don't trust the result reported by pkgconfig before trying out
+    saved_LIBS="$LIBS"
+    saved_CPPFLAGS=${CPPFLAGS}
+    CPPFLAGS="${libqpl_CFLAGS} ${CPPFLAGS}"
+    LIBS="${libqpl_LIBS} $LIBS"
+    AC_CHECK_HEADERS([qpl/qpl.h],[
+      AC_CHECK_LIB(qpl, qpl_execute_job, [], [
+        AC_MSG_ERROR([libqpl doesn't work properly])])
+      AC_CHECK_DECL(qpl_execute_job, [have_qpl="yes"],
+        [AC_MSG_ERROR([libqpl doesn't work properly])], [[
+#include <qpl/qpl.h>
+      ]])
+    ])
+    LIBS="${saved_LIBS}"
+    CPPFLAGS="${saved_CPPFLAGS}"], [
+    AS_IF([test "x$with_qpl" = "xyes"], [
+      AC_MSG_ERROR([Cannot find proper libqpl])
+    ])
+  ])
+])
+
 # Enable 64-bit off_t
 CFLAGS+=" -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
 
@@ -525,6 +555,7 @@ AM_CONDITIONAL([ENABLE_FUSE], [test "x${have_fuse}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LIBLZMA], [test "x${have_liblzma}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LIBDEFLATE], [test "x${have_libdeflate}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LIBZSTD], [test "x${have_libzstd}" = "xyes"])
+AM_CONDITIONAL([ENABLE_QPL], [test "x${have_qpl}" = "xyes"])
 
 if test "x$have_uuid" = "xyes"; then
   AC_DEFINE([HAVE_LIBUUID], 1, [Define to 1 if libuuid is found])
@@ -572,6 +603,12 @@ fi
 
 if test "x$have_libzstd" = "xyes"; then
   AC_DEFINE([HAVE_LIBZSTD], 1, [Define to 1 if libzstd is found])
+fi
+
+if test "x$have_qpl" = "xyes"; then
+  AC_DEFINE([HAVE_QPL], 1, [Define to 1 if qpl is found])
+  AC_SUBST([libqpl_LIBS])
+  AC_SUBST([libqpl_CFLAGS])
 fi
 
 # Dump maximum block size

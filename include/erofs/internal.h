@@ -131,6 +131,7 @@ struct erofs_sb_info {
 	pthread_t dfops_worker;
 	struct erofs_mkfs_dfops *mkfs_dfops;
 #endif
+	bool useqpl;
 };
 
 /* make sure that any user of the erofs headers has atleast 64bit off_t type */
