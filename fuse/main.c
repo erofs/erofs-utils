@@ -10,7 +10,6 @@
 #include "macosx.h"
 #include "erofs/config.h"
 #include "erofs/print.h"
-#include "erofs/io.h"
 #include "erofs/dir.h"
 #include "erofs/inode.h"
 
@@ -574,7 +573,7 @@ static int optional_opt_func(void *data, const char *arg, int key,
 
 	switch (key) {
 	case 1:
-		ret = blob_open_ro(&sbi, arg + sizeof("--device=") - 1);
+		ret = erofs_blob_open_ro(&sbi, arg + sizeof("--device=") - 1);
 		if (ret)
 			return -1;
 		++sbi.extra_devices;
@@ -676,8 +675,8 @@ int main(int argc, char *argv[])
 	if (fusecfg.odebug && cfg.c_dbg_lvl < EROFS_DBG)
 		cfg.c_dbg_lvl = EROFS_DBG;
 
-	sbi.diskoffset = fusecfg.offset;
-	ret = dev_open_ro(&sbi, fusecfg.disk);
+	sbi.bdev.offset = fusecfg.offset;
+	ret = erofs_dev_open(&sbi, fusecfg.disk, O_RDONLY);
 	if (ret) {
 		fprintf(stderr, "failed to open: %s\n", fusecfg.disk);
 		goto err_fuse_free_args;
@@ -747,8 +746,8 @@ int main(int argc, char *argv[])
 err_super_put:
 	erofs_put_super(&sbi);
 err_dev_close:
-	blob_closeall(&sbi);
-	dev_close(&sbi);
+	erofs_blob_closeall(&sbi);
+	erofs_dev_close(&sbi);
 err_fuse_free_args:
 	free(opts.mountpoint);
 	fuse_opt_free_args(&args);

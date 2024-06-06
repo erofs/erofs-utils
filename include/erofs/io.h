@@ -16,43 +16,36 @@ extern "C"
 #define _GNU_SOURCE
 #endif
 #include <unistd.h>
-#include "internal.h"
+#include "defs.h"
 
 #ifndef O_BINARY
 #define O_BINARY	0
 #endif
 
-void blob_closeall(struct erofs_sb_info *sbi);
-int blob_open_ro(struct erofs_sb_info *sbi, const char *dev);
-int dev_open(struct erofs_sb_info *sbi, const char *devname);
-int dev_open_ro(struct erofs_sb_info *sbi, const char *dev);
-void dev_close(struct erofs_sb_info *sbi);
-int dev_write(struct erofs_sb_info *sbi, const void *buf,
-	      u64 offset, size_t len);
-int dev_read(struct erofs_sb_info *sbi, int device_id,
-	     void *buf, u64 offset, size_t len);
-int dev_fillzero(struct erofs_sb_info *sbi, u64 offset,
-		 size_t len, bool padding);
-int dev_fsync(struct erofs_sb_info *sbi);
-int dev_resize(struct erofs_sb_info *sbi, erofs_blk_t nblocks);
+struct erofs_vfile;
 
-ssize_t erofs_copy_file_range(int fd_in, erofs_off_t *off_in,
-			      int fd_out, erofs_off_t *off_out,
+struct erofs_vfops {
+	int (*pread)(struct erofs_vfile *vf, void *buf, u64 offset, size_t len);
+	int (*pwrite)(struct erofs_vfile *vf, const void *buf, u64 offset, size_t len);
+	int (*fsync)(struct erofs_vfile *vf);
+	int (*fallocate)(struct erofs_vfile *vf, u64 offset, size_t len, bool pad);
+	int (*ftruncate)(struct erofs_vfile *vf, u64 length);
+};
+
+struct erofs_vfile {
+	struct erofs_vfops *ops;
+	u64 offset;
+	int fd;
+};
+
+int erofs_io_pwrite(struct erofs_vfile *vf, const void *buf, u64 pos, size_t len);
+int erofs_io_fsync(struct erofs_vfile *vf);
+int erofs_io_fallocate(struct erofs_vfile *vf, u64 offset, size_t len, bool pad);
+int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length);
+int erofs_io_pread(struct erofs_vfile *vf, void *buf, u64 offset, size_t len);
+
+ssize_t erofs_copy_file_range(int fd_in, u64 *off_in, int fd_out, u64 *off_out,
 			      size_t length);
-
-static inline int blk_write(struct erofs_sb_info *sbi, const void *buf,
-			    erofs_blk_t blkaddr, u32 nblocks)
-{
-	return dev_write(sbi, buf, erofs_pos(sbi, blkaddr),
-			 erofs_pos(sbi, nblocks));
-}
-
-static inline int blk_read(struct erofs_sb_info *sbi, int device_id, void *buf,
-			   erofs_blk_t start, u32 nblocks)
-{
-	return dev_read(sbi, device_id, buf, erofs_pos(sbi, start),
-			erofs_pos(sbi, nblocks));
-}
 
 #ifdef __cplusplus
 }

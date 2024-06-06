@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include "erofs/print.h"
 #include "erofs/internal.h"
-#include "erofs/io.h"
 #include "erofs/trace.h"
 #include "erofs/decompress.h"
 
@@ -95,7 +94,7 @@ int erofs_map_blocks(struct erofs_inode *inode,
 	pos = roundup(erofs_iloc(vi) + vi->inode_isize +
 		      vi->xattr_isize, unit) + unit * chunknr;
 
-	err = blk_read(sbi, 0, buf, erofs_blknr(sbi, pos), 1);
+	err = erofs_blk_read(sbi, 0, buf, erofs_blknr(sbi, pos), 1);
 	if (err < 0)
 		return -EIO;
 
@@ -176,7 +175,7 @@ int erofs_read_one_data(struct erofs_inode *inode, struct erofs_map_blocks *map,
 	if (ret)
 		return ret;
 
-	ret = dev_read(sbi, mdev.m_deviceid, buffer, mdev.m_pa + offset, len);
+	ret = erofs_dev_read(sbi, mdev.m_deviceid, buffer, mdev.m_pa + offset, len);
 	if (ret < 0)
 		return -EIO;
 	return 0;
@@ -266,7 +265,7 @@ int z_erofs_read_one_data(struct erofs_inode *inode,
 		return ret;
 	}
 
-	ret = dev_read(sbi, mdev.m_deviceid, raw, mdev.m_pa, map->m_plen);
+	ret = erofs_dev_read(sbi, mdev.m_deviceid, raw, mdev.m_pa, map->m_plen);
 	if (ret < 0)
 		return ret;
 
@@ -417,7 +416,7 @@ static void *erofs_read_metadata_bdi(struct erofs_sb_info *sbi,
 	u8 data[EROFS_MAX_BLOCK_SIZE];
 
 	*offset = round_up(*offset, 4);
-	ret = blk_read(sbi, 0, data, erofs_blknr(sbi, *offset), 1);
+	ret = erofs_blk_read(sbi, 0, data, erofs_blknr(sbi, *offset), 1);
 	if (ret)
 		return ERR_PTR(ret);
 	len = le16_to_cpu(*(__le16 *)(data + erofs_blkoff(sbi, *offset)));
@@ -433,7 +432,7 @@ static void *erofs_read_metadata_bdi(struct erofs_sb_info *sbi,
 	for (i = 0; i < len; i += cnt) {
 		cnt = min_t(int, erofs_blksiz(sbi) - erofs_blkoff(sbi, *offset),
 			    len - i);
-		ret = blk_read(sbi, 0, data, erofs_blknr(sbi, *offset), 1);
+		ret = erofs_blk_read(sbi, 0, data, erofs_blknr(sbi, *offset), 1);
 		if (ret) {
 			free(buffer);
 			return ERR_PTR(ret);

@@ -7,7 +7,6 @@
  */
 #include <stdlib.h>
 #include <erofs/cache.h>
-#include "erofs/io.h"
 #include "erofs/print.h"
 
 static struct erofs_buffer_block blkh = {
@@ -400,8 +399,8 @@ int erofs_bflush(struct erofs_buffer_block *bb)
 
 		padding = blksiz - (p->buffers.off & (blksiz - 1));
 		if (padding != blksiz)
-			dev_fillzero(&sbi, erofs_pos(&sbi, blkaddr) - padding,
-				     padding, true);
+			erofs_dev_fillzero(&sbi, erofs_pos(&sbi, blkaddr) - padding,
+					   padding, true);
 
 		if (p->type != DATA)
 			erofs_metablkcnt += BLK_ROUND_UP(&sbi, p->buffers.off);

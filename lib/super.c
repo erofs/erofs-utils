@@ -4,7 +4,6 @@
  */
 #include <string.h>
 #include <stdlib.h>
-#include "erofs/io.h"
 #include "erofs/print.h"
 #include "erofs/xattr.h"
 
@@ -56,7 +55,7 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 		struct erofs_deviceslot dis;
 		int ret;
 
-		ret = dev_read(sbi, 0, &dis, pos, sizeof(dis));
+		ret = erofs_dev_read(sbi, 0, &dis, pos, sizeof(dis));
 		if (ret < 0) {
 			free(sbi->devs);
 			sbi->devs = NULL;
@@ -79,7 +78,7 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 	int ret;
 
 	sbi->blkszbits = ilog2(EROFS_MAX_BLOCK_SIZE);
-	ret = blk_read(sbi, 0, data, 0, erofs_blknr(sbi, sizeof(data)));
+	ret = erofs_blk_read(sbi, 0, data, 0, erofs_blknr(sbi, sizeof(data)));
 	if (ret < 0) {
 		erofs_err("cannot read erofs superblock: %d", ret);
 		return -EIO;

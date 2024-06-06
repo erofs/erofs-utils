@@ -12,7 +12,7 @@
 #include <sys/sysmacros.h>
 #endif
 #include "erofs/print.h"
-#include "erofs/io.h"
+#include "erofs/internal.h"
 
 static dev_t erofs_new_decode_dev(u32 dev)
 {
@@ -34,7 +34,7 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 	DBG_BUGON(!sbi);
 	inode_loc = erofs_iloc(vi);
 
-	ret = dev_read(sbi, 0, buf, inode_loc, sizeof(*dic));
+	ret = erofs_dev_read(sbi, 0, buf, inode_loc, sizeof(*dic));
 	if (ret < 0)
 		return -EIO;
 
@@ -51,7 +51,7 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 	case EROFS_INODE_LAYOUT_EXTENDED:
 		vi->inode_isize = sizeof(struct erofs_inode_extended);
 
-		ret = dev_read(sbi, 0, buf + sizeof(*dic),
+		ret = erofs_dev_read(sbi, 0, buf + sizeof(*dic),
 			       inode_loc + sizeof(*dic),
 			       sizeof(*die) - sizeof(*dic));
 		if (ret < 0)

@@ -12,7 +12,6 @@
 #include "erofs/inode.h"
 #include "erofs/list.h"
 #include "erofs/tar.h"
-#include "erofs/io.h"
 #include "erofs/xattr.h"
 #include "erofs/blobchunk.h"
 #include "erofs/rebuild.h"

@@ -19,7 +19,6 @@
 #include "erofs/diskbuf.h"
 #include "erofs/inode.h"
 #include "erofs/tar.h"
-#include "erofs/io.h"
 #include "erofs/compress.h"
 #include "erofs/dedupe.h"
 #include "erofs/xattr.h"
@@ -501,7 +500,7 @@ static void erofs_rebuild_cleanup(void)
 	list_for_each_entry_safe(src, n, &rebuild_src_list, list) {
 		list_del(&src->list);
 		erofs_put_super(src);
-		dev_close(src);
+		erofs_dev_close(src);
 		free(src);
 	}
 	rebuild_src_count = 0;
@@ -739,7 +738,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				cfg.c_ovlfs_strip = false;
 			break;
 		case 517:
-			sbi.diskoffset = strtoull(optarg, &endptr, 0);
+			sbi.bdev.offset = strtoull(optarg, &endptr, 0);
 			if (*endptr != '\0') {
 				erofs_err("invalid disk offset %s", optarg);
 				return -EINVAL;
@@ -882,7 +881,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 					return -ENOMEM;
 				}
 
-				err = dev_open_ro(src, srcpath);
+				err = erofs_dev_open(src, srcpath, O_RDONLY);
 				if (err) {
 					free(src);
 					erofs_rebuild_cleanup();
@@ -982,7 +981,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	}
 	memcpy(buf + EROFS_SUPER_OFFSET, &sb, sizeof(sb));
 
-	ret = dev_write(&sbi, buf, erofs_btell(bh, false), EROFS_SUPER_END);
+	ret = erofs_dev_write(&sbi, buf, erofs_btell(bh, false), EROFS_SUPER_END);
 	free(buf);
 	erofs_bdrop(bh, false);
 	return ret;
@@ -996,7 +995,7 @@ static int erofs_mkfs_superblock_csum_set(void)
 	unsigned int len;
 	struct erofs_super_block *sb;
 
-	ret = blk_read(&sbi, 0, buf, 0, erofs_blknr(&sbi, EROFS_SUPER_END) + 1);
+	ret = erofs_blk_read(&sbi, 0, buf, 0, erofs_blknr(&sbi, EROFS_SUPER_END) + 1);
 	if (ret) {
 		erofs_err("failed to read superblock to set checksum: %s",
 			  erofs_strerror(ret));
@@ -1026,7 +1025,7 @@ static int erofs_mkfs_superblock_csum_set(void)
 	/* set up checksum field to erofs_super_block */
 	sb->checksum = cpu_to_le32(crc);
 
-	ret = blk_write(&sbi, buf, 0, 1);
+	ret = erofs_blk_write(&sbi, buf, 0, 1);
 	if (ret) {
 		erofs_err("failed to write checksummed superblock: %s",
 			  erofs_strerror(ret));
@@ -1221,7 +1220,7 @@ int main(int argc, char **argv)
 		sbi.build_time_nsec = t.tv_usec;
 	}
 
-	err = dev_open(&sbi, cfg.c_img_path);
+	err = erofs_dev_open(&sbi, cfg.c_img_path, O_RDWR | O_TRUNC);
 	if (err) {
 		fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
 		return 1;
@@ -1452,7 +1451,7 @@ int main(int argc, char **argv)
 	if (err)
 		goto exit;
 
-	err = dev_resize(&sbi, nblocks);
+	err = erofs_dev_resize(&sbi, nblocks);
 
 	if (!err && erofs_sb_has_sb_chksum(&sbi))
 		err = erofs_mkfs_superblock_csum_set();
@@ -1460,7 +1459,7 @@ exit:
 	z_erofs_compress_exit();
 	z_erofs_dedupe_exit();
 	erofs_blocklist_close();
-	dev_close(&sbi);
+	erofs_dev_close(&sbi);
 	erofs_cleanup_compress_hints();
 	erofs_cleanup_exclude_rules();
 	if (cfg.c_chunkbits)

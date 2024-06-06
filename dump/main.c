@@ -12,7 +12,6 @@
 #include <sys/stat.h>
 #include "erofs/print.h"
 #include "erofs/inode.h"
-#include "erofs/io.h"
 #include "erofs/dir.h"
 #include "erofs/compress.h"
 #include "erofs/fragments.h"
@@ -167,7 +166,7 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 			usage(argc, argv);
 			exit(0);
 		case 3:
-			err = blob_open_ro(&sbi, optarg);
+			err = erofs_blob_open_ro(&sbi, optarg);
 			if (err)
 				return err;
 			++sbi.extra_devices;
@@ -181,7 +180,7 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 			dumpcfg.show_subdirectories = true;
 			break;
 		case 6:
-			sbi.diskoffset = strtoull(optarg, &endptr, 0);
+			sbi.bdev.offset = strtoull(optarg, &endptr, 0);
 			if (*endptr != '\0') {
 				erofs_err("invalid disk offset %s", optarg);
 				return -EINVAL;
@@ -685,7 +684,7 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
-	err = dev_open_ro(&sbi, cfg.c_img_path);
+	err = erofs_dev_open(&sbi, cfg.c_img_path, O_RDONLY | O_TRUNC);
 	if (err) {
 		erofs_err("failed to open image file");
 		goto exit;
@@ -718,9 +717,9 @@ int main(int argc, char **argv)
 exit_put_super:
 	erofs_put_super(&sbi);
 exit_dev_close:
-	dev_close(&sbi);
+	erofs_dev_close(&sbi);
 exit:
-	blob_closeall(&sbi);
+	erofs_blob_closeall(&sbi);
 	erofs_exit_configure();
 	return err;
 }

@@ -10,7 +10,6 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include "erofs/print.h"
-#include "erofs/io.h"
 #include "erofs/compress.h"
 #include "erofs/decompress.h"
 #include "erofs/dir.h"
@@ -184,7 +183,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 			}
 			break;
 		case 3:
-			ret = blob_open_ro(&sbi, optarg);
+			ret = erofs_blob_open_ro(&sbi, optarg);
 			if (ret)
 				return ret;
 			++sbi.extra_devices;
@@ -220,7 +219,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 			has_opt_preserve = true;
 			break;
 		case 12:
-			sbi.diskoffset = strtoull(optarg, &endptr, 0);
+			sbi.bdev.offset = strtoull(optarg, &endptr, 0);
 			if (*endptr != '\0') {
 				erofs_err("invalid disk offset %s", optarg);
 				return -EINVAL;
@@ -312,7 +311,7 @@ static int erofs_check_sb_chksum(void)
 	struct erofs_super_block *sb;
 	int ret;
 
-	ret = blk_read(&sbi, 0, buf, 0, 1);
+	ret = erofs_blk_read(&sbi, 0, buf, 0, 1);
 	if (ret) {
 		erofs_err("failed to read superblock to check checksum: %d",
 			  ret);
@@ -360,7 +359,7 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	}
 
 	addr = erofs_iloc(inode) + inode->inode_isize;
-	ret = dev_read(sbi, 0, buf, addr, xattr_hdr_size);
+	ret = erofs_dev_read(sbi, 0, buf, addr, xattr_hdr_size);
 	if (ret < 0) {
 		erofs_err("failed to read xattr header @ nid %llu: %d",
 			  inode->nid | 0ULL, ret);
@@ -390,7 +389,7 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	while (remaining > 0) {
 		unsigned int entry_sz;
 
-		ret = dev_read(sbi, 0, buf, addr, xattr_entry_size);
+		ret = erofs_dev_read(sbi, 0, buf, addr, xattr_entry_size);
 		if (ret) {
 			erofs_err("failed to read xattr entry @ nid %llu: %d",
 				  inode->nid | 0ULL, ret);
@@ -966,7 +965,7 @@ int main(int argc, char *argv[])
 	cfg.c_dbg_lvl = -1;
 #endif
 
-	err = dev_open_ro(&sbi, cfg.c_img_path);
+	err = erofs_dev_open(&sbi, cfg.c_img_path, O_RDONLY);
 	if (err) {
 		erofs_err("failed to open image file");
 		goto exit;
@@ -1022,9 +1021,9 @@ exit_hardlink:
 exit_put_super:
 	erofs_put_super(&sbi);
 exit_dev_close:
-	dev_close(&sbi);
+	erofs_dev_close(&sbi);
 exit:
-	blob_closeall(&sbi);
+	erofs_blob_closeall(&sbi);
 	erofs_exit_configure();
 	return err ? 1 : 0;
 }

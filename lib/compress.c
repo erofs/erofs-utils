@@ -12,7 +12,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "erofs/print.h"
-#include "erofs/io.h"
 #include "erofs/cache.h"
 #include "erofs/compress.h"
 #include "erofs/dedupe.h"
@@ -407,7 +406,7 @@ static int write_uncompressed_extent(struct z_erofs_compress_sctx *ctx,
 	} else {
 		erofs_dbg("Writing %u uncompressed data to block %u", count,
 			  ctx->blkaddr);
-		ret = blk_write(sbi, dst, ctx->blkaddr, 1);
+		ret = erofs_blk_write(sbi, dst, ctx->blkaddr, 1);
 		if (ret)
 			return ret;
 	}
@@ -659,8 +658,8 @@ frag_packing:
 			erofs_dbg("Writing %u compressed data to %u of %u blocks",
 				  e->length, ctx->blkaddr, e->compressedblks);
 
-			ret = blk_write(sbi, dst - padding, ctx->blkaddr,
-					e->compressedblks);
+			ret = erofs_blk_write(sbi, dst - padding, ctx->blkaddr,
+					      e->compressedblks);
 			if (ret)
 				return ret;
 		}
@@ -1288,8 +1287,8 @@ int z_erofs_merge_segment(struct z_erofs_compress_ictx *ictx,
 		/* skip write data but leave blkaddr for inline fallback */
 		if (ei->e.inlined || !ei->e.compressedblks)
 			continue;
-		ret2 = blk_write(sbi, sctx->membuf + blkoff * erofs_blksiz(sbi),
-				 ei->e.blkaddr, ei->e.compressedblks);
+		ret2 = erofs_blk_write(sbi, sctx->membuf + blkoff * erofs_blksiz(sbi),
+				       ei->e.blkaddr, ei->e.compressedblks);
 		blkoff += ei->e.compressedblks;
 		if (ret2) {
 			ret = ret2;
@@ -1603,8 +1602,8 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 			return PTR_ERR(bh);
 		}
 		erofs_mapbh(bh->block);
-		ret = dev_write(sbi, &lz4alg, erofs_btell(bh, false),
-				sizeof(lz4alg));
+		ret = erofs_dev_write(sbi, &lz4alg, erofs_btell(bh, false),
+				      sizeof(lz4alg));
 		bh->op = &erofs_drop_directly_bhops;
 	}
 #ifdef HAVE_LIBLZMA
@@ -1627,8 +1626,8 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 			return PTR_ERR(bh);
 		}
 		erofs_mapbh(bh->block);
-		ret = dev_write(sbi, &lzmaalg, erofs_btell(bh, false),
-				sizeof(lzmaalg));
+		ret = erofs_dev_write(sbi, &lzmaalg, erofs_btell(bh, false),
+				      sizeof(lzmaalg));
 		bh->op = &erofs_drop_directly_bhops;
 	}
 #endif
@@ -1651,8 +1650,8 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 			return PTR_ERR(bh);
 		}
 		erofs_mapbh(bh->block);
-		ret = dev_write(sbi, &zalg, erofs_btell(bh, false),
-				sizeof(zalg));
+		ret = erofs_dev_write(sbi, &zalg, erofs_btell(bh, false),
+				      sizeof(zalg));
 		bh->op = &erofs_drop_directly_bhops;
 	}
 #ifdef HAVE_LIBZSTD
@@ -1674,8 +1673,8 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 			return PTR_ERR(bh);
 		}
 		erofs_mapbh(bh->block);
-		ret = dev_write(sbi, &zalg, erofs_btell(bh, false),
-				sizeof(zalg));
+		ret = erofs_dev_write(sbi, &zalg, erofs_btell(bh, false),
+				      sizeof(zalg));
 		bh->op = &erofs_drop_directly_bhops;
 	}
 #endif

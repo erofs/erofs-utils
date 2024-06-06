@@ -7,7 +7,7 @@
  * Created by Gao Xiang <xiang@kernel.org>
  * Modified by Huang Jianan <huangjianan@oppo.com>
  */
-#include "erofs/io.h"
+#include "erofs/internal.h"
 #include "erofs/print.h"
 
 static int z_erofs_do_map_blocks(struct erofs_inode *vi,
@@ -43,7 +43,7 @@ static int z_erofs_fill_inode_lazy(struct erofs_inode *vi)
 		return 0;
 
 	pos = round_up(erofs_iloc(vi) + vi->inode_isize + vi->xattr_isize, 8);
-	ret = dev_read(sbi, 0, buf, pos, sizeof(buf));
+	ret = erofs_dev_read(sbi, 0, buf, pos, sizeof(buf));
 	if (ret < 0)
 		return -EIO;
 
@@ -133,7 +133,7 @@ static int z_erofs_reload_indexes(struct z_erofs_maprecorder *m,
 	if (map->index == eblk)
 		return 0;
 
-	ret = blk_read(m->inode->sbi, 0, mpage, eblk, 1);
+	ret = erofs_blk_read(m->inode->sbi, 0, mpage, eblk, 1);
 	if (ret < 0)
 		return -EIO;
 

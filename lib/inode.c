@@ -19,7 +19,6 @@
 #include "erofs/diskbuf.h"
 #include "erofs/inode.h"
 #include "erofs/cache.h"
-#include "erofs/io.h"
 #include "erofs/compress.h"
 #include "erofs/xattr.h"
 #include "erofs/exclude.h"
@@ -315,7 +314,7 @@ static int write_dirblock(struct erofs_sb_info *sbi,
 	char buf[EROFS_MAX_BLOCK_SIZE];
 
 	fill_dirblock(buf, erofs_blksiz(sbi), q, head, end);
-	return blk_write(sbi, buf, blkaddr, 1);
+	return erofs_blk_write(sbi, buf, blkaddr, 1);
 }
 
 erofs_nid_t erofs_lookupnid(struct erofs_inode *inode)
@@ -413,7 +412,7 @@ int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 		return ret;
 
 	if (nblocks)
-		blk_write(sbi, buf, inode->u.i_blkaddr, nblocks);
+		erofs_blk_write(sbi, buf, inode->u.i_blkaddr, nblocks);
 	inode->idata_size = inode->i_size % erofs_blksiz(sbi);
 	if (inode->idata_size) {
 		inode->idata = malloc(inode->idata_size);
@@ -456,7 +455,7 @@ static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 			return -EAGAIN;
 		}
 
-		ret = blk_write(sbi, buf, inode->u.i_blkaddr + i, 1);
+		ret = erofs_blk_write(sbi, buf, inode->u.i_blkaddr + i, 1);
 		if (ret)
 			return ret;
 	}
@@ -584,7 +583,7 @@ static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		BUG_ON(1);
 	}
 
-	ret = dev_write(sbi, &u, off, inode->inode_isize);
+	ret = erofs_dev_write(sbi, &u, off, inode->inode_isize);
 	if (ret)
 		return ret;
 	off += inode->inode_isize;
@@ -595,7 +594,7 @@ static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		if (IS_ERR(xattrs))
 			return PTR_ERR(xattrs);
 
-		ret = dev_write(sbi, xattrs, off, inode->xattr_isize);
+		ret = erofs_dev_write(sbi, xattrs, off, inode->xattr_isize);
 		free(xattrs);
 		if (ret)
 			return ret;
@@ -611,8 +610,8 @@ static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 		} else {
 			/* write compression metadata */
 			off = roundup(off, 8);
-			ret = dev_write(sbi, inode->compressmeta, off,
-					inode->extent_isize);
+			ret = erofs_dev_write(sbi, inode->compressmeta, off,
+					      inode->extent_isize);
 			if (ret)
 				return ret;
 		}
@@ -733,7 +732,7 @@ static int erofs_bh_flush_write_inline(struct erofs_buffer_head *bh)
 	const erofs_off_t off = erofs_btell(bh, false);
 	int ret;
 
-	ret = dev_write(inode->sbi, inode->idata, off, inode->idata_size);
+	ret = erofs_dev_write(inode->sbi, inode->idata, off, inode->idata_size);
 	if (ret)
 		return ret;
 
@@ -804,13 +803,13 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 			/* pad 0'ed data for the other cases */
 			zero_pos = pos + inode->idata_size;
 		}
-		ret = dev_write(sbi, inode->idata, pos, inode->idata_size);
+		ret = erofs_dev_write(sbi, inode->idata, pos, inode->idata_size);
 		if (ret)
 			return ret;
 
 		DBG_BUGON(inode->idata_size > erofs_blksiz(sbi));
 		if (inode->idata_size < erofs_blksiz(sbi)) {
-			ret = dev_fillzero(sbi, zero_pos,
+			ret = erofs_dev_fillzero(sbi, zero_pos,
 					   erofs_blksiz(sbi) - inode->idata_size,
 					   false);
 			if (ret)

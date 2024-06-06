@@ -26,6 +26,7 @@ typedef unsigned short umode_t;
 #include <pthread.h>
 #endif
 #include "atomic.h"
+#include "io.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX        4096    /* # chars in a path name including nul */
@@ -115,9 +116,8 @@ struct erofs_sb_info {
 	u8 xattr_prefix_count;
 	struct erofs_xattr_prefix_item *xattr_prefixes;
 
-	int devfd, devblksz;
-	/* offset when reading multi-part images */
-	u64 diskoffset;
+	struct erofs_vfile bdev;
+	int devblksz;
 	u64 devsz;
 	dev_t dev;
 	unsigned int nblobs;
@@ -442,6 +442,47 @@ int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size);
 int z_erofs_fill_inode(struct erofs_inode *vi);
 int z_erofs_map_blocks_iter(struct erofs_inode *vi,
 			    struct erofs_map_blocks *map, int flags);
+
+/* io.c */
+int erofs_dev_open(struct erofs_sb_info *sbi, const char *dev, int flags);
+void erofs_dev_close(struct erofs_sb_info *sbi);
+void erofs_blob_closeall(struct erofs_sb_info *sbi);
+int erofs_blob_open_ro(struct erofs_sb_info *sbi, const char *dev);
+
+int erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
+		   void *buf, u64 offset, size_t len);
+
+static inline int erofs_dev_write(struct erofs_sb_info *sbi, const void *buf,
+				  u64 offset, size_t len)
+{
+	return erofs_io_pwrite(&sbi->bdev, buf, offset, len);
+}
+
+static inline int erofs_dev_fillzero(struct erofs_sb_info *sbi, u64 offset,
+				     size_t len, bool pad)
+{
+	return erofs_io_fallocate(&sbi->bdev, offset, len, pad);
+}
+
+static inline int erofs_dev_resize(struct erofs_sb_info *sbi,
+				   erofs_blk_t blocks)
+{
+	return erofs_io_ftruncate(&sbi->bdev, (u64)blocks * erofs_blksiz(sbi));
+}
+
+static inline int erofs_blk_write(struct erofs_sb_info *sbi, const void *buf,
+				  erofs_blk_t blkaddr, u32 nblocks)
+{
+	return erofs_dev_write(sbi, buf, erofs_pos(sbi, blkaddr),
+			       erofs_pos(sbi, nblocks));
+}
+
+static inline int erofs_blk_read(struct erofs_sb_info *sbi, int device_id,
+				 void *buf, erofs_blk_t start, u32 nblocks)
+{
+	return erofs_dev_read(sbi, device_id, buf, erofs_pos(sbi, start),
+			      erofs_pos(sbi, nblocks));
+}
 
 #ifdef EUCLEAN
 #define EFSCORRUPTED	EUCLEAN		/* Filesystem is corrupted */

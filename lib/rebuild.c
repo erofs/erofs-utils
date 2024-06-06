@@ -11,7 +11,6 @@
 #include "erofs/print.h"
 #include "erofs/inode.h"
 #include "erofs/rebuild.h"
-#include "erofs/io.h"
 #include "erofs/dir.h"
 #include "erofs/xattr.h"
 #include "erofs/blobchunk.h"

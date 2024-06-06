@@ -9,7 +9,6 @@
 #include "erofs/blobchunk.h"
 #include "erofs/block_list.h"
 #include "erofs/cache.h"
-#include "erofs/io.h"
 #include "sha256.h"
 #include <unistd.h>
 
@@ -195,7 +194,8 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 					0 : extent_end - extent_start,
 					   first_extent, true);
 
-	return dev_write(inode->sbi, inode->chunkindexes, off, inode->extent_isize);
+	return erofs_dev_write(inode->sbi, inode->chunkindexes, off,
+			       inode->extent_isize);
 }
 
 int erofs_blob_mergechunks(struct erofs_inode *inode, unsigned int chunkbits,
@@ -477,7 +477,7 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 {
 	struct erofs_buffer_head *bh;
 	ssize_t length;
-	erofs_off_t pos_in, pos_out;
+	u64 pos_in, pos_out;
 	ssize_t ret;
 
 	if (blobfile) {
@@ -506,7 +506,7 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 			};
 
 			memcpy(dis.tag, sbi->devs[i].tag, sizeof(dis.tag));
-			ret = dev_write(sbi, &dis, pos_out, sizeof(dis));
+			ret = erofs_dev_write(sbi, &dis, pos_out, sizeof(dis));
 			if (ret)
 				return ret;
 			pos_out += sizeof(dis);
@@ -525,11 +525,11 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 
 	pos_out = erofs_btell(bh, false);
 	remapped_base = erofs_blknr(sbi, pos_out);
-	pos_out += sbi->diskoffset;
+	pos_out += sbi->bdev.offset;
 	if (blobfile) {
 		pos_in = 0;
 		ret = erofs_copy_file_range(fileno(blobfile), &pos_in,
-				sbi->devfd, &pos_out, datablob_size);
+				sbi->bdev.fd, &pos_out, datablob_size);
 		ret = ret < datablob_size ? -EIO : 0;
 	} else {
 		ret = 0;
