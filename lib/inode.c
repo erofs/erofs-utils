@@ -493,17 +493,21 @@ int erofs_write_unencoded_file(struct erofs_inode *inode, int fd, u64 fpos)
 	return write_uncompressed_file_from_fd(inode, fd);
 }
 
-static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
+int erofs_iflush(struct erofs_inode *inode)
 {
-	struct erofs_inode *const inode = bh->fsprivate;
-	struct erofs_sb_info *sbi = inode->sbi;
 	const u16 icount = EROFS_INODE_XATTR_ICOUNT(inode->xattr_isize);
-	erofs_off_t off = erofs_btell(bh, false);
+	struct erofs_sb_info *sbi = inode->sbi;
+	erofs_off_t off;
 	union {
 		struct erofs_inode_compact dic;
 		struct erofs_inode_extended die;
-	} u = { {0}, };
+	} u = {};
 	int ret;
+
+	if (inode->bh)
+		off = erofs_btell(inode->bh, false);
+	else
+		off = erofs_iloc(inode);
 
 	switch (inode->inode_isize) {
 	case sizeof(struct erofs_inode_compact):
@@ -616,7 +620,18 @@ static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 				return ret;
 		}
 	}
+	return 0;
+}
 
+static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
+{
+	struct erofs_inode *inode = bh->fsprivate;
+	int ret;
+
+	DBG_BUGON(inode->bh != bh);
+	ret = erofs_iflush(inode);
+	if (ret)
+		return ret;
 	inode->bh = NULL;
 	erofs_iput(inode);
 	return erofs_bh_flush_generic_end(bh);

@@ -31,6 +31,7 @@ struct erofs_inode *erofs_iget(dev_t dev, ino_t ino);
 struct erofs_inode *erofs_iget_by_nid(erofs_nid_t nid);
 unsigned int erofs_iput(struct erofs_inode *inode);
 erofs_nid_t erofs_lookupnid(struct erofs_inode *inode);
+int erofs_iflush(struct erofs_inode *inode);
 struct erofs_dentry *erofs_d_alloc(struct erofs_inode *parent,
 				   const char *name);
 int erofs_rebuild_dump_tree(struct erofs_inode *dir);
