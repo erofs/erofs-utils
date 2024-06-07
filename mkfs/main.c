@@ -32,8 +32,6 @@
 #include "../lib/liberofs_uuid.h"
 #include "../lib/compressor.h"
 
-#define EROFS_SUPER_END (EROFS_SUPER_OFFSET + sizeof(struct erofs_super_block))
-
 static struct option long_options[] = {
 	{"version", no_argument, 0, 'V'},
 	{"help", no_argument, 0, 'h'},
@@ -935,58 +933,6 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	return 0;
 }
 
-int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
-				  erofs_nid_t root_nid,
-				  erofs_blk_t *blocks,
-				  erofs_nid_t packed_nid)
-{
-	struct erofs_super_block sb = {
-		.magic     = cpu_to_le32(EROFS_SUPER_MAGIC_V1),
-		.blkszbits = sbi.blkszbits,
-		.inos   = cpu_to_le64(sbi.inos),
-		.build_time = cpu_to_le64(sbi.build_time),
-		.build_time_nsec = cpu_to_le32(sbi.build_time_nsec),
-		.blocks = 0,
-		.meta_blkaddr  = cpu_to_le32(sbi.meta_blkaddr),
-		.xattr_blkaddr = cpu_to_le32(sbi.xattr_blkaddr),
-		.xattr_prefix_count = sbi.xattr_prefix_count,
-		.xattr_prefix_start = cpu_to_le32(sbi.xattr_prefix_start),
-		.feature_incompat = cpu_to_le32(sbi.feature_incompat),
-		.feature_compat = cpu_to_le32(sbi.feature_compat &
-					      ~EROFS_FEATURE_COMPAT_SB_CHKSUM),
-		.extra_devices = cpu_to_le16(sbi.extra_devices),
-		.devt_slotoff = cpu_to_le16(sbi.devt_slotoff),
-	};
-	const u32 sb_blksize = round_up(EROFS_SUPER_END, erofs_blksiz(&sbi));
-	char *buf;
-	int ret;
-
-	*blocks         = erofs_mapbh(NULL);
-	sb.blocks       = cpu_to_le32(*blocks);
-	sb.root_nid     = cpu_to_le16(root_nid);
-	sb.packed_nid    = cpu_to_le64(packed_nid);
-	memcpy(sb.uuid, sbi.uuid, sizeof(sb.uuid));
-	memcpy(sb.volume_name, sbi.volume_name, sizeof(sb.volume_name));
-
-	if (erofs_sb_has_compr_cfgs(&sbi))
-		sb.u1.available_compr_algs = cpu_to_le16(sbi.available_compr_algs);
-	else
-		sb.u1.lz4_max_distance = cpu_to_le16(sbi.lz4_max_distance);
-
-	buf = calloc(sb_blksize, 1);
-	if (!buf) {
-		erofs_err("failed to allocate memory for sb: %s",
-			  erofs_strerror(-errno));
-		return -ENOMEM;
-	}
-	memcpy(buf + EROFS_SUPER_OFFSET, &sb, sizeof(sb));
-
-	ret = erofs_dev_write(&sbi, buf, erofs_btell(bh, false), EROFS_SUPER_END);
-	free(buf);
-	erofs_bdrop(bh, false);
-	return ret;
-}
-
 static int erofs_mkfs_superblock_csum_set(void)
 {
 	int ret;
@@ -1190,7 +1136,6 @@ int main(int argc, char **argv)
 	int err = 0;
 	struct erofs_buffer_head *sb_bh;
 	struct erofs_inode *root_inode, *packed_inode;
-	erofs_nid_t root_nid, packed_nid;
 	erofs_blk_t nblocks;
 	struct timeval t;
 	FILE *packedfile = NULL;
@@ -1411,7 +1356,7 @@ int main(int argc, char **argv)
 			goto exit;
 		}
 	}
-	root_nid = erofs_lookupnid(root_inode);
+	sbi.root_nid = erofs_lookupnid(root_inode);
 	erofs_iput(root_inode);
 
 	if (erofstar.index_mode && sbi.extra_devices && !erofstar.mapfile)
@@ -1423,7 +1368,7 @@ int main(int argc, char **argv)
 			goto exit;
 	}
 
-	packed_nid = 0;
+	sbi.packed_nid = 0;
 	if ((cfg.c_fragments || cfg.c_extra_ea_name_prefixes) &&
 	    erofs_sb_has_fragments(&sbi)) {
 		erofs_update_progressinfo("Handling packed_file ...");
@@ -1432,7 +1377,7 @@ int main(int argc, char **argv)
 			err = PTR_ERR(packed_inode);
 			goto exit;
 		}
-		packed_nid = erofs_lookupnid(packed_inode);
+		sbi.packed_nid = erofs_lookupnid(packed_inode);
 		erofs_iput(packed_inode);
 	}
 
@@ -1441,8 +1386,7 @@ int main(int argc, char **argv)
 	if (err)
 		goto exit;
 
-	err = erofs_mkfs_update_super_block(sb_bh, root_nid, &nblocks,
-					    packed_nid);
+	err = erofs_writesb(&sbi, sb_bh, &nblocks);
 	if (err)
 		goto exit;
 

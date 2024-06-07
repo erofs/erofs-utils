@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include "erofs/print.h"
 #include "erofs/xattr.h"
+#include "erofs/cache.h"
 
 static bool check_layout_compatibility(struct erofs_sb_info *sbi,
 				       struct erofs_super_block *dsb)
@@ -148,4 +149,55 @@ void erofs_put_super(struct erofs_sb_info *sbi)
 		sbi->devs = NULL;
 	}
 	erofs_xattr_prefixes_cleanup(sbi);
+}
+
+int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh,
+		  erofs_blk_t *blocks)
+{
+	struct erofs_super_block sb = {
+		.magic     = cpu_to_le32(EROFS_SUPER_MAGIC_V1),
+		.blkszbits = sbi->blkszbits,
+		.root_nid  = cpu_to_le16(sbi->root_nid),
+		.inos      = cpu_to_le64(sbi->inos),
+		.build_time = cpu_to_le64(sbi->build_time),
+		.build_time_nsec = cpu_to_le32(sbi->build_time_nsec),
+		.meta_blkaddr  = cpu_to_le32(sbi->meta_blkaddr),
+		.xattr_blkaddr = cpu_to_le32(sbi->xattr_blkaddr),
+		.xattr_prefix_count = sbi->xattr_prefix_count,
+		.xattr_prefix_start = cpu_to_le32(sbi->xattr_prefix_start),
+		.feature_incompat = cpu_to_le32(sbi->feature_incompat),
+		.feature_compat = cpu_to_le32(sbi->feature_compat &
+					      ~EROFS_FEATURE_COMPAT_SB_CHKSUM),
+		.extra_devices = cpu_to_le16(sbi->extra_devices),
+		.devt_slotoff = cpu_to_le16(sbi->devt_slotoff),
+		.packed_nid = cpu_to_le64(sbi->packed_nid),
+	};
+	const u32 sb_blksize = round_up(EROFS_SUPER_END, erofs_blksiz(sbi));
+	char *buf;
+	int ret;
+
+	*blocks         = erofs_mapbh(NULL);
+	sb.blocks       = cpu_to_le32(*blocks);
+	memcpy(sb.uuid, sbi->uuid, sizeof(sb.uuid));
+	memcpy(sb.volume_name, sbi->volume_name, sizeof(sb.volume_name));
+
+	if (erofs_sb_has_compr_cfgs(sbi))
+		sb.u1.available_compr_algs = cpu_to_le16(sbi->available_compr_algs);
+	else
+		sb.u1.lz4_max_distance = cpu_to_le16(sbi->lz4_max_distance);
+
+	buf = calloc(sb_blksize, 1);
+	if (!buf) {
+		erofs_err("failed to allocate memory for sb: %s",
+			  erofs_strerror(-errno));
+		return -ENOMEM;
+	}
+	memcpy(buf + EROFS_SUPER_OFFSET, &sb, sizeof(sb));
+
+	ret = erofs_dev_write(sbi, buf, sb_bh ? erofs_btell(sb_bh, false) : 0,
+			      EROFS_SUPER_END);
+	free(buf);
+	if (sb_bh)
+		erofs_bdrop(sb_bh, false);
+	return ret;
 }
