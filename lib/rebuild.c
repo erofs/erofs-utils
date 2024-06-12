@@ -15,6 +15,7 @@
 #include "erofs/xattr.h"
 #include "erofs/blobchunk.h"
 #include "erofs/internal.h"
+#include "liberofs_uuid.h"
 
 #ifdef HAVE_LINUX_AUFS_TYPE_H
 #include <linux/aufs_type.h>
@@ -375,16 +376,17 @@ int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi)
 {
 	struct erofs_inode inode = {};
 	struct erofs_rebuild_dir_context ctx;
+	char uuid_str[37];
+	char *fsid = sbi->devname;
 	int ret;
 
-	if (!sbi->devname) {
-		erofs_err("failed to find a device for rebuilding");
-		return -EINVAL;
+	if (!fsid) {
+		erofs_uuid_unparse_lower(sbi->uuid, uuid_str);
+		fsid = uuid_str;
 	}
-
 	ret = erofs_read_superblock(sbi);
 	if (ret) {
-		erofs_err("failed to read superblock of %s", sbi->devname);
+		erofs_err("failed to read superblock of %s", fsid);
 		return ret;
 	}
 
@@ -392,7 +394,7 @@ int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi)
 	inode.sbi = sbi;
 	ret = erofs_read_inode_from_disk(&inode);
 	if (ret) {
-		erofs_err("failed to read root inode of %s", sbi->devname);
+		erofs_err("failed to read root inode of %s", fsid);
 		return ret;
 	}
 	inode.i_srcpath = strdup("/");
