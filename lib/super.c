@@ -201,3 +201,34 @@ int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh,
 		erofs_bdrop(sb_bh, false);
 	return ret;
 }
+
+struct erofs_buffer_head *erofs_reserve_sb(void)
+{
+	struct erofs_buffer_head *bh;
+	int err;
+
+	erofs_buffer_init(0);
+	bh = erofs_balloc(META, 0, 0, 0);
+	if (IS_ERR(bh)) {
+		erofs_err("failed to allocate super: %s", PTR_ERR(bh));
+		return bh;
+	}
+	bh->op = &erofs_skip_write_bhops;
+	err = erofs_bh_balloon(bh, EROFS_SUPER_END);
+	if (err < 0) {
+		erofs_err("failed to balloon super: %s", erofs_strerror(err));
+		goto err_bdrop;
+	}
+
+	/* make sure that the super block should be the very first blocks */
+	(void)erofs_mapbh(bh->block);
+	if (erofs_btell(bh, false) != 0) {
+		erofs_err("failed to pin super block @ 0");
+		err = -EFAULT;
+		goto err_bdrop;
+	}
+	return bh;
+err_bdrop:
+	erofs_bdrop(bh, true);
+	return ERR_PTR(err);
+}

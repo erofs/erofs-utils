@@ -38,21 +38,14 @@ const struct erofs_bhops erofs_skip_write_bhops = {
 	.flush = erofs_bh_flush_skip_write,
 };
 
-/* return buffer_head of erofs super block (with size 0) */
-struct erofs_buffer_head *erofs_buffer_init(void)
+void erofs_buffer_init(erofs_blk_t startblk)
 {
 	int i, j;
-	struct erofs_buffer_head *bh = erofs_balloc(META, 0, 0, 0);
-
-	if (IS_ERR(bh))
-		return bh;
-
-	bh->op = &erofs_skip_write_bhops;
 
 	for (i = 0; i < ARRAY_SIZE(mapped_buckets); i++)
 		for (j = 0; j < ARRAY_SIZE(mapped_buckets[0]); j++)
 			init_list_head(&mapped_buckets[i][j]);
-	return bh;
+	tail_blkaddr = startblk;
 }
 
 static void erofs_bupdate_mapped(struct erofs_buffer_block *bb)

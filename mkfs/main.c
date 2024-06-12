@@ -1244,24 +1244,9 @@ int main(int argc, char **argv)
 		sbi.blkszbits = src->blkszbits;
 	}
 
-	sb_bh = erofs_buffer_init();
+	sb_bh = erofs_reserve_sb();
 	if (IS_ERR(sb_bh)) {
 		err = PTR_ERR(sb_bh);
-		erofs_err("failed to initialize buffers: %s",
-			  erofs_strerror(err));
-		goto exit;
-	}
-	err = erofs_bh_balloon(sb_bh, EROFS_SUPER_END);
-	if (err < 0) {
-		erofs_err("failed to balloon erofs_super_block: %s",
-			  erofs_strerror(err));
-		goto exit;
-	}
-
-	/* make sure that the super block should be the very first blocks */
-	(void)erofs_mapbh(sb_bh->block);
-	if (erofs_btell(sb_bh, false) != 0) {
-		erofs_err("failed to reserve erofs_super_block");
 		goto exit;
 	}
 

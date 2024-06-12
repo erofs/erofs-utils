@@ -98,7 +98,7 @@ static inline int erofs_bh_flush_generic_end(struct erofs_buffer_head *bh)
 	return 0;
 }
 
-struct erofs_buffer_head *erofs_buffer_init(void);
+void erofs_buffer_init(erofs_blk_t startblk);
 int erofs_bh_balloon(struct erofs_buffer_head *bh, erofs_off_t incr);
 
 struct erofs_buffer_head *erofs_balloc(int type, erofs_off_t size,
