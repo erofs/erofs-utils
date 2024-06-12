@@ -1161,7 +1161,7 @@ static int erofs_mkfs_handle_nondirectory(struct erofs_mkfs_job_ndir_ctx *ctx)
 		ret = erofs_write_file_from_buffer(inode, symlink);
 		free(symlink);
 		inode->i_link = NULL;
-	} else if (inode->i_size) {
+	} else if (inode->i_size && ctx->fd >= 0) {
 		ret = erofs_mkfs_job_write_file(ctx);
 	}
 	if (ret)
@@ -1492,10 +1492,11 @@ static int erofs_rebuild_handle_inode(struct erofs_inode *inode)
 		return ret;
 
 	if (!S_ISDIR(inode->i_mode)) {
-		struct erofs_mkfs_job_ndir_ctx ctx = { .inode = inode };
+		struct erofs_mkfs_job_ndir_ctx ctx =
+			{ .inode = inode, .fd = -1 };
 
-		if (!S_ISLNK(inode->i_mode) && inode->i_size) {
-			DBG_BUGON(!inode->with_diskbuf);
+		if (!S_ISLNK(inode->i_mode) && inode->i_size &&
+		    inode->with_diskbuf) {
 			ctx.fd = erofs_diskbuf_getfd(inode->i_diskbuf, &ctx.fpos);
 			if (ctx.fd < 0)
 				return ret;
