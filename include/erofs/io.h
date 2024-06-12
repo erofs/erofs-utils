@@ -25,11 +25,13 @@ extern "C"
 struct erofs_vfile;
 
 struct erofs_vfops {
-	int (*pread)(struct erofs_vfile *vf, void *buf, u64 offset, size_t len);
-	int (*pwrite)(struct erofs_vfile *vf, const void *buf, u64 offset, size_t len);
+	ssize_t (*pread)(struct erofs_vfile *vf, void *buf, u64 offset, size_t len);
+	ssize_t (*pwrite)(struct erofs_vfile *vf, const void *buf, u64 offset, size_t len);
 	int (*fsync)(struct erofs_vfile *vf);
 	int (*fallocate)(struct erofs_vfile *vf, u64 offset, size_t len, bool pad);
 	int (*ftruncate)(struct erofs_vfile *vf, u64 length);
+	ssize_t (*read)(struct erofs_vfile *vf, void *buf, size_t len);
+	off_t (*lseek)(struct erofs_vfile *vf, u64 offset, int whence);
 };
 
 struct erofs_vfile {
@@ -38,11 +40,13 @@ struct erofs_vfile {
 	int fd;
 };
 
-int erofs_io_pwrite(struct erofs_vfile *vf, const void *buf, u64 pos, size_t len);
+ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf, u64 pos, size_t len);
 int erofs_io_fsync(struct erofs_vfile *vf);
-int erofs_io_fallocate(struct erofs_vfile *vf, u64 offset, size_t len, bool pad);
+ssize_t erofs_io_fallocate(struct erofs_vfile *vf, u64 offset, size_t len, bool pad);
 int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length);
-int erofs_io_pread(struct erofs_vfile *vf, void *buf, u64 offset, size_t len);
+ssize_t erofs_io_pread(struct erofs_vfile *vf, void *buf, u64 offset, size_t len);
+ssize_t erofs_io_read(struct erofs_vfile *vf, void *buf, size_t len);
+off_t erofs_io_lseek(struct erofs_vfile *vf, u64 offset, int whence);
 
 ssize_t erofs_copy_file_range(int fd_in, u64 *off_in, int fd_out, u64 *off_out,
 			      size_t length);

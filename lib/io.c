@@ -26,8 +26,8 @@
 #define EROFS_MODNAME	"erofs_io"
 #include "erofs/print.h"
 
-int erofs_io_pwrite(struct erofs_vfile *vf, const void *buf,
-		    u64 pos, size_t len)
+ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf,
+			u64 pos, size_t len)
 {
 	ssize_t ret;
 
@@ -74,11 +74,11 @@ int erofs_io_fsync(struct erofs_vfile *vf)
 	return 0;
 }
 
-int erofs_io_fallocate(struct erofs_vfile *vf, u64 offset,
-		       size_t len, bool zeroout)
+ssize_t erofs_io_fallocate(struct erofs_vfile *vf, u64 offset,
+			   size_t len, bool zeroout)
 {
 	static const char zero[EROFS_MAX_BLOCK_SIZE] = {0};
-	int ret;
+	ssize_t ret;
 
 	if (unlikely(cfg.c_dry_run))
 		return 0;
@@ -123,7 +123,7 @@ int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length)
 	return ftruncate(vf->fd, length);
 }
 
-int erofs_io_pread(struct erofs_vfile *vf, void *buf, u64 pos, size_t len)
+ssize_t erofs_io_pread(struct erofs_vfile *vf, void *buf, u64 pos, size_t len)
 {
 	ssize_t ret;
 
@@ -317,8 +317,8 @@ int erofs_blob_open_ro(struct erofs_sb_info *sbi, const char *dev)
 	return 0;
 }
 
-int erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
-		   void *buf, u64 offset, size_t len)
+ssize_t erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
+		       void *buf, u64 offset, size_t len)
 {
 	if (device_id)
 		return erofs_io_pread(&((struct erofs_vfile) {
@@ -419,4 +419,39 @@ out:
 	}
 #endif
 	return __erofs_copy_file_range(fd_in, off_in, fd_out, off_out, length);
+}
+
+ssize_t erofs_io_read(struct erofs_vfile *vf, void *buf, size_t bytes)
+{
+	ssize_t i = 0;
+
+	if (vf->ops)
+		return vf->ops->read(vf, buf, bytes);
+
+	while (bytes) {
+		int len = bytes > INT_MAX ? INT_MAX : bytes;
+		int ret;
+
+		ret = read(vf->fd, buf + i, len);
+		if (ret < 1) {
+			if (ret == 0) {
+				break;
+			} else if (errno != EINTR) {
+				erofs_err("failed to read : %s",
+					  strerror(errno));
+				return -errno;
+			}
+		}
+		bytes -= ret;
+		i += ret;
+        }
+        return i;
+}
+
+off_t erofs_io_lseek(struct erofs_vfile *vf, u64 offset, int whence)
+{
+	if (vf->ops)
+		return vf->ops->lseek(vf, offset, whence);
+
+	return lseek(vf->fd, offset, whence);
 }

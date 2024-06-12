@@ -39,7 +39,7 @@ struct erofs_iostream_liblzma {
 
 struct erofs_iostream {
 	union {
-		int fd;			/* original fd */
+		struct erofs_vfile vf;
 		void *handler;
 #ifdef HAVE_LIBLZMA
 		struct erofs_iostream_liblzma *lzma;

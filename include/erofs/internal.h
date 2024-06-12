@@ -453,8 +453,8 @@ void erofs_dev_close(struct erofs_sb_info *sbi);
 void erofs_blob_closeall(struct erofs_sb_info *sbi);
 int erofs_blob_open_ro(struct erofs_sb_info *sbi, const char *dev);
 
-int erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
-		   void *buf, u64 offset, size_t len);
+ssize_t erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
+		       void *buf, u64 offset, size_t len);
 
 static inline int erofs_dev_write(struct erofs_sb_info *sbi, const void *buf,
 				  u64 offset, size_t len)

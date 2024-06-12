@@ -39,30 +39,6 @@ struct tar_header {
 	char padding[12];	/* 500-512 (pad to exactly the 512 byte) */
 };
 
-s64 erofs_read_from_fd(int fd, void *buf, u64 bytes)
-{
-	s64 i = 0;
-
-	while (bytes) {
-		int len = bytes > INT_MAX ? INT_MAX : bytes;
-		int ret;
-
-		ret = read(fd, buf + i, len);
-		if (ret < 1) {
-			if (ret == 0) {
-				break;
-			} else if (errno != EINTR) {
-				erofs_err("failed to read : %s\n",
-					  strerror(errno));
-				return -errno;
-			}
-		}
-		bytes -= ret;
-		i += ret;
-        }
-        return i;
-}
-
 void erofs_iostream_close(struct erofs_iostream *ios)
 {
 	free(ios->buffer);
@@ -79,7 +55,7 @@ void erofs_iostream_close(struct erofs_iostream *ios)
 #endif
 		return;
 	}
-	close(ios->fd);
+	close(ios->vf.fd);
 }
 
 int erofs_iostream_open(struct erofs_iostream *ios, int fd, int decoder)
@@ -119,7 +95,7 @@ int erofs_iostream_open(struct erofs_iostream *ios, int fd, int decoder)
 		return -EOPNOTSUPP;
 #endif
 	} else {
-		ios->fd = fd;
+		ios->vf.fd = fd;
 		fsz = lseek(fd, 0, SEEK_END);
 		if (fsz <= 0) {
 			ios->feof = !fsz;
@@ -218,8 +194,8 @@ int erofs_iostream_read(struct erofs_iostream *ios, void **buf, u64 bytes)
 			return -EOPNOTSUPP;
 #endif
 		} else {
-			ret = erofs_read_from_fd(ios->fd, ios->buffer + rabytes,
-						 ios->bufsize - rabytes);
+			ret = erofs_io_read(&ios->vf, ios->buffer + rabytes,
+					    ios->bufsize - rabytes);
 			if (ret < 0)
 				return ret;
 			ios->tail += ret;
@@ -271,7 +247,7 @@ int erofs_iostream_lskip(struct erofs_iostream *ios, u64 sz)
 		return sz;
 
 	if (ios->sz && likely(ios->dumpfd < 0)) {
-		s64 cur = lseek(ios->fd, sz, SEEK_CUR);
+		s64 cur = erofs_io_lseek(&ios->vf, sz, SEEK_CUR);
 
 		if (cur > ios->sz)
 			return cur - ios->sz;
