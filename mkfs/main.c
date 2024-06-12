@@ -1035,11 +1035,12 @@ void erofs_show_progs(int argc, char *argv[])
 	if (cfg.c_dbg_lvl >= EROFS_WARN)
 		printf("%s %s\n", basename(argv[0]), cfg.c_version);
 }
-static struct erofs_inode *erofs_alloc_root_inode(void)
+
+static struct erofs_inode *erofs_mkfs_alloc_root(struct erofs_sb_info *sbi)
 {
 	struct erofs_inode *root;
 
-	root = erofs_new_inode();
+	root = erofs_new_inode(sbi);
 	if (IS_ERR(root))
 		return root;
 	root->i_srcpath = strdup("/");
@@ -1135,7 +1136,7 @@ int main(int argc, char **argv)
 {
 	int err = 0;
 	struct erofs_buffer_head *sb_bh;
-	struct erofs_inode *root_inode, *packed_inode;
+	struct erofs_inode *root, *packed_inode;
 	erofs_blk_t nblocks;
 	struct timeval t;
 	FILE *packedfile = NULL;
@@ -1297,31 +1298,31 @@ int main(int argc, char **argv)
 	erofs_inode_manager_init();
 
 	if (tar_mode) {
-		root_inode = erofs_alloc_root_inode();
-		if (IS_ERR(root_inode)) {
-			err = PTR_ERR(root_inode);
+		root = erofs_mkfs_alloc_root(&sbi);
+		if (IS_ERR(root)) {
+			err = PTR_ERR(root);
 			goto exit;
 		}
 
-		while (!(err = tarerofs_parse_tar(root_inode, &erofstar)));
+		while (!(err = tarerofs_parse_tar(root, &erofstar)));
 
 		if (err < 0)
 			goto exit;
 
-		err = erofs_rebuild_dump_tree(root_inode);
+		err = erofs_rebuild_dump_tree(root);
 		if (err < 0)
 			goto exit;
 	} else if (rebuild_mode) {
-		root_inode = erofs_alloc_root_inode();
-		if (IS_ERR(root_inode)) {
-			err = PTR_ERR(root_inode);
+		root = erofs_mkfs_alloc_root(&sbi);
+		if (IS_ERR(root)) {
+			err = PTR_ERR(root);
 			goto exit;
 		}
 
-		err = erofs_rebuild_load_trees(root_inode);
+		err = erofs_rebuild_load_trees(root);
 		if (err)
 			goto exit;
-		err = erofs_rebuild_dump_tree(root_inode);
+		err = erofs_rebuild_dump_tree(root);
 		if (err)
 			goto exit;
 	} else {
@@ -1335,14 +1336,14 @@ int main(int argc, char **argv)
 		if (cfg.c_extra_ea_name_prefixes)
 			erofs_xattr_write_name_prefixes(&sbi, packedfile);
 
-		root_inode = erofs_mkfs_build_tree_from_path(cfg.c_src_path);
-		if (IS_ERR(root_inode)) {
-			err = PTR_ERR(root_inode);
+		root = erofs_mkfs_build_tree_from_path(&sbi, cfg.c_src_path);
+		if (IS_ERR(root)) {
+			err = PTR_ERR(root);
 			goto exit;
 		}
 	}
-	sbi.root_nid = erofs_lookupnid(root_inode);
-	erofs_iput(root_inode);
+	sbi.root_nid = erofs_lookupnid(root);
+	erofs_iput(root);
 
 	if (erofstar.index_mode && sbi.extra_devices && !erofstar.mapfile)
 		sbi.devs[0].blocks = BLK_ROUND_UP(&sbi, erofstar.offset);

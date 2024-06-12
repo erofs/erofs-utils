@@ -330,7 +330,7 @@ struct erofs_inode *erofs_mkfs_build_packedfile(void)
 {
 	fflush(packedfile);
 
-	return erofs_mkfs_build_special_from_fd(fileno(packedfile),
+	return erofs_mkfs_build_special_from_fd(&sbi, fileno(packedfile),
 						EROFS_PACKED_INODE);
 }
 

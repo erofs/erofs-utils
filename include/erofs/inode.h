@@ -38,9 +38,11 @@ int erofs_rebuild_dump_tree(struct erofs_inode *dir);
 int erofs_init_empty_dir(struct erofs_inode *dir);
 int __erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 		       const char *path);
-struct erofs_inode *erofs_new_inode(void);
-struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path);
-struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name);
+struct erofs_inode *erofs_new_inode(struct erofs_sb_info *sbi);
+struct erofs_inode *erofs_mkfs_build_tree_from_path(struct erofs_sb_info *sbi,
+						    const char *path);
+struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_sb_info *sbi,
+						     int fd, const char *name);
 
 #ifdef __cplusplus
 }

@@ -31,7 +31,7 @@ static struct erofs_dentry *erofs_rebuild_mkdir(struct erofs_inode *dir,
 	struct erofs_inode *inode;
 	struct erofs_dentry *d;
 
-	inode = erofs_new_inode();
+	inode = erofs_new_inode(dir->sbi);
 	if (IS_ERR(inode))
 		return ERR_CAST(inode);
 
@@ -296,7 +296,7 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 		u64 nid;
 
 		DBG_BUGON(parent != d->inode);
-		inode = erofs_new_inode();
+		inode = erofs_new_inode(dir->sbi);
 		if (IS_ERR(inode)) {
 			ret = PTR_ERR(inode);
 			goto out;

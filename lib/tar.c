@@ -937,7 +937,7 @@ restart:
 		inode = d->inode;
 	} else {
 new_inode:
-		inode = erofs_new_inode();
+		inode = erofs_new_inode(sbi);
 		if (IS_ERR(inode)) {
 			ret = PTR_ERR(inode);
 			goto out;

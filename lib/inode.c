@@ -1011,7 +1011,7 @@ static int erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 	return 0;
 }
 
-struct erofs_inode *erofs_new_inode(void)
+struct erofs_inode *erofs_new_inode(struct erofs_sb_info *sbi)
 {
 	struct erofs_inode *inode;
 
@@ -1019,8 +1019,8 @@ struct erofs_inode *erofs_new_inode(void)
 	if (!inode)
 		return ERR_PTR(-ENOMEM);
 
-	inode->sbi = &sbi;
-	inode->i_ino[0] = sbi.inos++;	/* inode serial number */
+	inode->sbi = sbi;
+	inode->i_ino[0] = sbi->inos++;	/* inode serial number */
 	inode->i_count = 1;
 	inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 
@@ -1030,16 +1030,13 @@ struct erofs_inode *erofs_new_inode(void)
 	return inode;
 }
 
-/* get the inode from the (source) path */
-static struct erofs_inode *erofs_iget_from_path(const char *path, bool is_src)
+/* get the inode from the source path */
+static struct erofs_inode *erofs_iget_from_srcpath(struct erofs_sb_info *sbi,
+						   const char *path)
 {
 	struct stat st;
 	struct erofs_inode *inode;
 	int ret;
-
-	/* currently, only source path is supported */
-	if (!is_src)
-		return ERR_PTR(-EINVAL);
 
 	ret = lstat(path, &st);
 	if (ret)
@@ -1057,7 +1054,7 @@ static struct erofs_inode *erofs_iget_from_path(const char *path, bool is_src)
 	}
 
 	/* cannot find in the inode cache */
-	inode = erofs_new_inode();
+	inode = erofs_new_inode(sbi);
 	if (IS_ERR(inode))
 		return inode;
 
@@ -1293,6 +1290,7 @@ static void erofs_mkfs_flushjobs(struct erofs_sb_info *sbi)
 
 static int erofs_mkfs_handle_directory(struct erofs_inode *dir)
 {
+	struct erofs_sb_info *sbi = dir->sbi;
 	DIR *_dir;
 	struct dirent *dp;
 	struct erofs_dentry *d;
@@ -1344,7 +1342,7 @@ static int erofs_mkfs_handle_directory(struct erofs_inode *dir)
 		if (ret < 0 || ret >= PATH_MAX)
 			goto err_closedir;
 
-		inode = erofs_iget_from_path(buf, true);
+		inode = erofs_iget_from_srcpath(sbi, buf);
 		if (IS_ERR(inode)) {
 			ret = PTR_ERR(inode);
 			goto err_closedir;
@@ -1375,7 +1373,7 @@ static int erofs_mkfs_handle_directory(struct erofs_inode *dir)
 	else
 		dir->i_nlink = i_nlink;
 
-	return erofs_mkfs_go(dir->sbi, EROFS_MKFS_JOB_DIR, &dir, sizeof(dir));
+	return erofs_mkfs_go(sbi, EROFS_MKFS_JOB_DIR, &dir, sizeof(dir));
 
 err_closedir:
 	closedir(_dir);
@@ -1598,11 +1596,11 @@ static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild)
 }
 
 struct erofs_mkfs_buildtree_ctx {
+	struct erofs_sb_info *sbi;
 	union {
 		const char *path;
 		struct erofs_inode *root;
 	} u;
-	bool from_path;
 };
 #ifndef EROFS_MT_ENABLED
 #define __erofs_mkfs_build_tree erofs_mkfs_build_tree
@@ -1610,20 +1608,21 @@ struct erofs_mkfs_buildtree_ctx {
 
 static int __erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 {
+	bool from_path = !!ctx->sbi;
 	struct erofs_inode *root;
 	int err;
 
-	if (ctx->from_path) {
-		root = erofs_iget_from_path(ctx->u.path, true);
+	if (from_path) {
+		root = erofs_iget_from_srcpath(ctx->sbi, ctx->u.path);
 		if (IS_ERR(root))
 			return PTR_ERR(root);
 	} else {
 		root = ctx->u.root;
 	}
 
-	err = erofs_mkfs_dump_tree(root, !ctx->from_path);
+	err = erofs_mkfs_dump_tree(root, !from_path);
 	if (err) {
-		if (ctx->from_path)
+		if (from_path)
 			erofs_iput(root);
 		return err;
 	}
@@ -1677,14 +1676,17 @@ fail:
 }
 #endif
 
-struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
+struct erofs_inode *erofs_mkfs_build_tree_from_path(struct erofs_sb_info *sbi,
+						    const char *path)
 {
 	struct erofs_mkfs_buildtree_ctx ctx = {
-		.from_path = true,
+		.sbi = sbi,
 		.u.path = path,
 	};
 	int err;
 
+	if (!sbi)
+		return ERR_PTR(-EINVAL);
 	err = erofs_mkfs_build_tree(&ctx);
 	if (err)
 		return ERR_PTR(err);
@@ -1694,12 +1696,13 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
 int erofs_rebuild_dump_tree(struct erofs_inode *root)
 {
 	return erofs_mkfs_build_tree(&((struct erofs_mkfs_buildtree_ctx) {
-		.from_path = false,
+		.sbi = NULL,
 		.u.root = root,
 	}));
 }
 
-struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
+struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_sb_info *sbi,
+						     int fd, const char *name)
 {
 	struct stat st;
 	struct erofs_inode *inode;
@@ -1714,7 +1717,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(int fd, const char *name)
 	if (ret)
 		return ERR_PTR(-errno);
 
-	inode = erofs_new_inode();
+	inode = erofs_new_inode(sbi);
 	if (IS_ERR(inode))
 		return inode;
 
