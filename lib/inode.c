@@ -208,8 +208,30 @@ static int comp_subdir(const void *a, const void *b)
 	return strcmp(da->name, db->name);
 }
 
-static int erofs_prepare_dir_layout(struct erofs_inode *dir,
-				    unsigned int nr_subdirs)
+int erofs_init_empty_dir(struct erofs_inode *dir)
+{
+	struct erofs_dentry *d;
+
+	/* dot is pointed to the current dir inode */
+	d = erofs_d_alloc(dir, ".");
+	if (IS_ERR(d))
+		return PTR_ERR(d);
+	d->inode = erofs_igrab(dir);
+	d->type = EROFS_FT_DIR;
+
+	/* dotdot is pointed to the parent dir */
+	d = erofs_d_alloc(dir, "..");
+	if (IS_ERR(d))
+		return PTR_ERR(d);
+	d->inode = erofs_igrab(erofs_parent_inode(dir));
+	d->type = EROFS_FT_DIR;
+
+	dir->i_nlink = 2;
+	return 0;
+}
+
+static int erofs_prepare_dir_file(struct erofs_inode *dir,
+				  unsigned int nr_subdirs)
 {
 	struct erofs_sb_info *sbi = dir->sbi;
 	struct erofs_dentry *d, *n, **sorted_d;
@@ -246,41 +268,6 @@ static int erofs_prepare_dir_layout(struct erofs_inode *dir,
 	/* it will be used in erofs_prepare_inode_buffer */
 	dir->idata_size = d_size % erofs_blksiz(sbi);
 	return 0;
-}
-
-int erofs_init_empty_dir(struct erofs_inode *dir)
-{
-	struct erofs_dentry *d;
-
-	/* dot is pointed to the current dir inode */
-	d = erofs_d_alloc(dir, ".");
-	if (IS_ERR(d))
-		return PTR_ERR(d);
-	d->inode = erofs_igrab(dir);
-	d->type = EROFS_FT_DIR;
-
-	/* dotdot is pointed to the parent dir */
-	d = erofs_d_alloc(dir, "..");
-	if (IS_ERR(d))
-		return PTR_ERR(d);
-	d->inode = erofs_igrab(erofs_parent_inode(dir));
-	d->type = EROFS_FT_DIR;
-
-	dir->i_nlink = 2;
-	return 0;
-}
-
-int erofs_prepare_dir_file(struct erofs_inode *dir, unsigned int nr_subdirs)
-{
-	int ret;
-
-	ret = erofs_init_empty_dir(dir);
-	if (ret)
-		return ret;
-
-	/* sort subdirs */
-	nr_subdirs += 2;
-	return erofs_prepare_dir_layout(dir, nr_subdirs);
 }
 
 static void fill_dirblock(char *buf, unsigned int size, unsigned int q,
@@ -1358,7 +1345,11 @@ static int erofs_mkfs_handle_directory(struct erofs_inode *dir)
 	}
 	closedir(_dir);
 
-	ret = erofs_prepare_dir_file(dir, nr_subdirs);
+	ret = erofs_init_empty_dir(dir);
+	if (ret)
+		return ret;
+
+	ret = erofs_prepare_dir_file(dir, nr_subdirs + 2); /* sort subdirs */
 	if (ret)
 		return ret;
 
@@ -1401,7 +1392,7 @@ static int erofs_rebuild_handle_directory(struct erofs_inode *dir)
 
 	DBG_BUGON(i_nlink < 2);		/* should have `.` and `..` */
 	DBG_BUGON(nr_subdirs < i_nlink);
-	ret = erofs_prepare_dir_layout(dir, nr_subdirs);
+	ret = erofs_prepare_dir_file(dir, nr_subdirs);
 	if (ret)
 		return ret;
 
