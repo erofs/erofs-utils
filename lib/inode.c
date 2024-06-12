@@ -1186,8 +1186,6 @@ static int erofs_mkfs_jobfn(struct erofs_mkfs_jobitem *item)
 		if (ret)
 			return ret;
 		inode->bh->op = &erofs_skip_write_bhops;
-		if (IS_ROOT(inode))	/* assign root NID */
-			erofs_fixup_meta_blkaddr(inode);
 		return 0;
 	}
 
@@ -1206,20 +1204,31 @@ static int erofs_mkfs_jobfn(struct erofs_mkfs_jobitem *item)
 struct erofs_mkfs_dfops {
 	pthread_t worker;
 	pthread_mutex_t lock;
-	pthread_cond_t full, empty;
+	pthread_cond_t full, empty, drain;
 	struct erofs_mkfs_jobitem *queue;
 	unsigned int entries, head, tail;
 };
 
 #define EROFS_MT_QUEUE_SIZE 128
 
-void *erofs_mkfs_pop_jobitem(struct erofs_mkfs_dfops *q)
+static void erofs_mkfs_flushjobs(struct erofs_sb_info *sbi)
+{
+	struct erofs_mkfs_dfops *q = sbi->mkfs_dfops;
+
+	pthread_mutex_lock(&q->lock);
+	pthread_cond_wait(&q->drain, &q->lock);
+	pthread_mutex_unlock(&q->lock);
+}
+
+static void *erofs_mkfs_pop_jobitem(struct erofs_mkfs_dfops *q)
 {
 	struct erofs_mkfs_jobitem *item;
 
 	pthread_mutex_lock(&q->lock);
-	while (q->head == q->tail)
+	while (q->head == q->tail) {
+		pthread_cond_signal(&q->drain);
 		pthread_cond_wait(&q->empty, &q->lock);
+	}
 
 	item = q->queue + q->head;
 	q->head = (q->head + 1) & (q->entries - 1);
@@ -1229,7 +1238,7 @@ void *erofs_mkfs_pop_jobitem(struct erofs_mkfs_dfops *q)
 	return item;
 }
 
-void *z_erofs_mt_dfops_worker(void *arg)
+static void *z_erofs_mt_dfops_worker(void *arg)
 {
 	struct erofs_sb_info *sbi = arg;
 	int ret = 0;
@@ -1247,8 +1256,8 @@ void *z_erofs_mt_dfops_worker(void *arg)
 	pthread_exit((void *)(uintptr_t)ret);
 }
 
-int erofs_mkfs_go(struct erofs_sb_info *sbi,
-		  enum erofs_mkfs_jobtype type, void *elem, int size)
+static int erofs_mkfs_go(struct erofs_sb_info *sbi,
+			 enum erofs_mkfs_jobtype type, void *elem, int size)
 {
 	struct erofs_mkfs_jobitem *item;
 	struct erofs_mkfs_dfops *q = sbi->mkfs_dfops;
@@ -1268,14 +1277,17 @@ int erofs_mkfs_go(struct erofs_sb_info *sbi,
 	return 0;
 }
 #else
-int erofs_mkfs_go(struct erofs_sb_info *sbi,
-		  enum erofs_mkfs_jobtype type, void *elem, int size)
+static int erofs_mkfs_go(struct erofs_sb_info *sbi,
+			 enum erofs_mkfs_jobtype type, void *elem, int size)
 {
 	struct erofs_mkfs_jobitem item;
 
 	item.type = type;
 	memcpy(&item.u, elem, size);
 	return erofs_mkfs_jobfn(&item);
+}
+static void erofs_mkfs_flushjobs(struct erofs_sb_info *sbi)
+{
 }
 #endif
 
@@ -1538,6 +1550,8 @@ static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild)
 	if (err)
 		return err;
 
+	erofs_mkfs_flushjobs(root->sbi);
+	erofs_fixup_meta_blkaddr(root);		/* assign root NID */
 	do {
 		int err;
 		struct erofs_inode *dir = dumpdir;
@@ -1636,6 +1650,7 @@ static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 	pthread_mutex_init(&q->lock, NULL);
 	pthread_cond_init(&q->empty, NULL);
 	pthread_cond_init(&q->full, NULL);
+	pthread_cond_init(&q->drain, NULL);
 
 	q->head = 0;
 	q->tail = 0;
@@ -1654,6 +1669,7 @@ static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 fail:
 	pthread_cond_destroy(&q->empty);
 	pthread_cond_destroy(&q->full);
+	pthread_cond_destroy(&q->drain);
 	pthread_mutex_destroy(&q->lock);
 	free(q->queue);
 	free(q);
