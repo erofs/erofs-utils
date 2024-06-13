@@ -1386,7 +1386,7 @@ static int erofs_rebuild_handle_directory(struct erofs_inode *dir)
 	int ret;
 
 	nr_subdirs = 0;
-	i_nlink = 2;
+	i_nlink = 0;
 	list_for_each_entry_safe(d, n, &dir->i_subdirs, d_child) {
 		if (cfg.c_ovlfs_strip && erofs_inode_is_whiteout(d->inode)) {
 			erofs_dbg("remove whiteout %s", d->inode->i_srcpath);
@@ -1399,6 +1399,8 @@ static int erofs_rebuild_handle_directory(struct erofs_inode *dir)
 		++nr_subdirs;
 	}
 
+	DBG_BUGON(i_nlink < 2);		/* should have `.` and `..` */
+	DBG_BUGON(nr_subdirs < i_nlink);
 	ret = erofs_prepare_dir_layout(dir, nr_subdirs);
 	if (ret)
 		return ret;
