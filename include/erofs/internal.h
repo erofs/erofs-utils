@@ -303,13 +303,13 @@ static inline struct erofs_inode *erofs_parent_inode(struct erofs_inode *inode)
 
 struct erofs_dentry {
 	struct list_head d_child;	/* child of parent list */
-
-	unsigned int type;
-	char name[EROFS_NAME_LEN];
 	union {
 		struct erofs_inode *inode;
 		erofs_nid_t nid;
 	};
+	char name[EROFS_NAME_LEN];
+	u8 type;
+	bool validnid;
 };
 
 static inline bool is_dot_dotdot_len(const char *name, unsigned int len)

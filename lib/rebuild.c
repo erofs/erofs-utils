@@ -235,18 +235,18 @@ static int erofs_rebuild_fill_inode(struct erofs_inode *inode)
 }
 
 /*
- * @parent:  parent directory in inode tree
- * @ctx.dir: parent directory when itering erofs_iterate_dir()
+ * @mergedir: parent directory in the merged tree
+ * @ctx.dir:  parent directory when itering erofs_iterate_dir()
  */
 struct erofs_rebuild_dir_context {
 	struct erofs_dir_context ctx;
-	struct erofs_inode *parent;
+	struct erofs_inode *mergedir;
 };
 
 static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 {
 	struct erofs_rebuild_dir_context *rctx = (void *)ctx;
-	struct erofs_inode *parent = rctx->parent;
+	struct erofs_inode *mergedir = rctx->mergedir;
 	struct erofs_inode *dir = ctx->dir;
 	struct erofs_inode *inode, *candidate;
 	struct erofs_inode src;
@@ -258,15 +258,15 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 	if (ctx->dot_dotdot)
 		return 0;
 
-	ret = asprintf(&path, "%s/%.*s", rctx->parent->i_srcpath,
+	ret = asprintf(&path, "%s/%.*s", rctx->mergedir->i_srcpath,
 		       ctx->de_namelen, ctx->dname);
 	if (ret < 0)
 		return ret;
 
 	erofs_dbg("parsing %s", path);
-	dname = path + strlen(parent->i_srcpath) + 1;
+	dname = path + strlen(mergedir->i_srcpath) + 1;
 
-	d = erofs_rebuild_get_dentry(parent, dname, false,
+	d = erofs_rebuild_get_dentry(mergedir, dname, false,
 				     &dumb, &dumb, false);
 	if (IS_ERR(d)) {
 		ret = PTR_ERR(d);
@@ -290,12 +290,12 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 		ret = erofs_read_inode_from_disk(&src);
 		if (ret || !S_ISDIR(src.i_mode))
 			goto out;
-		parent = d->inode;
+		mergedir = d->inode;
 		inode = dir = &src;
 	} else {
 		u64 nid;
 
-		DBG_BUGON(parent != d->inode);
+		DBG_BUGON(mergedir != d->inode);
 		inode = erofs_new_inode(dir->sbi);
 		if (IS_ERR(inode)) {
 			ret = PTR_ERR(inode);
@@ -347,7 +347,7 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 			}
 
 			erofs_insert_ihash(inode);
-			parent = dir = inode;
+			mergedir = dir = inode;
 		}
 
 		d->inode = inode;
@@ -357,7 +357,7 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 	if (S_ISDIR(inode->i_mode)) {
 		struct erofs_rebuild_dir_context nctx = *rctx;
 
-		nctx.parent = parent;
+		nctx.mergedir = mergedir;
 		nctx.ctx.dir = dir;
 		ret = erofs_iterate_dir(&nctx.ctx, false);
 		if (ret)
@@ -402,9 +402,74 @@ int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi)
 	ctx = (struct erofs_rebuild_dir_context) {
 		.ctx.dir = &inode,
 		.ctx.cb = erofs_rebuild_dirent_iter,
-		.parent = root,
+		.mergedir = root,
 	};
 	ret = erofs_iterate_dir(&ctx.ctx, false);
 	free(inode.i_srcpath);
 	return ret;
+}
+
+static int erofs_rebuild_basedir_dirent_iter(struct erofs_dir_context *ctx)
+{
+	struct erofs_rebuild_dir_context *rctx = (void *)ctx;
+	struct erofs_inode *dir = ctx->dir;
+	struct erofs_inode *mergedir = rctx->mergedir;
+	struct erofs_dentry *d;
+	char *dname;
+	bool dumb;
+	int ret;
+
+	if (ctx->dot_dotdot)
+		return 0;
+
+	dname = strndup(ctx->dname, ctx->de_namelen);
+	if (!dname)
+		return -ENOMEM;
+	d = erofs_rebuild_get_dentry(mergedir, dname, false,
+				     &dumb, &dumb, false);
+	if (IS_ERR(d)) {
+		ret = PTR_ERR(d);
+		goto out;
+	}
+
+	if (d->type == EROFS_FT_UNKNOWN) {
+		d->nid = ctx->de_nid;
+		d->type = ctx->de_ftype;
+		d->validnid = true;
+		if (!mergedir->whiteouts && erofs_dentry_is_wht(dir->sbi, d))
+			mergedir->whiteouts = true;
+	} else {
+		struct erofs_inode *inode = d->inode;
+
+		list_del(&inode->i_hash);
+		inode->dev = dir->sbi->dev;
+		inode->i_ino[1] = ctx->de_nid;
+		erofs_insert_ihash(inode);
+	}
+	ret = 0;
+out:
+	free(dname);
+	return ret;
+}
+
+int erofs_rebuild_load_basedir(struct erofs_inode *dir)
+{
+	struct erofs_inode fakeinode = {
+		.sbi = dir->sbi,
+		.nid = dir->i_ino[1],
+	};
+	struct erofs_rebuild_dir_context ctx;
+	int ret;
+
+	ret = erofs_read_inode_from_disk(&fakeinode);
+	if (ret) {
+		erofs_err("failed to read inode @ %llu", fakeinode.nid);
+		return ret;
+	}
+	ctx = (struct erofs_rebuild_dir_context) {
+		.ctx.dir = &fakeinode,
+		.ctx.cb = erofs_rebuild_basedir_dirent_iter,
+		.mergedir = dir,
+	};
+	return erofs_iterate_dir(&ctx.ctx, false);
 }
