@@ -517,7 +517,7 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 		return 0;
 	}
 
-	bh = erofs_balloc(DATA, blobfile ? datablob_size : 0, 0, 0);
+	bh = erofs_balloc(DATA, datablob_size, 0, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 
@@ -532,7 +532,7 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 				sbi->bdev.fd, &pos_out, datablob_size);
 		ret = ret < datablob_size ? -EIO : 0;
 	} else {
-		ret = 0;
+		ret = erofs_io_ftruncate(&sbi->bdev, pos_out + datablob_size);
 	}
 	bh->op = &erofs_drop_directly_bhops;
 	erofs_bdrop(bh, false);
