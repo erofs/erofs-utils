@@ -143,7 +143,8 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 	list_del(&inode->i_hash);
 	if (inode->i_srcpath)
 		free(inode->i_srcpath);
-	if (inode->with_diskbuf) {
+
+	if (inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF) {
 		erofs_diskbuf_close(inode->i_diskbuf);
 		free(inode->i_diskbuf);
 	} else if (inode->i_link) {
@@ -1175,6 +1176,30 @@ static void erofs_fixup_meta_blkaddr(struct erofs_inode *rootdir)
 	rootdir->nid = (off - meta_offset) >> EROFS_ISLOTBITS;
 }
 
+static int erofs_inode_reserve_data_blocks(struct erofs_inode *inode)
+{
+	struct erofs_sb_info *sbi = inode->sbi;
+	erofs_off_t alignedsz = round_up(inode->i_size, erofs_blksiz(sbi));
+	erofs_blk_t nblocks = alignedsz >> sbi->blkszbits;
+	struct erofs_buffer_head *bh;
+
+	/* allocate data blocks */
+	bh = erofs_balloc(DATA, alignedsz, 0, 0);
+	if (IS_ERR(bh))
+		return PTR_ERR(bh);
+
+	/* get blkaddr of the bh */
+	(void)erofs_mapbh(bh->block);
+
+	/* write blocks except for the tail-end block */
+	inode->u.i_blkaddr = bh->block->blkaddr;
+	erofs_bdrop(bh, false);
+
+	inode->datalayout = EROFS_INODE_FLAT_PLAIN;
+	tarerofs_blocklist_write(inode->u.i_blkaddr, nblocks, inode->i_ino[1]);
+	return 0;
+}
+
 struct erofs_mkfs_job_ndir_ctx {
 	struct erofs_inode *inode;
 	void *ictx;
@@ -1187,7 +1212,8 @@ static int erofs_mkfs_job_write_file(struct erofs_mkfs_job_ndir_ctx *ctx)
 	struct erofs_inode *inode = ctx->inode;
 	int ret;
 
-	if (inode->with_diskbuf && lseek(ctx->fd, ctx->fpos, SEEK_SET) < 0) {
+	if (inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF &&
+	    lseek(ctx->fd, ctx->fpos, SEEK_SET) < 0) {
 		ret = -errno;
 		goto out;
 	}
@@ -1204,11 +1230,11 @@ static int erofs_mkfs_job_write_file(struct erofs_mkfs_job_ndir_ctx *ctx)
 	/* fallback to all data uncompressed */
 	ret = erofs_write_unencoded_file(inode, ctx->fd, ctx->fpos);
 out:
-	if (inode->with_diskbuf) {
+	if (inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF) {
 		erofs_diskbuf_close(inode->i_diskbuf);
 		free(inode->i_diskbuf);
 		inode->i_diskbuf = NULL;
-		inode->with_diskbuf = false;
+		inode->datasource = EROFS_INODE_DATA_SOURCE_NONE;
 	} else {
 		close(ctx->fd);
 	}
@@ -1236,8 +1262,11 @@ static int erofs_mkfs_handle_nondirectory(struct erofs_mkfs_job_ndir_ctx *ctx)
 		ret = erofs_write_file_from_buffer(inode, symlink);
 		free(symlink);
 		inode->i_link = NULL;
-	} else if (inode->i_size && ctx->fd >= 0) {
-		ret = erofs_mkfs_job_write_file(ctx);
+	} else if (inode->i_size) {
+		if (inode->datasource == EROFS_INODE_DATA_SOURCE_RESVSP)
+			ret = erofs_inode_reserve_data_blocks(inode);
+		else if (ctx->fd >= 0)
+			ret = erofs_mkfs_job_write_file(ctx);
 	}
 	if (ret)
 		return ret;
@@ -1628,8 +1657,8 @@ static int erofs_rebuild_handle_inode(struct erofs_inode *inode,
 		struct erofs_mkfs_job_ndir_ctx ctx =
 			{ .inode = inode, .fd = -1 };
 
-		if (!S_ISLNK(inode->i_mode) && inode->i_size &&
-		    inode->with_diskbuf) {
+		if (S_ISREG(inode->i_mode) && inode->i_size &&
+		    inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF) {
 			ctx.fd = erofs_diskbuf_getfd(inode->i_diskbuf, &ctx.fpos);
 			if (ctx.fd < 0)
 				return ret;

@@ -1060,7 +1060,8 @@ static int erofs_rebuild_load_trees(struct erofs_inode *root)
 	int ret, idx;
 
 	list_for_each_entry(src, &rebuild_src_list, list) {
-		ret = erofs_rebuild_load_tree(root, src);
+		ret = erofs_rebuild_load_tree(root, src,
+					      EROFS_REBUILD_DATA_BLOB_INDEX);
 		if (ret) {
 			erofs_err("failed to load %s", src->devname);
 			return ret;

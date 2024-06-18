@@ -607,7 +607,7 @@ static int tarerofs_write_file_data(struct erofs_inode *inode,
 		j -= nread;
 	}
 	erofs_diskbuf_commit(inode->i_diskbuf, inode->i_size);
-	inode->with_diskbuf = true;
+	inode->datasource = EROFS_INODE_DATA_SOURCE_DISKBUF;
 	return 0;
 }
 

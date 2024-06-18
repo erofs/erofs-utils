@@ -170,6 +170,11 @@ EROFS_FEATURE_FUNCS(xattr_filter, compat, COMPAT_XATTR_FILTER)
 
 struct erofs_diskbuf;
 
+#define EROFS_INODE_DATA_SOURCE_NONE		0
+#define EROFS_INODE_DATA_SOURCE_LOCALPATH	1
+#define EROFS_INODE_DATA_SOURCE_DISKBUF		2
+#define EROFS_INODE_DATA_SOURCE_RESVSP		3
+
 struct erofs_inode {
 	struct list_head i_hash, i_subdirs, i_xattrs;
 
@@ -216,9 +221,9 @@ struct erofs_inode {
 	unsigned char inode_isize;
 	/* inline tail-end packing size */
 	unsigned short idata_size;
+	char datasource;
 	bool compressed_idata;
 	bool lazy_tailblock;
-	bool with_diskbuf;
 	bool opaque;
 	/* OVL: non-merge dir that may contain whiteout entries */
 	bool whiteouts;
