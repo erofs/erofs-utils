@@ -858,7 +858,8 @@ restart:
 			eh.link = strndup(th->linkname, sizeof(th->linkname));
 	}
 
-	if (tar->index_mode && !tar->mapfile &&
+	/* EROFS metadata index referring to the original tar data */
+	if (tar->index_mode && sbi->extra_devices &&
 	    erofs_blkoff(sbi, data_offset)) {
 		erofs_err("invalid tar data alignment @ %llu", tar_offset);
 		ret = -EIO;

@@ -423,6 +423,27 @@ static int mkfs_apply_zfeature_bits(uintmax_t bits)
 	return 0;
 }
 
+static void mkfs_parse_tar_cfg(char *cfg)
+{
+	char *p;
+
+	tar_mode = true;
+	if (!cfg)
+		return;
+	p = strchr(cfg, ',');
+	if (p) {
+		*p = '\0';
+		if ((*++p) != '\0')
+			erofstar.mapfile = strdup(p);
+	}
+	if (!strcmp(cfg, "headerball"))
+		erofstar.headeronly_mode = true;
+
+	if (erofstar.headeronly_mode || !strcmp(optarg, "i") ||
+	    !strcmp(optarg, "0"))
+		erofstar.index_mode = true;
+}
+
 static int mkfs_parse_one_compress_alg(char *alg,
 				       struct erofs_compr_opts *copts)
 {
@@ -729,15 +750,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			cfg.c_extra_ea_name_prefixes = true;
 			break;
 		case 20:
-			if (optarg && (!strcmp(optarg, "i") || (!strcmp(optarg, "headerball") ||
-				!strcmp(optarg, "0") || !memcmp(optarg, "0,", 2)))) {
-				erofstar.index_mode = true;
-				if (!memcmp(optarg, "0,", 2))
-					erofstar.mapfile = strdup(optarg + 2);
-				if (!strcmp(optarg, "headerball"))
-					erofstar.headeronly_mode = true;
-			}
-			tar_mode = true;
+			mkfs_parse_tar_cfg(optarg);
 			break;
 		case 21:
 			erofstar.aufs = true;
