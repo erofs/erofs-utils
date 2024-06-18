@@ -193,14 +193,11 @@ static struct xattr_item *get_xattritem(char *kvbuf, unsigned int len[2])
 	}
 
 	item = malloc(sizeof(*item));
-	if (!item) {
-		free(kvbuf);
+	if (!item)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	if (!match_prefix(kvbuf, &item->base_index, &item->prefix_len)) {
 		free(item);
-		free(kvbuf);
 		return ERR_PTR(-ENODATA);
 	}
 	DBG_BUGON(len[0] < item->prefix_len);
@@ -232,6 +229,7 @@ static struct xattr_item *parse_one_xattr(const char *path, const char *key,
 					  unsigned int keylen)
 {
 	ssize_t ret;
+	struct xattr_item *item;
 	unsigned int len[2];
 	char *kvbuf;
 
@@ -266,20 +264,32 @@ static struct xattr_item *parse_one_xattr(const char *path, const char *key,
 		ret = getxattr(path, key, kvbuf + EROFS_XATTR_KSIZE(len),
 			       len[1], 0, XATTR_NOFOLLOW);
 #else
-		free(kvbuf);
-		return ERR_PTR(-EOPNOTSUPP);
+		ret = -EOPNOTSUPP;
+		goto out;
 #endif
 		if (ret < 0) {
-			free(kvbuf);
-			return ERR_PTR(-errno);
+			ret = -errno;
+			goto out;
 		}
 		if (len[1] != ret) {
-			erofs_err("size of xattr value got changed just now (%u-> %ld)",
+			erofs_warn("size of xattr value got changed just now (%u-> %ld)",
 				  len[1], (long)ret);
 			len[1] = ret;
 		}
 	}
-	return get_xattritem(kvbuf, len);
+
+	item = get_xattritem(kvbuf, len);
+	if (!IS_ERR(item))
+		return item;
+	if (item == ERR_PTR(-ENODATA)) {
+		erofs_warn("skipped unidentified xattr: %s", key);
+		ret = 0;
+	} else {
+		ret = PTR_ERR(item);
+	}
+out:
+	free(kvbuf);
+	return ERR_PTR(ret);
 }
 
 static struct xattr_item *erofs_get_selabel_xattr(const char *srcpath,
@@ -291,6 +301,7 @@ static struct xattr_item *erofs_get_selabel_xattr(const char *srcpath,
 		int ret;
 		unsigned int len[2];
 		char *kvbuf, *fspath;
+		struct xattr_item *item;
 
 		if (cfg.mount_point)
 			ret = asprintf(&fspath, "/%s/%s", cfg.mount_point,
@@ -324,7 +335,10 @@ static struct xattr_item *erofs_get_selabel_xattr(const char *srcpath,
 		sprintf(kvbuf, "%s", XATTR_NAME_SECURITY_SELINUX);
 		memcpy(kvbuf + EROFS_XATTR_KSIZE(len), secontext, len[1]);
 		freecon(secontext);
-		return get_xattritem(kvbuf, len);
+		item = get_xattritem(kvbuf, len);
+		if (IS_ERR(item))
+			free(kvbuf);
+		return item;
 	}
 #endif
 	return NULL;
@@ -370,18 +384,6 @@ static bool erofs_is_skipped_xattr(const char *key)
 	if (cfg.sehnd && !strcmp(key, XATTR_SECURITY_PREFIX "selinux"))
 		return true;
 #endif
-
-	/* skip xattrs with unidentified "system." prefix */
-	if (!strncmp(key, XATTR_SYSTEM_PREFIX, XATTR_SYSTEM_PREFIX_LEN)) {
-		if (!strcmp(key, XATTR_NAME_POSIX_ACL_ACCESS) ||
-		    !strcmp(key, XATTR_NAME_POSIX_ACL_DEFAULT)) {
-			return false;
-		} else {
-			erofs_warn("skip unidentified xattr: %s", key);
-			return true;
-		}
-	}
-
 	return false;
 }
 
@@ -485,8 +487,10 @@ int erofs_setxattr(struct erofs_inode *inode, char *key,
 	memcpy(kvbuf + EROFS_XATTR_KSIZE(len), value, size);
 
 	item = get_xattritem(kvbuf, len);
-	if (IS_ERR(item))
+	if (IS_ERR(item)) {
+		free(kvbuf);
 		return PTR_ERR(item);
+	}
 	DBG_BUGON(!item);
 
 	return erofs_xattr_add(&inode->i_xattrs, item);
@@ -548,8 +552,10 @@ static int erofs_droid_xattr_set_caps(struct erofs_inode *inode)
 	memcpy(kvbuf + EROFS_XATTR_KSIZE(len), &caps, len[1]);
 
 	item = get_xattritem(kvbuf, len);
-	if (IS_ERR(item))
+	if (IS_ERR(item)) {
+		free(kvbuf);
 		return PTR_ERR(item);
+	}
 	DBG_BUGON(!item);
 
 	return erofs_xattr_add(&inode->i_xattrs, item);
