@@ -1136,7 +1136,7 @@ int main(int argc, char **argv)
 {
 	int err = 0;
 	struct erofs_buffer_head *sb_bh;
-	struct erofs_inode *root;
+	struct erofs_inode *root = NULL;
 	erofs_blk_t nblocks;
 	struct timeval t;
 	FILE *packedfile = NULL;
@@ -1309,7 +1309,7 @@ int main(int argc, char **argv)
 		if (err < 0)
 			goto exit;
 
-		err = erofs_rebuild_dump_tree(root);
+		err = erofs_rebuild_dump_tree(root, false);
 		if (err < 0)
 			goto exit;
 	} else if (rebuild_mode) {
@@ -1322,7 +1322,7 @@ int main(int argc, char **argv)
 		err = erofs_rebuild_load_trees(root);
 		if (err)
 			goto exit;
-		err = erofs_rebuild_dump_tree(root);
+		err = erofs_rebuild_dump_tree(root, false);
 		if (err)
 			goto exit;
 	} else {
@@ -1342,7 +1342,6 @@ int main(int argc, char **argv)
 			goto exit;
 		}
 	}
-	erofs_iput(root);
 
 	if (erofstar.index_mode && sbi.extra_devices && !erofstar.mapfile)
 		sbi.devs[0].blocks = BLK_ROUND_UP(&sbi, erofstar.offset);
@@ -1365,6 +1364,10 @@ int main(int argc, char **argv)
 	if (err)
 		goto exit;
 
+	erofs_fixup_root_inode(root);
+	erofs_iput(root);
+	root = NULL;
+
 	err = erofs_writesb(&sbi, sb_bh, &nblocks);
 	if (err)
 		goto exit;
@@ -1379,6 +1382,8 @@ int main(int argc, char **argv)
 	if (!err && erofs_sb_has_sb_chksum(&sbi))
 		err = erofs_mkfs_superblock_csum_set();
 exit:
+	if (root)
+		erofs_iput(root);
 	z_erofs_compress_exit();
 	z_erofs_dedupe_exit();
 	erofs_blocklist_close();

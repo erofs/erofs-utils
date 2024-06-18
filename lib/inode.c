@@ -311,17 +311,18 @@ erofs_nid_t erofs_lookupnid(struct erofs_inode *inode)
 	struct erofs_sb_info *sbi = inode->sbi;
 	erofs_off_t off, meta_offset;
 
-	if (!bh || (long long)inode->nid > 0)
-		return inode->nid;
+	if (bh && (long long)inode->nid <= 0) {
+		erofs_mapbh(bh->block);
+		off = erofs_btell(bh, false);
 
-	erofs_mapbh(bh->block);
-	off = erofs_btell(bh, false);
-
-	meta_offset = erofs_pos(sbi, sbi->meta_blkaddr);
-	DBG_BUGON(off < meta_offset);
-	inode->nid = (off - meta_offset) >> EROFS_ISLOTBITS;
-	erofs_dbg("Assign nid %llu to file %s (mode %05o)",
-		  inode->nid, inode->i_srcpath, inode->i_mode);
+		meta_offset = erofs_pos(sbi, sbi->meta_blkaddr);
+		DBG_BUGON(off < meta_offset);
+		inode->nid = (off - meta_offset) >> EROFS_ISLOTBITS;
+		erofs_dbg("Assign nid %llu to file %s (mode %05o)",
+			  inode->nid, inode->i_srcpath, inode->i_mode);
+	}
+	if (unlikely(IS_ROOT(inode)) && inode->nid > 0xffff)
+		return sbi->root_nid;
 	return inode->nid;
 }
 
@@ -739,7 +740,6 @@ static int erofs_bh_flush_write_inline(struct erofs_buffer_head *bh)
 	if (ret)
 		return ret;
 
-	inode->idata_size = 0;
 	free(inode->idata);
 	inode->idata = NULL;
 
@@ -1531,7 +1531,8 @@ static void erofs_mark_parent_inode(struct erofs_inode *inode,
 	inode->i_parent = (void *)((unsigned long)dir | 1);
 }
 
-static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild)
+static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild,
+				bool incremental)
 {
 	struct erofs_sb_info *sbi = root->sbi;
 	struct erofs_inode *dumpdir = erofs_igrab(root);
@@ -1545,9 +1546,12 @@ static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild)
 	if (err)
 		return err;
 
-	erofs_mkfs_flushjobs(sbi);
-	erofs_fixup_meta_blkaddr(root);		/* assign root NID */
-	sbi->root_nid = root->nid;
+	/* assign root NID immediately for non-incremental builds */
+	if (!incremental) {
+		erofs_mkfs_flushjobs(sbi);
+		erofs_fixup_meta_blkaddr(root);
+		sbi->root_nid = root->nid;
+	}
 
 	do {
 		int err;
@@ -1600,6 +1604,7 @@ struct erofs_mkfs_buildtree_ctx {
 		const char *path;
 		struct erofs_inode *root;
 	} u;
+	bool incremental;
 };
 #ifndef EROFS_MT_ENABLED
 #define __erofs_mkfs_build_tree erofs_mkfs_build_tree
@@ -1619,7 +1624,7 @@ static int __erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 		root = ctx->u.root;
 	}
 
-	err = erofs_mkfs_dump_tree(root, !from_path);
+	err = erofs_mkfs_dump_tree(root, !from_path, ctx->incremental);
 	if (err) {
 		if (from_path)
 			erofs_iput(root);
@@ -1692,11 +1697,12 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(struct erofs_sb_info *sbi,
 	return ctx.u.root;
 }
 
-int erofs_rebuild_dump_tree(struct erofs_inode *root)
+int erofs_rebuild_dump_tree(struct erofs_inode *root, bool incremental)
 {
 	return erofs_mkfs_build_tree(&((struct erofs_mkfs_buildtree_ctx) {
 		.sbi = NULL,
 		.u.root = root,
+		.incremental = incremental,
 	}));
 }
 
@@ -1757,4 +1763,57 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_sb_info *sbi,
 	erofs_prepare_inode_buffer(inode);
 	erofs_write_tail_end(inode);
 	return inode;
+}
+
+int erofs_fixup_root_inode(struct erofs_inode *root)
+{
+	struct erofs_sb_info *sbi = root->sbi;
+	struct erofs_inode oi;
+	unsigned int ondisk_capacity, ondisk_size;
+	char *ibuf;
+	int err;
+
+	if (sbi->root_nid == root->nid)
+		return 0;
+
+	if (root->nid <= 0xffff) {
+		sbi->root_nid = root->nid;
+		return 0;
+	}
+
+	oi = (struct erofs_inode){ .sbi = sbi, .nid = sbi->root_nid };
+	err = erofs_read_inode_from_disk(&oi);
+	if (err) {
+		erofs_err("failed to read root inode: %s",
+			  erofs_strerror(err));
+		return err;
+	}
+
+	if (oi.datalayout != EROFS_INODE_FLAT_INLINE &&
+	    oi.datalayout != EROFS_INODE_FLAT_PLAIN)
+		return -EOPNOTSUPP;
+
+	ondisk_capacity = oi.inode_isize + oi.xattr_isize;
+	if (oi.datalayout == EROFS_INODE_FLAT_INLINE)
+		ondisk_capacity += erofs_blkoff(sbi, oi.i_size);
+
+	ondisk_size = root->inode_isize + root->xattr_isize;
+	if (root->extent_isize)
+		ondisk_size = roundup(ondisk_size, 8) + root->extent_isize;
+	ondisk_size += root->idata_size;
+
+	if (ondisk_size > ondisk_capacity) {
+		erofs_err("no enough room for the root inode from nid %llu",
+			  root->nid);
+		return -ENOSPC;
+	}
+
+	ibuf = malloc(ondisk_size);
+	if (!ibuf)
+		return -ENOMEM;
+	err = erofs_dev_read(sbi, 0, ibuf, erofs_iloc(root), ondisk_size);
+	if (err >= 0)
+		err = erofs_dev_write(sbi, ibuf, erofs_iloc(&oi), ondisk_size);
+	free(ibuf);
+	return err;
 }
