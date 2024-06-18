@@ -1136,7 +1136,7 @@ int main(int argc, char **argv)
 {
 	int err = 0;
 	struct erofs_buffer_head *sb_bh;
-	struct erofs_inode *root, *packed_inode;
+	struct erofs_inode *root;
 	erofs_blk_t nblocks;
 	struct timeval t;
 	FILE *packedfile = NULL;
@@ -1342,29 +1342,22 @@ int main(int argc, char **argv)
 			goto exit;
 		}
 	}
-	sbi.root_nid = erofs_lookupnid(root);
 	erofs_iput(root);
 
 	if (erofstar.index_mode && sbi.extra_devices && !erofstar.mapfile)
 		sbi.devs[0].blocks = BLK_ROUND_UP(&sbi, erofstar.offset);
 
-	if (erofstar.index_mode || cfg.c_chunkbits || sbi.extra_devices) {
-		err = erofs_mkfs_dump_blobs(&sbi);
+	if (erofs_sb_has_fragments(&sbi)) {
+		erofs_update_progressinfo("Handling packed data ...");
+		err = erofs_flush_packed_inode(&sbi);
 		if (err)
 			goto exit;
 	}
 
-	sbi.packed_nid = 0;
-	if ((cfg.c_fragments || cfg.c_extra_ea_name_prefixes) &&
-	    erofs_sb_has_fragments(&sbi)) {
-		erofs_update_progressinfo("Handling packed_file ...");
-		packed_inode = erofs_mkfs_build_packedfile();
-		if (IS_ERR(packed_inode)) {
-			err = PTR_ERR(packed_inode);
+	if (erofstar.index_mode || cfg.c_chunkbits || sbi.extra_devices) {
+		err = erofs_mkfs_dump_blobs(&sbi);
+		if (err)
 			goto exit;
-		}
-		sbi.packed_nid = erofs_lookupnid(packed_inode);
-		erofs_iput(packed_inode);
 	}
 
 	/* flush all buffers except for the superblock */

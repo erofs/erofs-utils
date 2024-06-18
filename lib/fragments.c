@@ -326,12 +326,21 @@ int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
 	return len;
 }
 
-struct erofs_inode *erofs_mkfs_build_packedfile(void)
+int erofs_flush_packed_inode(struct erofs_sb_info *sbi)
 {
-	fflush(packedfile);
+	struct erofs_inode *inode;
 
-	return erofs_mkfs_build_special_from_fd(&sbi, fileno(packedfile),
-						EROFS_PACKED_INODE);
+	if (!erofs_sb_has_fragments(sbi))
+		return -EINVAL;
+	fflush(packedfile);
+	if (!ftello(packedfile))
+		return 0;
+
+	inode = erofs_mkfs_build_special_from_fd(sbi, fileno(packedfile),
+						 EROFS_PACKED_INODE);
+	sbi->packed_nid = erofs_lookupnid(inode);
+	erofs_iput(inode);
+	return 0;
 }
 
 void erofs_packedfile_exit(void)

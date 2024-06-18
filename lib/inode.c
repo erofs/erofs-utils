@@ -1533,21 +1533,22 @@ static void erofs_mark_parent_inode(struct erofs_inode *inode,
 
 static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild)
 {
-	struct erofs_inode *dumpdir;
+	struct erofs_sb_info *sbi = root->sbi;
+	struct erofs_inode *dumpdir = erofs_igrab(root);
 	int err;
 
 	erofs_mark_parent_inode(root, root);	/* rootdir mark */
 	root->next_dirwrite = NULL;
-	(void)erofs_igrab(root);
-	dumpdir = root;
 
 	err = !rebuild ? erofs_mkfs_handle_inode(root) :
 			erofs_rebuild_handle_inode(root);
 	if (err)
 		return err;
 
-	erofs_mkfs_flushjobs(root->sbi);
+	erofs_mkfs_flushjobs(sbi);
 	erofs_fixup_meta_blkaddr(root);		/* assign root NID */
+	sbi->root_nid = root->nid;
+
 	do {
 		int err;
 		struct erofs_inode *dir = dumpdir;
@@ -1584,7 +1585,7 @@ static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild)
 		}
 		*last = dumpdir;	/* fixup the last (or the only) one */
 		dumpdir = head;
-		err = erofs_mkfs_go(dir->sbi, EROFS_MKFS_JOB_DIR_BH,
+		err = erofs_mkfs_go(sbi, EROFS_MKFS_JOB_DIR_BH,
 				    &dir, sizeof(dir));
 		if (err)
 			return err;
