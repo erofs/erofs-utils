@@ -338,6 +338,84 @@ static void erofs_d_invalidate(struct erofs_dentry *d)
 	erofs_iput(inode);
 }
 
+static int erofs_rebuild_inode_fix_pnid(struct erofs_inode *parent,
+					erofs_nid_t nid)
+{
+	struct erofs_inode dir = {
+		.sbi = parent->sbi,
+		.nid = nid
+	};
+	unsigned int bsz = erofs_blksiz(dir.sbi);
+	unsigned int err, isz;
+	erofs_off_t boff, off;
+	erofs_nid_t pnid;
+	bool fixed = false;
+
+	err = erofs_read_inode_from_disk(&dir);
+	if (err)
+		return err;
+
+	if (!S_ISDIR(dir.i_mode))
+		return -ENOTDIR;
+
+	if (dir.datalayout != EROFS_INODE_FLAT_INLINE &&
+	    dir.datalayout != EROFS_INODE_FLAT_PLAIN)
+		return -EOPNOTSUPP;
+
+	pnid = erofs_lookupnid(parent);
+	isz = dir.inode_isize + dir.xattr_isize;
+	boff = erofs_pos(dir.sbi, dir.u.i_blkaddr);
+	for (off = 0; off < dir.i_size; off += bsz) {
+		char buf[EROFS_MAX_BLOCK_SIZE];
+		struct erofs_dirent *de = (struct erofs_dirent *)buf;
+		unsigned int nameoff, count, de_nameoff;
+
+		count = min_t(erofs_off_t, bsz, dir.i_size - off);
+		err = erofs_pread(&dir, buf, count, off);
+		if (err)
+			return err;
+
+		nameoff = le16_to_cpu(de->nameoff);
+		if (nameoff < sizeof(struct erofs_dirent) ||
+		    nameoff >= count) {
+			erofs_err("invalid de[0].nameoff %u @ nid %llu, offset %llu",
+				  nameoff, dir.nid | 0ULL, off | 0ULL);
+			return -EFSCORRUPTED;
+		}
+
+		while ((char *)de < buf + nameoff) {
+			de_nameoff = le16_to_cpu(de->nameoff);
+			if (((char *)(de + 1) >= buf + nameoff ?
+				strnlen(buf + de_nameoff, count - de_nameoff) == 2 :
+				le16_to_cpu(de[1].nameoff) == de_nameoff + 2) &&
+			   !memcmp(buf + de_nameoff, "..", 2)) {
+				if (de->nid == cpu_to_le64(pnid))
+					return 0;
+				de->nid = cpu_to_le64(pnid);
+				fixed = true;
+				break;
+			}
+			++de;
+		}
+
+		if (!fixed)
+			continue;
+		err = erofs_dev_write(dir.sbi, buf,
+			(off + bsz > dir.i_size &&
+				dir.datalayout == EROFS_INODE_FLAT_INLINE ?
+				erofs_iloc(&dir) + isz : boff + off), count);
+		erofs_dbg("directory %llu pNID is updated to %llu",
+			  nid | 0ULL, pnid | 0ULL);
+		break;
+	}
+	if (err || fixed)
+		return err;
+
+	erofs_err("directory data %llu is corrupted (\"..\" not found)",
+		  nid | 0ULL);
+	return -EFSCORRUPTED;
+}
+
 static int erofs_write_dir_file(struct erofs_inode *dir)
 {
 	struct erofs_dentry *head = list_first_entry(&dir->i_subdirs,
@@ -358,6 +436,13 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
 		const unsigned int len = strlen(d->name) +
 			sizeof(struct erofs_dirent);
+
+		/* XXX: a bit hacky, but to avoid another traversal */
+		if (d->validnid && d->type == EROFS_FT_DIR) {
+			ret = erofs_rebuild_inode_fix_pnid(dir, d->nid);
+			if (ret)
+				return ret;
+		}
 
 		erofs_d_invalidate(d);
 		if (used + len > erofs_blksiz(sbi)) {
@@ -1193,7 +1278,9 @@ static int erofs_mkfs_jobfn(struct erofs_mkfs_jobitem *item)
 	}
 
 	if (item->type == EROFS_MKFS_JOB_DIR_BH) {
-		erofs_write_dir_file(inode);
+		ret = erofs_write_dir_file(inode);
+		if (ret)
+			return ret;
 		erofs_write_tail_end(inode);
 		inode->bh->op = &erofs_write_inode_bhops;
 		erofs_iput(inode);
