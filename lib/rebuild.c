@@ -346,7 +346,7 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 				goto out;
 			}
 
-			erofs_insert_ihash(inode, inode->dev, inode->i_ino[1]);
+			erofs_insert_ihash(inode);
 			parent = dir = inode;
 		}
 

@@ -26,7 +26,7 @@ unsigned char erofs_mode_to_ftype(umode_t mode);
 umode_t erofs_ftype_to_mode(unsigned int ftype, unsigned int perm);
 unsigned char erofs_ftype_to_dtype(unsigned int filetype);
 void erofs_inode_manager_init(void);
-void erofs_insert_ihash(struct erofs_inode *inode, dev_t dev, ino_t ino);
+void erofs_insert_ihash(struct erofs_inode *inode);
 struct erofs_inode *erofs_iget(dev_t dev, ino_t ino);
 struct erofs_inode *erofs_iget_by_nid(erofs_nid_t nid);
 unsigned int erofs_iput(struct erofs_inode *inode);

@@ -94,10 +94,11 @@ void erofs_inode_manager_init(void)
 		init_list_head(&inode_hashtable[i]);
 }
 
-void erofs_insert_ihash(struct erofs_inode *inode, dev_t dev, ino_t ino)
+void erofs_insert_ihash(struct erofs_inode *inode)
 {
-	list_add(&inode->i_hash,
-		 &inode_hashtable[(ino ^ dev) % NR_INODE_HASHTABLE]);
+	unsigned int nr = (inode->i_ino[1] ^ inode->dev) % NR_INODE_HASHTABLE;
+
+	list_add(&inode->i_hash, &inode_hashtable[nr]);
 }
 
 /* get the inode from the (source) inode # */
@@ -991,11 +992,6 @@ static int erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 	if (!inode->i_srcpath)
 		return -ENOMEM;
 
-	if (!S_ISDIR(inode->i_mode)) {
-		inode->dev = st->st_dev;
-		inode->i_ino[1] = st->st_ino;
-	}
-
 	if (erofs_should_use_inode_extended(inode)) {
 		if (cfg.c_force_inodeversion == FORCE_INODE_COMPACT) {
 			erofs_err("file %s cannot be in compact form",
@@ -1007,7 +1003,9 @@ static int erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 		inode->inode_isize = sizeof(struct erofs_inode_compact);
 	}
 
-	erofs_insert_ihash(inode, st->st_dev, st->st_ino);
+	inode->dev = st->st_dev;
+	inode->i_ino[1] = st->st_ino;
+	erofs_insert_ihash(inode);
 	return 0;
 }
 
