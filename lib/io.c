@@ -26,6 +26,19 @@
 #define EROFS_MODNAME	"erofs_io"
 #include "erofs/print.h"
 
+int erofs_io_fstat(struct erofs_vfile *vf, struct stat *buf)
+{
+	if (unlikely(cfg.c_dry_run)) {
+		buf->st_size = 0;
+		buf->st_mode = S_IFREG | 0777;
+		return 0;
+	}
+
+	if (vf->ops)
+		return vf->ops->fstat(vf, buf);
+	return fstat(vf->fd, buf);
+}
+
 ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf,
 			u64 pos, size_t len)
 {

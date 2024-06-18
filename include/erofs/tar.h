@@ -57,9 +57,10 @@ struct erofs_tarfile {
 	struct erofs_iostream ios;
 	char *mapfile, *dumpfile;
 
+	u32 dev;
 	int fd;
 	u64 offset;
-	bool index_mode, headeronly_mode, aufs;
+	bool index_mode, headeronly_mode, rvsp_mode, aufs;
 };
 
 void erofs_iostream_close(struct erofs_iostream *ios);

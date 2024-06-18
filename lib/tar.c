@@ -942,6 +942,7 @@ new_inode:
 			ret = PTR_ERR(inode);
 			goto out;
 		}
+		inode->dev = tar->dev;
 		inode->i_parent = d->inode;
 		d->inode = inode;
 		d->type = erofs_mode_to_ftype(st.st_mode);
@@ -981,13 +982,21 @@ new_inode:
 			inode->i_link = malloc(inode->i_size + 1);
 			memcpy(inode->i_link, eh.link, inode->i_size + 1);
 		} else if (inode->i_size) {
-			if (tar->headeronly_mode)
+			if (tar->headeronly_mode) {
 				ret = erofs_write_zero_inode(inode);
-			else if (tar->index_mode)
+			} else if (tar->rvsp_mode) {
+				inode->datasource = EROFS_INODE_DATA_SOURCE_RESVSP;
+				inode->i_ino[1] = data_offset;
+				if (erofs_iostream_lskip(&tar->ios, inode->i_size))
+					ret = -EIO;
+				else
+					ret = 0;
+			} else if (tar->index_mode) {
 				ret = tarerofs_write_file_index(inode, tar,
 								data_offset);
-			else
+			} else {
 				ret = tarerofs_write_file_data(inode, tar);
+			}
 			if (ret)
 				goto out;
 		}
