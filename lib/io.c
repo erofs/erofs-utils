@@ -29,7 +29,7 @@
 ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf,
 			u64 pos, size_t len)
 {
-	ssize_t ret;
+	ssize_t ret, written = 0;
 
 	if (unlikely(cfg.c_dry_run))
 		return 0;
@@ -45,15 +45,20 @@ ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf,
 		ret = pwrite(vf->fd, buf, len, (off_t)pos);
 #endif
 		if (ret <= 0) {
-			erofs_err("failed to write: %s", strerror(errno));
-			return -errno;
+			if (!ret)
+				break;
+			if (errno != EINTR) {
+				erofs_err("failed to write: %s", strerror(errno));
+				return -errno;
+			}
+			ret = 0;
 		}
-		len -= ret;
 		buf += ret;
 		pos += ret;
-	} while (len);
+		written += ret;
+	} while (written < len);
 
-	return 0;
+	return written;
 }
 
 int erofs_io_fsync(struct erofs_vfile *vf)
@@ -93,12 +98,12 @@ ssize_t erofs_io_fallocate(struct erofs_vfile *vf, u64 offset,
 #endif
 	while (len > EROFS_MAX_BLOCK_SIZE) {
 		ret = erofs_io_pwrite(vf, zero, offset, EROFS_MAX_BLOCK_SIZE);
-		if (ret)
+		if (ret < 0)
 			return ret;
-		len -= EROFS_MAX_BLOCK_SIZE;
-		offset += EROFS_MAX_BLOCK_SIZE;
+		len -= ret;
+		offset += ret;
 	}
-	return erofs_io_pwrite(vf, zero, offset, len);
+	return erofs_io_pwrite(vf, zero, offset, len) == len ? 0 : -EIO;
 }
 
 int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length)
@@ -125,7 +130,7 @@ int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length)
 
 ssize_t erofs_io_pread(struct erofs_vfile *vf, void *buf, u64 pos, size_t len)
 {
-	ssize_t ret;
+	ssize_t ret, read = 0;
 
 	if (unlikely(cfg.c_dry_run))
 		return 0;
@@ -141,11 +146,8 @@ ssize_t erofs_io_pread(struct erofs_vfile *vf, void *buf, u64 pos, size_t len)
 		ret = pread(vf->fd, buf, len, (off_t)pos);
 #endif
 		if (ret <= 0) {
-			if (!ret) {
-				erofs_info("reach EOF of device");
-				memset(buf, 0, len);
-				return 0;
-			}
+			if (!ret)
+				break;
 			if (errno != EINTR) {
 				erofs_err("failed to read: %s", strerror(errno));
 				return -errno;
@@ -153,10 +155,11 @@ ssize_t erofs_io_pread(struct erofs_vfile *vf, void *buf, u64 pos, size_t len)
 			ret = 0;
 		}
 		pos += ret;
-		len -= ret;
 		buf += ret;
-	} while (len);
-	return 0;
+		read += ret;
+	} while (read < len);
+
+	return read;
 }
 
 static int erofs_get_bdev_size(int fd, u64 *bytes)
@@ -287,7 +290,8 @@ out:
 
 void erofs_dev_close(struct erofs_sb_info *sbi)
 {
-	close(sbi->bdev.fd);
+	if (!sbi->bdev.ops)
+		close(sbi->bdev.fd);
 	free(sbi->devname);
 	sbi->devname = NULL;
 	sbi->bdev.fd = -1;
@@ -320,11 +324,23 @@ int erofs_blob_open_ro(struct erofs_sb_info *sbi, const char *dev)
 ssize_t erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
 		       void *buf, u64 offset, size_t len)
 {
-	if (device_id)
-		return erofs_io_pread(&((struct erofs_vfile) {
+	ssize_t read;
+
+	if (device_id) {
+		read = erofs_io_pread(&((struct erofs_vfile) {
 				.fd = sbi->blobfd[device_id - 1],
 			}), buf, offset, len);
-	return erofs_io_pread(&sbi->bdev, buf, offset, len);
+	} else {
+		read = erofs_io_pread(&sbi->bdev, buf, offset, len);
+	}
+
+	if (read < 0)
+		return read;
+	if (read < len) {
+		erofs_info("reach EOF of device, pading with zeroes");
+		memset(buf + read, 0, len - read);
+	}
+	return 0;
 }
 
 static ssize_t __erofs_copy_file_range(int fd_in, u64 *off_in,

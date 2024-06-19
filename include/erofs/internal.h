@@ -460,7 +460,9 @@ ssize_t erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
 static inline int erofs_dev_write(struct erofs_sb_info *sbi, const void *buf,
 				  u64 offset, size_t len)
 {
-	return erofs_io_pwrite(&sbi->bdev, buf, offset, len);
+	if (erofs_io_pwrite(&sbi->bdev, buf, offset, len) != (ssize_t)len)
+		return -EIO;
+	return 0;
 }
 
 static inline int erofs_dev_fillzero(struct erofs_sb_info *sbi, u64 offset,
