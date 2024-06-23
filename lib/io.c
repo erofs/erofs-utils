@@ -477,10 +477,60 @@ ssize_t erofs_io_read(struct erofs_vfile *vf, void *buf, size_t bytes)
         return i;
 }
 
+#ifdef HAVE_SYS_SENDFILE_H
+#include <sys/sendfile.h>
+#endif
+
 off_t erofs_io_lseek(struct erofs_vfile *vf, u64 offset, int whence)
 {
 	if (vf->ops)
 		return vf->ops->lseek(vf, offset, whence);
 
 	return lseek(vf->fd, offset, whence);
+}
+
+int erofs_io_xcopy(struct erofs_vfile *vout, off_t pos,
+		   struct erofs_vfile *vin, int len, bool noseek)
+{
+	if (vout->ops)
+		return vout->ops->xcopy(vout, pos, vin, len, noseek);
+
+	if (len && !vin->ops) {
+		off_t ret __maybe_unused;
+
+#ifdef HAVE_COPY_FILE_RANGE
+		ret = copy_file_range(vin->fd, NULL, vout->fd, &pos, len, 0);
+		if (ret > 0)
+			len -= ret;
+#endif
+#if defined(HAVE_SYS_SENDFILE_H) && defined(HAVE_SENDFILE)
+		if (len && !noseek) {
+			ret = lseek(vout->fd, pos, SEEK_SET);
+			if (ret == pos) {
+				ret = sendfile(vout->fd, vin->fd, NULL, len);
+				if (ret > 0) {
+					pos += ret;
+					len -= ret;
+				}
+			}
+		}
+#endif
+	}
+
+	do {
+		char buf[32768];
+		int ret = min_t(int, len, sizeof(buf));
+
+		ret = erofs_io_read(vin, buf, ret);
+		if (ret < 0)
+			return ret;
+		if (ret > 0) {
+			ret = erofs_io_pwrite(vout, buf, pos, ret);
+			if (ret < 0)
+				return ret;
+			pos += ret;
+		}
+		len -= ret;
+	} while (len);
+	return 0;
 }

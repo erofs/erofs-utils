@@ -514,30 +514,22 @@ static bool erofs_file_is_compressible(struct erofs_inode *inode)
 static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 {
 	int ret;
-	unsigned int nblocks, i;
+	unsigned int nblocks;
 	struct erofs_sb_info *sbi = inode->sbi;
 
 	inode->datalayout = EROFS_INODE_FLAT_INLINE;
-	nblocks = inode->i_size / erofs_blksiz(sbi);
+	nblocks = inode->i_size >> sbi->blkszbits;
 
 	ret = __allocate_inode_bh_data(inode, nblocks, DATA);
 	if (ret)
 		return ret;
 
-	for (i = 0; i < nblocks; ++i) {
-		char buf[EROFS_MAX_BLOCK_SIZE];
-
-		ret = read(fd, buf, erofs_blksiz(sbi));
-		if (ret != erofs_blksiz(sbi)) {
-			if (ret < 0)
-				return -errno;
-			return -EAGAIN;
-		}
-
-		ret = erofs_blk_write(sbi, buf, inode->u.i_blkaddr + i, 1);
-		if (ret)
-			return ret;
-	}
+	ret = erofs_io_xcopy(&sbi->bdev, erofs_pos(sbi, inode->u.i_blkaddr),
+			     &((struct erofs_vfile){ .fd = fd }),
+			     erofs_pos(sbi, nblocks),
+			inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF);
+	if (ret)
+		return ret;
 
 	/* read the tail-end data */
 	inode->idata_size = inode->i_size % erofs_blksiz(sbi);
