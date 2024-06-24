@@ -37,10 +37,16 @@ struct erofs_vfops {
 		     struct erofs_vfile *vin, int len, bool noseek);
 };
 
+/* don't extend this; instead, use payload for any extra information */
 struct erofs_vfile {
 	struct erofs_vfops *ops;
-	u64 offset;
-	int fd;
+	union {
+		struct {
+			u64 offset;
+			int fd;
+		};
+		u8 payload[16];
+	};
 };
 
 int erofs_io_fstat(struct erofs_vfile *vf, struct stat *buf);
