@@ -35,6 +35,11 @@ static struct erofs_dentry *erofs_rebuild_mkdir(struct erofs_inode *dir,
 	if (IS_ERR(inode))
 		return ERR_CAST(inode);
 
+	if (asprintf(&inode->i_srcpath, "%s/%s",
+		     dir->i_srcpath ? : "", s) < 0) {
+		erofs_iput(inode);
+		return ERR_PTR(-ENOMEM);
+	}
 	inode->i_mode = S_IFDIR | 0755;
 	inode->i_parent = dir;
 	inode->i_uid = getuid();
@@ -44,7 +49,9 @@ static struct erofs_dentry *erofs_rebuild_mkdir(struct erofs_inode *dir,
 	erofs_init_empty_dir(inode);
 
 	d = erofs_d_alloc(dir, s);
-	if (!IS_ERR(d)) {
+	if (IS_ERR(d)) {
+		erofs_iput(inode);
+	} else {
 		d->type = EROFS_FT_DIR;
 		d->inode = inode;
 	}
