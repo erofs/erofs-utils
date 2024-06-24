@@ -323,7 +323,7 @@ erofs_nid_t erofs_lookupnid(struct erofs_inode *inode)
 		erofs_dbg("Assign nid %llu to file %s (mode %05o)",
 			  inode->nid, inode->i_srcpath, inode->i_mode);
 	}
-	if (unlikely(IS_ROOT(inode)) && inode->nid > 0xffff)
+	if (__erofs_unlikely(IS_ROOT(inode)) && inode->nid > 0xffff)
 		return sbi->root_nid;
 	return inode->nid;
 }

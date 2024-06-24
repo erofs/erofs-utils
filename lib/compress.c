@@ -1197,7 +1197,7 @@ int z_erofs_mt_wq_tls_init_compr(struct erofs_sb_info *sbi,
 	struct erofs_compress_cfg *lc = &tls->ccfg[alg_id];
 	int ret;
 
-	if (likely(lc->enable))
+	if (__erofs_likely(lc->enable))
 		return 0;
 
 	ret = erofs_compressor_init(sbi, &lc->handle, alg_name,

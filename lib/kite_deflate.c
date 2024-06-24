@@ -866,7 +866,7 @@ static void kite_mf_reset(struct kite_matchfinder *mf,
 	 *
 	 * [1] https://github.com/tukaani-project/xz/blob/v5.4.0/src/liblzma/lz/lz_encoder_mf.c#L94
 	 */
-	if (unlikely(mf->base > ((typeof(mf->base))-1) >> 1)) {
+	if (__erofs_unlikely(mf->base > ((typeof(mf->base))-1) >> 1)) {
 		mf->base = kHistorySize32 + 1;
 		memset(mf->hash, 0, 0x10000 * sizeof(mf->hash[0]));
 	}

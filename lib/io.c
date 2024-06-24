@@ -28,7 +28,7 @@
 
 int erofs_io_fstat(struct erofs_vfile *vf, struct stat *buf)
 {
-	if (unlikely(cfg.c_dry_run)) {
+	if (__erofs_unlikely(cfg.c_dry_run)) {
 		buf->st_size = 0;
 		buf->st_mode = S_IFREG | 0777;
 		return 0;
@@ -44,7 +44,7 @@ ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf,
 {
 	ssize_t ret, written = 0;
 
-	if (unlikely(cfg.c_dry_run))
+	if (__erofs_unlikely(cfg.c_dry_run))
 		return 0;
 
 	if (vf->ops)
@@ -78,7 +78,7 @@ int erofs_io_fsync(struct erofs_vfile *vf)
 {
 	int ret;
 
-	if (unlikely(cfg.c_dry_run))
+	if (__erofs_unlikely(cfg.c_dry_run))
 		return 0;
 
 	if (vf->ops)
@@ -98,7 +98,7 @@ ssize_t erofs_io_fallocate(struct erofs_vfile *vf, u64 offset,
 	static const char zero[EROFS_MAX_BLOCK_SIZE] = {0};
 	ssize_t ret;
 
-	if (unlikely(cfg.c_dry_run))
+	if (__erofs_unlikely(cfg.c_dry_run))
 		return 0;
 
 	if (vf->ops)
@@ -124,7 +124,7 @@ int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length)
 	int ret;
 	struct stat st;
 
-	if (unlikely(cfg.c_dry_run))
+	if (__erofs_unlikely(cfg.c_dry_run))
 		return 0;
 
 	if (vf->ops)
@@ -145,7 +145,7 @@ ssize_t erofs_io_pread(struct erofs_vfile *vf, void *buf, u64 pos, size_t len)
 {
 	ssize_t ret, read = 0;
 
-	if (unlikely(cfg.c_dry_run))
+	if (__erofs_unlikely(cfg.c_dry_run))
 		return 0;
 
 	if (vf->ops)

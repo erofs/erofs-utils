@@ -454,7 +454,9 @@ static inline void erofs_check_ondisk_layout_definitions(void)
 		struct z_erofs_map_header h;
 		__le64 v;
 	} fmh __maybe_unused = {
-		.h.h_clusterbits = 1 << Z_EROFS_FRAGMENT_INODE_BIT,
+		.h = {
+			.h_clusterbits = 1 <<Z_EROFS_FRAGMENT_INODE_BIT,
+		},
 	};
 
 	BUILD_BUG_ON(sizeof(struct erofs_super_block) != 128);

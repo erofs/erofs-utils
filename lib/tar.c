@@ -202,7 +202,7 @@ int erofs_iostream_read(struct erofs_iostream *ios, void **buf, u64 bytes)
 			if (ret < ios->bufsize - rabytes)
 				ios->feof = true;
 		}
-		if (unlikely(ios->dumpfd >= 0))
+		if (__erofs_unlikely(ios->dumpfd >= 0))
 			if (write(ios->dumpfd, ios->buffer + rabytes, ret) < ret)
 				erofs_err("failed to dump %d bytes of the raw stream: %s",
 					  ret, erofs_strerror(-errno));
@@ -246,7 +246,7 @@ int erofs_iostream_lskip(struct erofs_iostream *ios, u64 sz)
 	if (ios->feof)
 		return sz;
 
-	if (ios->sz && likely(ios->dumpfd < 0)) {
+	if (ios->sz && __erofs_likely(ios->dumpfd < 0)) {
 		s64 cur = erofs_io_lseek(&ios->vf, sz, SEEK_CUR);
 
 		if (cur > ios->sz)
