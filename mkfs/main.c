@@ -975,55 +975,6 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	return 0;
 }
 
-static int erofs_mkfs_superblock_csum_set(void)
-{
-	int ret;
-	u8 buf[EROFS_MAX_BLOCK_SIZE];
-	u32 crc;
-	unsigned int len;
-	struct erofs_super_block *sb;
-
-	ret = erofs_blk_read(&sbi, 0, buf, 0, erofs_blknr(&sbi, EROFS_SUPER_END) + 1);
-	if (ret) {
-		erofs_err("failed to read superblock to set checksum: %s",
-			  erofs_strerror(ret));
-		return ret;
-	}
-
-	/*
-	 * skip the first 1024 bytes, to allow for the installation
-	 * of x86 boot sectors and other oddities.
-	 */
-	sb = (struct erofs_super_block *)(buf + EROFS_SUPER_OFFSET);
-
-	if (le32_to_cpu(sb->magic) != EROFS_SUPER_MAGIC_V1) {
-		erofs_err("internal error: not an erofs valid image");
-		return -EFAULT;
-	}
-
-	/* turn on checksum feature */
-	sb->feature_compat = cpu_to_le32(le32_to_cpu(sb->feature_compat) |
-					 EROFS_FEATURE_COMPAT_SB_CHKSUM);
-	if (erofs_blksiz(&sbi) > EROFS_SUPER_OFFSET)
-		len = erofs_blksiz(&sbi) - EROFS_SUPER_OFFSET;
-	else
-		len = erofs_blksiz(&sbi);
-	crc = erofs_crc32c(~0, (u8 *)sb, len);
-
-	/* set up checksum field to erofs_super_block */
-	sb->checksum = cpu_to_le32(crc);
-
-	ret = erofs_blk_write(&sbi, buf, 0, 1);
-	if (ret) {
-		erofs_err("failed to write checksummed superblock: %s",
-			  erofs_strerror(ret));
-		return ret;
-	}
-
-	erofs_info("superblock checksum 0x%08x written", crc);
-	return 0;
-}
-
 static void erofs_mkfs_default_options(void)
 {
 	cfg.c_showprogress = true;
@@ -1073,22 +1024,6 @@ void erofs_show_progs(int argc, char *argv[])
 {
 	if (cfg.c_dbg_lvl >= EROFS_WARN)
 		printf("%s %s\n", basename(argv[0]), cfg.c_version);
-}
-
-static struct erofs_inode *erofs_mkfs_alloc_root(struct erofs_sb_info *sbi)
-{
-	struct erofs_inode *root;
-
-	root = erofs_new_inode(sbi);
-	if (IS_ERR(root))
-		return root;
-	root->i_srcpath = strdup("/");
-	root->i_mode = S_IFDIR | 0777;
-	root->i_parent = root;
-	root->i_mtime = root->sbi->build_time;
-	root->i_mtime_nsec = root->sbi->build_time_nsec;
-	erofs_init_empty_dir(root);
-	return root;
 }
 
 static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
@@ -1198,6 +1133,7 @@ int main(int argc, char **argv)
 	erofs_blk_t nblocks;
 	struct timeval t;
 	FILE *packedfile = NULL;
+	u32 crc;
 
 	erofs_init_configure();
 	erofs_mkfs_default_options();
@@ -1390,7 +1326,7 @@ int main(int argc, char **argv)
 	erofs_inode_manager_init();
 
 	if (tar_mode) {
-		root = erofs_mkfs_alloc_root(&sbi);
+		root = erofs_rebuild_make_root(&sbi);
 		if (IS_ERR(root)) {
 			err = PTR_ERR(root);
 			goto exit;
@@ -1405,7 +1341,7 @@ int main(int argc, char **argv)
 		if (err < 0)
 			goto exit;
 	} else if (rebuild_mode) {
-		root = erofs_mkfs_alloc_root(&sbi);
+		root = erofs_rebuild_make_root(&sbi);
 		if (IS_ERR(root)) {
 			err = PTR_ERR(root);
 			goto exit;
@@ -1471,8 +1407,11 @@ int main(int argc, char **argv)
 
 	err = erofs_dev_resize(&sbi, nblocks);
 
-	if (!err && erofs_sb_has_sb_chksum(&sbi))
-		err = erofs_mkfs_superblock_csum_set();
+	if (!err && erofs_sb_has_sb_chksum(&sbi)) {
+		err = erofs_enable_sb_chksum(&sbi, &crc);
+		if (!err)
+			erofs_info("superblock checksum 0x%08x written", crc);
+	}
 exit:
 	if (root)
 		erofs_iput(root);

@@ -45,6 +45,7 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(struct erofs_sb_info *sbi,
 struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_sb_info *sbi,
 						     int fd, const char *name);
 int erofs_fixup_root_inode(struct erofs_inode *root);
+struct erofs_inode *erofs_rebuild_make_root(struct erofs_sb_info *sbi);
 
 #ifdef __cplusplus
 }

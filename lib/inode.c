@@ -1978,3 +1978,19 @@ int erofs_fixup_root_inode(struct erofs_inode *root)
 	free(ibuf);
 	return err;
 }
+
+struct erofs_inode *erofs_rebuild_make_root(struct erofs_sb_info *sbi)
+{
+	struct erofs_inode *root;
+
+	root = erofs_new_inode(sbi);
+	if (IS_ERR(root))
+		return root;
+	root->i_srcpath = strdup("/");
+	root->i_mode = S_IFDIR | 0777;
+	root->i_parent = root;
+	root->i_mtime = root->sbi->build_time;
+	root->i_mtime_nsec = root->sbi->build_time_nsec;
+	erofs_init_empty_dir(root);
+	return root;
+}
