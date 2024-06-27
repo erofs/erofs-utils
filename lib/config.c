@@ -66,6 +66,11 @@ void erofs_exit_configure(void)
 		free(cfg.c_compr_opts[i].alg);
 }
 
+struct erofs_configure *erofs_get_configure()
+{
+	return &cfg;
+}
+
 static unsigned int fullpath_prefix;	/* root directory prefix length */
 
 void erofs_set_fs_root(const char *rootdir)

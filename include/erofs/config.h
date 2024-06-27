@@ -100,6 +100,9 @@ void erofs_init_configure(void);
 void erofs_show_config(void);
 void erofs_exit_configure(void);
 
+/* (will be deprecated) temporary helper for updating global the cfg */
+struct erofs_configure *erofs_get_configure();
+
 void erofs_set_fs_root(const char *rootdir);
 const char *erofs_fspath(const char *fullpath);
 
