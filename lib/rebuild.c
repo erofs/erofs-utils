@@ -464,10 +464,13 @@ static int erofs_rebuild_basedir_dirent_iter(struct erofs_dir_context *ctx)
 	} else {
 		struct erofs_inode *inode = d->inode;
 
-		list_del(&inode->i_hash);
-		inode->dev = dir->sbi->dev;
-		inode->i_ino[1] = ctx->de_nid;
-		erofs_insert_ihash(inode);
+		/* update sub-directories only for recursively loading */
+		if (S_ISDIR(inode->i_mode)) {
+			list_del(&inode->i_hash);
+			inode->dev = dir->sbi->dev;
+			inode->i_ino[1] = ctx->de_nid;
+			erofs_insert_ihash(inode);
+		}
 	}
 	ret = 0;
 out:
