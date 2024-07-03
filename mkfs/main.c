@@ -1133,6 +1133,7 @@ int main(int argc, char **argv)
 	erofs_blk_t nblocks;
 	struct timeval t;
 	FILE *packedfile = NULL;
+	FILE *blklst = NULL;
 	u32 crc;
 
 	erofs_init_configure();
@@ -1174,10 +1175,12 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (cfg.block_list_file &&
-	    erofs_blocklist_open(cfg.block_list_file, false)) {
-		erofs_err("failed to open %s", cfg.block_list_file);
-		return 1;
+	if (cfg.block_list_file) {
+		blklst = fopen(cfg.block_list_file, "w");
+		if (!blklst || erofs_blocklist_open(blklst, false)) {
+			erofs_err("failed to open %s", cfg.block_list_file);
+			return 1;
+		}
 	}
 #endif
 	erofs_show_config();
@@ -1210,8 +1213,9 @@ int main(int argc, char **argv)
 		erofstar.dev = rebuild_src_count + 1;
 
 		if (erofstar.mapfile) {
-			err = erofs_blocklist_open(erofstar.mapfile, true);
-			if (err) {
+			blklst = fopen(erofstar.mapfile, "w");
+			if (!blklst || erofs_blocklist_open(blklst, true)) {
+				err = -errno;
 				erofs_err("failed to open %s", erofstar.mapfile);
 				goto exit;
 			}
@@ -1417,7 +1421,9 @@ exit:
 		erofs_iput(root);
 	z_erofs_compress_exit();
 	z_erofs_dedupe_exit();
-	erofs_blocklist_close();
+	blklst = erofs_blocklist_close();
+	if (blklst)
+		fclose(blklst);
 	erofs_dev_close(&sbi);
 	erofs_cleanup_compress_hints();
 	erofs_cleanup_exclude_rules();

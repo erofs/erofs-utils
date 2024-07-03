@@ -13,23 +13,21 @@
 static FILE *block_list_fp;
 bool srcmap_enabled;
 
-int erofs_blocklist_open(char *filename, bool srcmap)
+int erofs_blocklist_open(FILE *fp, bool srcmap)
 {
-	block_list_fp = fopen(filename, "w");
-
-	if (!block_list_fp)
-		return -errno;
+	if (!fp)
+		return -ENOENT;
+	block_list_fp = fp;
 	srcmap_enabled = srcmap;
 	return 0;
 }
 
-void erofs_blocklist_close(void)
+FILE *erofs_blocklist_close(void)
 {
-	if (!block_list_fp)
-		return;
+	FILE *fp = block_list_fp;
 
-	fclose(block_list_fp);
 	block_list_fp = NULL;
+	return fp;
 }
 
 /* XXX: really need to be cleaned up */

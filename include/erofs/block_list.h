@@ -13,8 +13,8 @@ extern "C"
 
 #include "internal.h"
 
-int erofs_blocklist_open(char *filename, bool srcmap);
-void erofs_blocklist_close(void);
+int erofs_blocklist_open(FILE *fp, bool srcmap);
+FILE *erofs_blocklist_close(void);
 
 void tarerofs_blocklist_write(erofs_blk_t blkaddr, erofs_blk_t nblocks,
 			      erofs_off_t srcoff);
