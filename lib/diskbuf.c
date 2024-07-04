@@ -104,10 +104,10 @@ int erofs_diskbuf_init(unsigned int nstrms)
 		struct stat st;
 
 		/* try to use the devfd for regfiles on stream 0 */
-		if (strm == dbufstrm && !sbi.bdev.ops) {
+		if (strm == dbufstrm && !g_sbi.bdev.ops) {
 			strm->devpos = 1ULL << 40;
-			if (!ftruncate(sbi.bdev.fd, strm->devpos << 1)) {
-				strm->fd = dup(sbi.bdev.fd);
+			if (!ftruncate(g_sbi.bdev.fd, strm->devpos << 1)) {
+				strm->fd = dup(g_sbi.bdev.fd);
 				if (lseek(strm->fd, strm->devpos,
 					  SEEK_SET) != strm->devpos)
 					return -EIO;

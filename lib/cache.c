@@ -56,7 +56,7 @@ static void erofs_bupdate_mapped(struct erofs_buffer_block *bb)
 		return;
 
 	bkt = mapped_buckets[bb->type] +
-		(bb->buffers.off & (erofs_blksiz(&sbi) - 1));
+		(bb->buffers.off & (erofs_blksiz(&g_sbi) - 1));
 	list_del(&bb->mapped_list);
 	list_add_tail(&bb->mapped_list, bkt);
 }
@@ -69,7 +69,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 			   unsigned int extrasize,
 			   bool dryrun)
 {
-	const unsigned int blksiz = erofs_blksiz(&sbi);
+	const unsigned int blksiz = erofs_blksiz(&g_sbi);
 	const unsigned int blkmask = blksiz - 1;
 	erofs_off_t boff = bb->buffers.off;
 	const erofs_off_t alignedoffset = roundup(boff, alignsize);
@@ -86,7 +86,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 		blkaddr = bb->blkaddr;
 		if (blkaddr != NULL_ADDR) {
 			tailupdate = (tail_blkaddr == blkaddr +
-				      BLK_ROUND_UP(&sbi, boff));
+				      BLK_ROUND_UP(&g_sbi, boff));
 			if (oob && !tailupdate)
 				return -EINVAL;
 		}
@@ -102,7 +102,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 		bb->buffers.off = boff;
 		/* need to update the tail_blkaddr */
 		if (tailupdate)
-			tail_blkaddr = blkaddr + BLK_ROUND_UP(&sbi, boff);
+			tail_blkaddr = blkaddr + BLK_ROUND_UP(&g_sbi, boff);
 		erofs_bupdate_mapped(bb);
 	}
 	return ((alignedoffset + incr - 1) & blkmask) + 1;
@@ -125,7 +125,7 @@ static int erofs_bfind_for_attach(int type, erofs_off_t size,
 				  unsigned int alignsize,
 				  struct erofs_buffer_block **bbp)
 {
-	const unsigned int blksiz = erofs_blksiz(&sbi);
+	const unsigned int blksiz = erofs_blksiz(&g_sbi);
 	struct erofs_buffer_block *cur, *bb;
 	unsigned int used0, used_before, usedmax, used;
 	int ret;
@@ -322,7 +322,7 @@ static erofs_blk_t __erofs_mapbh(struct erofs_buffer_block *bb)
 		erofs_bupdate_mapped(bb);
 	}
 
-	blkaddr = bb->blkaddr + BLK_ROUND_UP(&sbi, bb->buffers.off);
+	blkaddr = bb->blkaddr + BLK_ROUND_UP(&g_sbi, bb->buffers.off);
 	if (blkaddr > tail_blkaddr)
 		tail_blkaddr = blkaddr;
 
@@ -360,7 +360,7 @@ static void erofs_bfree(struct erofs_buffer_block *bb)
 
 int erofs_bflush(struct erofs_buffer_block *bb)
 {
-	const unsigned int blksiz = erofs_blksiz(&sbi);
+	const unsigned int blksiz = erofs_blksiz(&g_sbi);
 	struct erofs_buffer_block *p, *n;
 	erofs_blk_t blkaddr;
 
@@ -392,11 +392,11 @@ int erofs_bflush(struct erofs_buffer_block *bb)
 
 		padding = blksiz - (p->buffers.off & (blksiz - 1));
 		if (padding != blksiz)
-			erofs_dev_fillzero(&sbi, erofs_pos(&sbi, blkaddr) - padding,
+			erofs_dev_fillzero(&g_sbi, erofs_pos(&g_sbi, blkaddr) - padding,
 					   padding, true);
 
 		if (p->type != DATA)
-			erofs_metablkcnt += BLK_ROUND_UP(&sbi, p->buffers.off);
+			erofs_metablkcnt += BLK_ROUND_UP(&g_sbi, p->buffers.off);
 		erofs_dbg("block %u to %u flushed", p->blkaddr, blkaddr - 1);
 		erofs_bfree(p);
 	}
@@ -411,7 +411,7 @@ void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke)
 
 	/* tail_blkaddr could be rolled back after revoking all bhs */
 	if (tryrevoke && blkaddr != NULL_ADDR &&
-	    tail_blkaddr == blkaddr + BLK_ROUND_UP(&sbi, bb->buffers.off))
+	    tail_blkaddr == blkaddr + BLK_ROUND_UP(&g_sbi, bb->buffers.off))
 		rollback = true;
 
 	bh->op = &erofs_drop_directly_bhops;
@@ -421,7 +421,7 @@ void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke)
 		return;
 
 	if (!rollback && bb->type != DATA)
-		erofs_metablkcnt += BLK_ROUND_UP(&sbi, bb->buffers.off);
+		erofs_metablkcnt += BLK_ROUND_UP(&g_sbi, bb->buffers.off);
 	erofs_bfree(bb);
 	if (rollback)
 		tail_blkaddr = blkaddr;

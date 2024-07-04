@@ -19,7 +19,7 @@
 #endif
 
 struct erofs_configure cfg;
-struct erofs_sb_info sbi;
+struct erofs_sb_info g_sbi;
 bool erofs_stdout_tty;
 
 void erofs_init_configure(void)

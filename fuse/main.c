@@ -41,13 +41,13 @@ struct erofsfuse_lookupdir_context {
 static inline erofs_nid_t erofsfuse_to_nid(fuse_ino_t ino)
 {
 	if (ino == FUSE_ROOT_ID)
-		return sbi.root_nid;
+		return g_sbi.root_nid;
 	return (erofs_nid_t)(ino - FUSE_ROOT_ID);
 }
 
 static inline fuse_ino_t erofsfuse_to_ino(erofs_nid_t nid)
 {
-	if (nid == sbi.root_nid)
+	if (nid == g_sbi.root_nid)
 		return FUSE_ROOT_ID;
 	return (nid + FUSE_ROOT_ID);
 }
@@ -60,7 +60,7 @@ static void erofsfuse_fill_stat(struct erofs_inode *vi, struct stat *stbuf)
 	stbuf->st_mode = vi->i_mode;
 	stbuf->st_nlink = vi->i_nlink;
 	stbuf->st_size = vi->i_size;
-	stbuf->st_blocks = roundup(vi->i_size, erofs_blksiz(&sbi)) >> 9;
+	stbuf->st_blocks = roundup(vi->i_size, erofs_blksiz(&g_sbi)) >> 9;
 	stbuf->st_uid = vi->i_uid;
 	stbuf->st_gid = vi->i_gid;
 	stbuf->st_ctime = vi->i_mtime;
@@ -94,7 +94,7 @@ static int erofsfuse_add_dentry(struct erofs_dir_context *ctx)
 #if FUSE_MAJOR_VERSION >= 3
 		int ret;
 		struct erofs_inode vi = {
-			.sbi = &sbi,
+			.sbi = &g_sbi,
 			.nid = ctx->de_nid
 		};
 
@@ -140,7 +140,7 @@ static int erofsfuse_lookup_dentry(struct erofs_dir_context *ctx)
 	if (!strncmp(lookup_ctx->target_name, ctx->dname, ctx->de_namelen)) {
 		int ret;
 		struct erofs_inode vi = {
-			.sbi = &sbi,
+			.sbi = &g_sbi,
 			.nid = (erofs_nid_t)ctx->de_nid,
 		};
 
@@ -236,7 +236,7 @@ static void erofsfuse_open(fuse_req_t req, fuse_ino_t ino,
 		return;
 	}
 
-	vi->sbi = &sbi;
+	vi->sbi = &g_sbi;
 	vi->nid = erofsfuse_to_nid(ino);
 	ret = erofs_read_inode_from_disk(vi);
 	if (ret < 0) {
@@ -262,7 +262,7 @@ static void erofsfuse_getattr(fuse_req_t req, fuse_ino_t ino,
 {
 	int ret;
 	struct stat stbuf = { 0 };
-	struct erofs_inode vi = { .sbi = &sbi, .nid = erofsfuse_to_nid(ino) };
+	struct erofs_inode vi = { .sbi = &g_sbi, .nid = erofsfuse_to_nid(ino) };
 
 	ret = erofs_read_inode_from_disk(&vi);
 	if (ret < 0)
@@ -286,7 +286,7 @@ static void erofsfuse_opendir(fuse_req_t req, fuse_ino_t ino,
 		return;
 	}
 
-	vi->sbi = &sbi;
+	vi->sbi = &g_sbi;
 	vi->nid = erofsfuse_to_nid(ino);
 	ret = erofs_read_inode_from_disk(vi);
 	if (ret < 0) {
@@ -329,7 +329,7 @@ static void erofsfuse_lookup(fuse_req_t req, fuse_ino_t parent,
 		return;
 	}
 
-	vi->sbi = &sbi;
+	vi->sbi = &g_sbi;
 	vi->nid = erofsfuse_to_nid(parent);
 	ret = erofs_read_inode_from_disk(vi);
 	if (ret < 0) {
@@ -399,7 +399,7 @@ static void erofsfuse_readlink(fuse_req_t req, fuse_ino_t ino)
 {
 	int ret;
 	char *buf = NULL;
-	struct erofs_inode vi = { .sbi = &sbi, .nid = erofsfuse_to_nid(ino) };
+	struct erofs_inode vi = { .sbi = &g_sbi, .nid = erofsfuse_to_nid(ino) };
 
 	ret = erofs_read_inode_from_disk(&vi);
 	if (ret < 0) {
@@ -436,7 +436,7 @@ static void erofsfuse_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name,
 {
 	int ret;
 	char *buf = NULL;
-	struct erofs_inode vi = { .sbi = &sbi, .nid = erofsfuse_to_nid(ino) };
+	struct erofs_inode vi = { .sbi = &g_sbi, .nid = erofsfuse_to_nid(ino) };
 
 	erofs_dbg("getattr(%llu): name = %s, size = %zu", ino | 0ULL, name, size);
 
@@ -469,7 +469,7 @@ static void erofsfuse_listxattr(fuse_req_t req, fuse_ino_t ino, size_t size)
 {
 	int ret;
 	char *buf = NULL;
-	struct erofs_inode vi = { .sbi = &sbi, .nid = erofsfuse_to_nid(ino) };
+	struct erofs_inode vi = { .sbi = &g_sbi, .nid = erofsfuse_to_nid(ino) };
 
 	erofs_dbg("listxattr(%llu): size = %zu", ino | 0ULL, size);
 
@@ -573,10 +573,10 @@ static int optional_opt_func(void *data, const char *arg, int key,
 
 	switch (key) {
 	case 1:
-		ret = erofs_blob_open_ro(&sbi, arg + sizeof("--device=") - 1);
+		ret = erofs_blob_open_ro(&g_sbi, arg + sizeof("--device=") - 1);
 		if (ret)
 			return -1;
-		++sbi.extra_devices;
+		++g_sbi.extra_devices;
 		return 0;
 	case FUSE_OPT_KEY_NONOPT:
 		if (fusecfg.mountpoint)
@@ -675,14 +675,14 @@ int main(int argc, char *argv[])
 	if (fusecfg.odebug && cfg.c_dbg_lvl < EROFS_DBG)
 		cfg.c_dbg_lvl = EROFS_DBG;
 
-	sbi.bdev.offset = fusecfg.offset;
-	ret = erofs_dev_open(&sbi, fusecfg.disk, O_RDONLY);
+	g_sbi.bdev.offset = fusecfg.offset;
+	ret = erofs_dev_open(&g_sbi, fusecfg.disk, O_RDONLY);
 	if (ret) {
 		fprintf(stderr, "failed to open: %s\n", fusecfg.disk);
 		goto err_fuse_free_args;
 	}
 
-	ret = erofs_read_superblock(&sbi);
+	ret = erofs_read_superblock(&g_sbi);
 	if (ret) {
 		fprintf(stderr, "failed to read erofs super block\n");
 		goto err_dev_close;
@@ -744,10 +744,10 @@ int main(int argc, char *argv[])
 #endif
 
 err_super_put:
-	erofs_put_super(&sbi);
+	erofs_put_super(&g_sbi);
 err_dev_close:
-	erofs_blob_closeall(&sbi);
-	erofs_dev_close(&sbi);
+	erofs_blob_closeall(&g_sbi);
+	erofs_dev_close(&g_sbi);
 err_fuse_free_args:
 	free(opts.mountpoint);
 	fuse_opt_free_args(&args);

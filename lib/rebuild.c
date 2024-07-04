@@ -360,7 +360,7 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 			inode->i_ino[1] = inode->nid;
 			inode->i_nlink = 1;
 
-			ret = erofs_rebuild_update_inode(&sbi, inode,
+			ret = erofs_rebuild_update_inode(&g_sbi, inode,
 							 rctx->datamode);
 			if (ret) {
 				erofs_iput(inode);
@@ -386,7 +386,7 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 	}
 
 	/* reset sbi, nid after subdirs are all loaded for the final dump */
-	inode->sbi = &sbi;
+	inode->sbi = &g_sbi;
 	inode->nid = 0;
 out:
 	free(path);

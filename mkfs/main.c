@@ -357,7 +357,7 @@ static int parse_extended_opts(const char *opts)
 		} else if (MATCH_EXTENTED_OPT("nosbcrc", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
-			erofs_sb_clear_sb_chksum(&sbi);
+			erofs_sb_clear_sb_chksum(&g_sbi);
 		} else if (MATCH_EXTENTED_OPT("noinline_data", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
@@ -560,7 +560,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				erofs_err("invalid block size %s", optarg);
 				return -EINVAL;
 			}
-			sbi.blkszbits = ilog2(i);
+			g_sbi.blkszbits = ilog2(i);
 			break;
 
 		case 'd':
@@ -589,12 +589,12 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 
 		case 'L':
 			if (optarg == NULL ||
-			    strlen(optarg) > sizeof(sbi.volume_name)) {
+			    strlen(optarg) > sizeof(g_sbi.volume_name)) {
 				erofs_err("invalid volume label");
 				return -EINVAL;
 			}
-			strncpy(sbi.volume_name, optarg,
-				sizeof(sbi.volume_name));
+			strncpy(g_sbi.volume_name, optarg,
+				sizeof(g_sbi.volume_name));
 			break;
 
 		case 'T':
@@ -606,7 +606,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			cfg.c_timeinherit = TIMESTAMP_FIXED;
 			break;
 		case 'U':
-			if (erofs_uuid_parse(optarg, sbi.uuid)) {
+			if (erofs_uuid_parse(optarg, g_sbi.uuid)) {
 				erofs_err("invalid UUID %s", optarg);
 				return -EINVAL;
 			}
@@ -709,7 +709,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 					  optarg);
 				return -EINVAL;
 			}
-			erofs_sb_set_chunked_file(&sbi);
+			erofs_sb_set_chunked_file(&g_sbi);
 			break;
 		case 12:
 			quiet = true;
@@ -762,7 +762,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				cfg.c_ovlfs_strip = false;
 			break;
 		case 517:
-			sbi.bdev.offset = strtoull(optarg, &endptr, 0);
+			g_sbi.bdev.offset = strtoull(optarg, &endptr, 0);
 			if (*endptr != '\0') {
 				erofs_err("invalid disk offset %s", optarg);
 				return -EINVAL;
@@ -829,7 +829,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		}
 	}
 
-	if (cfg.c_blobdev_path && cfg.c_chunkbits < sbi.blkszbits) {
+	if (cfg.c_blobdev_path && cfg.c_chunkbits < g_sbi.blkszbits) {
 		erofs_err("--blobdev must be used together with --chunksize");
 		return -EINVAL;
 	}
@@ -942,14 +942,14 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		cfg.c_showprogress = false;
 	}
 
-	if (cfg.c_compr_opts[0].alg && erofs_blksiz(&sbi) != getpagesize())
+	if (cfg.c_compr_opts[0].alg && erofs_blksiz(&g_sbi) != getpagesize())
 		erofs_warn("Please note that subpage blocksize with compression isn't yet supported in kernel. "
 			   "This compressed image will only work with bs = ps = %u bytes",
-			   erofs_blksiz(&sbi));
+			   erofs_blksiz(&g_sbi));
 
 	if (pclustersize_max) {
-		if (pclustersize_max < erofs_blksiz(&sbi) ||
-		    pclustersize_max % erofs_blksiz(&sbi)) {
+		if (pclustersize_max < erofs_blksiz(&g_sbi) ||
+		    pclustersize_max % erofs_blksiz(&g_sbi)) {
 			erofs_err("invalid physical clustersize %u",
 				  pclustersize_max);
 			return -EINVAL;
@@ -957,15 +957,15 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		cfg.c_mkfs_pclustersize_max = pclustersize_max;
 		cfg.c_mkfs_pclustersize_def = cfg.c_mkfs_pclustersize_max;
 	}
-	if (cfg.c_chunkbits && cfg.c_chunkbits < sbi.blkszbits) {
+	if (cfg.c_chunkbits && cfg.c_chunkbits < g_sbi.blkszbits) {
 		erofs_err("chunksize %u must be larger than block size",
 			  1u << cfg.c_chunkbits);
 		return -EINVAL;
 	}
 
 	if (pclustersize_packed) {
-		if (pclustersize_packed < erofs_blksiz(&sbi) ||
-		    pclustersize_packed % erofs_blksiz(&sbi)) {
+		if (pclustersize_packed < erofs_blksiz(&g_sbi) ||
+		    pclustersize_packed % erofs_blksiz(&g_sbi)) {
 			erofs_err("invalid pcluster size for the packed file %u",
 				  pclustersize_packed);
 			return -EINVAL;
@@ -985,11 +985,11 @@ static void erofs_mkfs_default_options(void)
 	cfg.c_mt_workers = erofs_get_available_processors();
 	cfg.c_mkfs_segment_size = 16ULL * 1024 * 1024;
 #endif
-	sbi.blkszbits = ilog2(min_t(u32, getpagesize(), EROFS_MAX_BLOCK_SIZE));
-	cfg.c_mkfs_pclustersize_max = erofs_blksiz(&sbi);
+	g_sbi.blkszbits = ilog2(min_t(u32, getpagesize(), EROFS_MAX_BLOCK_SIZE));
+	cfg.c_mkfs_pclustersize_max = erofs_blksiz(&g_sbi);
 	cfg.c_mkfs_pclustersize_def = cfg.c_mkfs_pclustersize_max;
-	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_ZERO_PADDING;
-	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM |
+	g_sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_ZERO_PADDING;
+	g_sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM |
 			     EROFS_FEATURE_COMPAT_MTIME;
 }
 
@@ -1071,7 +1071,7 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 		return -EOPNOTSUPP;
 	}
 
-	ret = erofs_mkfs_init_devices(&sbi, rebuild_src_count);
+	ret = erofs_mkfs_init_devices(&g_sbi, rebuild_src_count);
 	if (ret)
 		return ret;
 
@@ -1086,12 +1086,12 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 		}
 		DBG_BUGON(src->dev < 1);
 		idx = src->dev - 1;
-		sbi.devs[idx].blocks = nblocks;
+		g_sbi.devs[idx].blocks = nblocks;
 		if (tag && *tag)
-			memcpy(sbi.devs[idx].tag, tag, sizeof(sbi.devs[0].tag));
+			memcpy(g_sbi.devs[idx].tag, tag, sizeof(g_sbi.devs[0].tag));
 		else
 			/* convert UUID of the source image to a hex string */
-			sprintf((char *)sbi.devs[idx].tag,
+			sprintf((char *)g_sbi.devs[idx].tag,
 				"%04x%04x%04x%04x%04x%04x%04x%04x",
 				(src->uuid[0] << 8) | src->uuid[1],
 				(src->uuid[2] << 8) | src->uuid[3],
@@ -1113,16 +1113,16 @@ static void erofs_mkfs_showsummaries(erofs_blk_t nblocks)
 	if (!(cfg.c_dbg_lvl > EROFS_ERR && cfg.c_showprogress))
 		return;
 
-	erofs_uuid_unparse_lower(sbi.uuid, uuid_str);
+	erofs_uuid_unparse_lower(g_sbi.uuid, uuid_str);
 
 	fprintf(stdout, "------\nFilesystem UUID: %s\n"
 		"Filesystem total blocks: %u (of %u-byte blocks)\n"
 		"Filesystem total inodes: %llu\n"
 		"Filesystem %s metadata blocks: %u\n"
 		"Filesystem %s deduplicated bytes (of source files): %llu\n",
-		uuid_str, nblocks, 1U << sbi.blkszbits, sbi.inos | 0ULL,
+		uuid_str, nblocks, 1U << g_sbi.blkszbits, g_sbi.inos | 0ULL,
 		incr, erofs_total_metablocks(),
-		incr, sbi.saved_by_deduplication | 0ULL);
+		incr, g_sbi.saved_by_deduplication | 0ULL);
 }
 
 int main(int argc, char **argv)
@@ -1154,14 +1154,14 @@ int main(int argc, char **argv)
 	}
 
 	if (cfg.c_unix_timestamp != -1) {
-		sbi.build_time      = cfg.c_unix_timestamp;
-		sbi.build_time_nsec = 0;
+		g_sbi.build_time      = cfg.c_unix_timestamp;
+		g_sbi.build_time_nsec = 0;
 	} else if (!gettimeofday(&t, NULL)) {
-		sbi.build_time      = t.tv_sec;
-		sbi.build_time_nsec = t.tv_usec;
+		g_sbi.build_time      = t.tv_sec;
+		g_sbi.build_time_nsec = t.tv_usec;
 	}
 
-	err = erofs_dev_open(&sbi, cfg.c_img_path, O_RDWR |
+	err = erofs_dev_open(&g_sbi, cfg.c_img_path, O_RDWR |
 				(incremental_mode ? 0 : O_TRUNC));
 	if (err) {
 		fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
@@ -1224,7 +1224,7 @@ int main(int argc, char **argv)
 			 * If mapfile is unspecified for tarfs index mode,
 			 * 512-byte block size is enforced here.
 			 */
-			sbi.blkszbits = 9;
+			g_sbi.blkszbits = 9;
 		}
 	}
 
@@ -1241,7 +1241,7 @@ int main(int argc, char **argv)
 			erofs_err("failed to read superblock of %s", src->devname);
 			goto exit;
 		}
-		sbi.blkszbits = src->blkszbits;
+		g_sbi.blkszbits = src->blkszbits;
 	}
 
 	if (!incremental_mode) {
@@ -1251,7 +1251,7 @@ int main(int argc, char **argv)
 			goto exit;
 		}
 		/* generate new UUIDs for clean builds */
-		erofs_uuid_generate(sbi.uuid);
+		erofs_uuid_generate(g_sbi.uuid);
 	} else {
 		union {
 			struct stat st;
@@ -1259,17 +1259,17 @@ int main(int argc, char **argv)
 		} u;
 
 		erofs_warn("EXPERIMENTAL incremental build in use. Use at your own risk!");
-		err = erofs_read_superblock(&sbi);
+		err = erofs_read_superblock(&g_sbi);
 		if (err) {
-			erofs_err("failed to read superblock of %s", sbi.devname);
+			erofs_err("failed to read superblock of %s", g_sbi.devname);
 			goto exit;
 		}
 
-		err = erofs_io_fstat(&sbi.bdev, &u.st);
+		err = erofs_io_fstat(&g_sbi.bdev, &u.st);
 		if (!err && S_ISREG(u.st.st_mode))
-			u.startblk = DIV_ROUND_UP(u.st.st_size, erofs_blksiz(&sbi));
+			u.startblk = DIV_ROUND_UP(u.st.st_size, erofs_blksiz(&g_sbi));
 		else
-			u.startblk = sbi.primarydevice_blocks;
+			u.startblk = g_sbi.primarydevice_blocks;
 		erofs_buffer_init(u.startblk);
 		sb_bh = NULL;
 	}
@@ -1283,14 +1283,14 @@ int main(int argc, char **argv)
 		}
 	}
 
-	err = erofs_load_compress_hints(&sbi);
+	err = erofs_load_compress_hints(&g_sbi);
 	if (err) {
 		erofs_err("failed to load compress hints %s",
 			  cfg.c_compress_hints_file);
 		goto exit;
 	}
 
-	err = z_erofs_compress_init(&sbi, sb_bh);
+	err = z_erofs_compress_init(&g_sbi, sb_bh);
 	if (err) {
 		erofs_err("failed to initialize compressor: %s",
 			  erofs_strerror(err));
@@ -1300,9 +1300,9 @@ int main(int argc, char **argv)
 	if (cfg.c_dedupe) {
 		if (!cfg.c_compr_opts[0].alg) {
 			erofs_err("Compression is not enabled.  Turn on chunk-based data deduplication instead.");
-			cfg.c_chunkbits = sbi.blkszbits;
+			cfg.c_chunkbits = g_sbi.blkszbits;
 		} else {
-			err = z_erofs_dedupe_init(erofs_blksiz(&sbi));
+			err = z_erofs_dedupe_init(erofs_blksiz(&g_sbi));
 			if (err) {
 				erofs_err("failed to initialize deduplication: %s",
 					  erofs_strerror(err));
@@ -1319,7 +1319,7 @@ int main(int argc, char **argv)
 
 	if (((erofstar.index_mode && !erofstar.headeronly_mode) &&
 	    !erofstar.mapfile) || cfg.c_blobdev_path) {
-		err = erofs_mkfs_init_devices(&sbi, 1);
+		err = erofs_mkfs_init_devices(&g_sbi, 1);
 		if (err) {
 			erofs_err("failed to generate device table: %s",
 				  erofs_strerror(err));
@@ -1330,7 +1330,7 @@ int main(int argc, char **argv)
 	erofs_inode_manager_init();
 
 	if (tar_mode) {
-		root = erofs_rebuild_make_root(&sbi);
+		root = erofs_rebuild_make_root(&g_sbi);
 		if (IS_ERR(root)) {
 			err = PTR_ERR(root);
 			goto exit;
@@ -1345,7 +1345,7 @@ int main(int argc, char **argv)
 		if (err < 0)
 			goto exit;
 	} else if (rebuild_mode) {
-		root = erofs_rebuild_make_root(&sbi);
+		root = erofs_rebuild_make_root(&g_sbi);
 		if (IS_ERR(root)) {
 			err = PTR_ERR(root);
 			goto exit;
@@ -1358,7 +1358,7 @@ int main(int argc, char **argv)
 		if (err)
 			goto exit;
 	} else {
-		err = erofs_build_shared_xattrs_from_path(&sbi, cfg.c_src_path);
+		err = erofs_build_shared_xattrs_from_path(&g_sbi, cfg.c_src_path);
 		if (err) {
 			erofs_err("failed to build shared xattrs: %s",
 				  erofs_strerror(err));
@@ -1366,27 +1366,27 @@ int main(int argc, char **argv)
 		}
 
 		if (cfg.c_extra_ea_name_prefixes)
-			erofs_xattr_write_name_prefixes(&sbi, packedfile);
+			erofs_xattr_write_name_prefixes(&g_sbi, packedfile);
 
-		root = erofs_mkfs_build_tree_from_path(&sbi, cfg.c_src_path);
+		root = erofs_mkfs_build_tree_from_path(&g_sbi, cfg.c_src_path);
 		if (IS_ERR(root)) {
 			err = PTR_ERR(root);
 			goto exit;
 		}
 	}
 
-	if (erofstar.index_mode && sbi.extra_devices && !erofstar.mapfile)
-		sbi.devs[0].blocks = BLK_ROUND_UP(&sbi, erofstar.offset);
+	if (erofstar.index_mode && g_sbi.extra_devices && !erofstar.mapfile)
+		g_sbi.devs[0].blocks = BLK_ROUND_UP(&g_sbi, erofstar.offset);
 
-	if (erofs_sb_has_fragments(&sbi)) {
+	if (erofs_sb_has_fragments(&g_sbi)) {
 		erofs_update_progressinfo("Handling packed data ...");
-		err = erofs_flush_packed_inode(&sbi);
+		err = erofs_flush_packed_inode(&g_sbi);
 		if (err)
 			goto exit;
 	}
 
-	if (erofstar.index_mode || cfg.c_chunkbits || sbi.extra_devices) {
-		err = erofs_mkfs_dump_blobs(&sbi);
+	if (erofstar.index_mode || cfg.c_chunkbits || g_sbi.extra_devices) {
+		err = erofs_mkfs_dump_blobs(&g_sbi);
 		if (err)
 			goto exit;
 	}
@@ -1400,7 +1400,7 @@ int main(int argc, char **argv)
 	erofs_iput(root);
 	root = NULL;
 
-	err = erofs_writesb(&sbi, sb_bh, &nblocks);
+	err = erofs_writesb(&g_sbi, sb_bh, &nblocks);
 	if (err)
 		goto exit;
 
@@ -1409,10 +1409,10 @@ int main(int argc, char **argv)
 	if (err)
 		goto exit;
 
-	err = erofs_dev_resize(&sbi, nblocks);
+	err = erofs_dev_resize(&g_sbi, nblocks);
 
-	if (!err && erofs_sb_has_sb_chksum(&sbi)) {
-		err = erofs_enable_sb_chksum(&sbi, &crc);
+	if (!err && erofs_sb_has_sb_chksum(&g_sbi)) {
+		err = erofs_enable_sb_chksum(&g_sbi, &crc);
 		if (!err)
 			erofs_info("superblock checksum 0x%08x written", crc);
 	}
@@ -1424,7 +1424,7 @@ exit:
 	blklst = erofs_blocklist_close();
 	if (blklst)
 		fclose(blklst);
-	erofs_dev_close(&sbi);
+	erofs_dev_close(&g_sbi);
 	erofs_cleanup_compress_hints();
 	erofs_cleanup_exclude_rules();
 	if (cfg.c_chunkbits)

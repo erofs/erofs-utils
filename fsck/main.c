@@ -183,10 +183,10 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 			}
 			break;
 		case 3:
-			ret = erofs_blob_open_ro(&sbi, optarg);
+			ret = erofs_blob_open_ro(&g_sbi, optarg);
 			if (ret)
 				return ret;
-			++sbi.extra_devices;
+			++g_sbi.extra_devices;
 			break;
 		case 4:
 			fsckcfg.force = true;
@@ -219,7 +219,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 			has_opt_preserve = true;
 			break;
 		case 12:
-			sbi.bdev.offset = strtoull(optarg, &endptr, 0);
+			g_sbi.bdev.offset = strtoull(optarg, &endptr, 0);
 			if (*endptr != '\0') {
 				erofs_err("invalid disk offset %s", optarg);
 				return -EINVAL;
@@ -311,7 +311,7 @@ static int erofs_check_sb_chksum(void)
 	struct erofs_super_block *sb;
 	int ret;
 
-	ret = erofs_blk_read(&sbi, 0, buf, 0, 1);
+	ret = erofs_blk_read(&g_sbi, 0, buf, 0, 1);
 	if (ret) {
 		erofs_err("failed to read superblock to check checksum: %d",
 			  ret);
@@ -321,10 +321,10 @@ static int erofs_check_sb_chksum(void)
 	sb = (struct erofs_super_block *)(buf + EROFS_SUPER_OFFSET);
 	sb->checksum = 0;
 
-	crc = erofs_crc32c(~0, (u8 *)sb, erofs_blksiz(&sbi) - EROFS_SUPER_OFFSET);
-	if (crc != sbi.checksum) {
+	crc = erofs_crc32c(~0, (u8 *)sb, erofs_blksiz(&g_sbi) - EROFS_SUPER_OFFSET);
+	if (crc != g_sbi.checksum) {
 		erofs_err("superblock chksum doesn't match: saved(%08xh) calculated(%08xh)",
-			  sbi.checksum, crc);
+			  g_sbi.checksum, crc);
 		fsckcfg.corrupted = true;
 		return -1;
 	}
@@ -889,7 +889,7 @@ static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 	erofs_dbg("check inode: nid(%llu)", nid | 0ULL);
 
 	inode.nid = nid;
-	inode.sbi = &sbi;
+	inode.sbi = &g_sbi;
 	ret = erofs_read_inode_from_disk(&inode);
 	if (ret) {
 		if (ret == -EIO)
@@ -965,19 +965,19 @@ int main(int argc, char *argv[])
 	cfg.c_dbg_lvl = -1;
 #endif
 
-	err = erofs_dev_open(&sbi, cfg.c_img_path, O_RDONLY);
+	err = erofs_dev_open(&g_sbi, cfg.c_img_path, O_RDONLY);
 	if (err) {
 		erofs_err("failed to open image file");
 		goto exit;
 	}
 
-	err = erofs_read_superblock(&sbi);
+	err = erofs_read_superblock(&g_sbi);
 	if (err) {
 		erofs_err("failed to read superblock");
 		goto exit_dev_close;
 	}
 
-	if (erofs_sb_has_sb_chksum(&sbi) && erofs_check_sb_chksum()) {
+	if (erofs_sb_has_sb_chksum(&g_sbi) && erofs_check_sb_chksum()) {
 		erofs_err("failed to verify superblock checksum");
 		goto exit_put_super;
 	}
@@ -985,15 +985,15 @@ int main(int argc, char *argv[])
 	if (fsckcfg.extract_path)
 		erofsfsck_hardlink_init();
 
-	if (erofs_sb_has_fragments(&sbi) && sbi.packed_nid > 0) {
-		err = erofsfsck_check_inode(sbi.packed_nid, sbi.packed_nid);
+	if (erofs_sb_has_fragments(&g_sbi) && g_sbi.packed_nid > 0) {
+		err = erofsfsck_check_inode(g_sbi.packed_nid, g_sbi.packed_nid);
 		if (err) {
 			erofs_err("failed to verify packed file");
 			goto exit_hardlink;
 		}
 	}
 
-	err = erofsfsck_check_inode(sbi.root_nid, sbi.root_nid);
+	err = erofsfsck_check_inode(g_sbi.root_nid, g_sbi.root_nid);
 	if (fsckcfg.corrupted) {
 		if (!fsckcfg.extract_path)
 			erofs_err("Found some filesystem corruption");
@@ -1019,11 +1019,11 @@ exit_hardlink:
 	if (fsckcfg.extract_path)
 		erofsfsck_hardlink_exit();
 exit_put_super:
-	erofs_put_super(&sbi);
+	erofs_put_super(&g_sbi);
 exit_dev_close:
-	erofs_dev_close(&sbi);
+	erofs_dev_close(&g_sbi);
 exit:
-	erofs_blob_closeall(&sbi);
+	erofs_blob_closeall(&g_sbi);
 	erofs_exit_configure();
 	return err ? 1 : 0;
 }

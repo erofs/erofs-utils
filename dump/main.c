@@ -166,10 +166,10 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 			usage(argc, argv);
 			exit(0);
 		case 3:
-			err = erofs_blob_open_ro(&sbi, optarg);
+			err = erofs_blob_open_ro(&g_sbi, optarg);
 			if (err)
 				return err;
-			++sbi.extra_devices;
+			++g_sbi.extra_devices;
 			break;
 		case 4:
 			dumpcfg.inode_path = optarg;
@@ -180,7 +180,7 @@ static int erofsdump_parse_options_cfg(int argc, char **argv)
 			dumpcfg.show_subdirectories = true;
 			break;
 		case 6:
-			sbi.bdev.offset = strtoull(optarg, &endptr, 0);
+			g_sbi.bdev.offset = strtoull(optarg, &endptr, 0);
 			if (*endptr != '\0') {
 				erofs_err("invalid disk offset %s", optarg);
 				return -EINVAL;
@@ -289,9 +289,9 @@ static int erofsdump_read_packed_inode(void)
 {
 	int err;
 	erofs_off_t occupied_size = 0;
-	struct erofs_inode vi = { .sbi = &sbi, .nid = sbi.packed_nid };
+	struct erofs_inode vi = { .sbi = &g_sbi, .nid = g_sbi.packed_nid };
 
-	if (!(erofs_sb_has_fragments(&sbi) && sbi.packed_nid > 0))
+	if (!(erofs_sb_has_fragments(&g_sbi) && g_sbi.packed_nid > 0))
 		return 0;
 
 	err = erofs_read_inode_from_disk(&vi);
@@ -315,7 +315,7 @@ static int erofsdump_readdir(struct erofs_dir_context *ctx)
 {
 	int err;
 	erofs_off_t occupied_size = 0;
-	struct erofs_inode vi = { .sbi = &sbi, .nid = ctx->de_nid };
+	struct erofs_inode vi = { .sbi = &g_sbi, .nid = ctx->de_nid };
 
 	err = erofs_read_inode_from_disk(&vi);
 	if (err) {
@@ -370,7 +370,7 @@ static void erofsdump_show_fileinfo(bool show_extent)
 	int err, i;
 	erofs_off_t size;
 	u16 access_mode;
-	struct erofs_inode inode = { .sbi = &sbi, .nid = dumpcfg.nid };
+	struct erofs_inode inode = { .sbi = &g_sbi, .nid = dumpcfg.nid };
 	char path[PATH_MAX];
 	char access_mode_str[] = "rwxrwxrwx";
 	char timebuf[128] = {0};
@@ -582,7 +582,7 @@ static void erofsdump_print_statistic(void)
 		.pnid = 0,
 		.dir = NULL,
 		.cb = erofsdump_dirent_iter,
-		.de_nid = sbi.root_nid,
+		.de_nid = g_sbi.root_nid,
 		.dname = "",
 		.de_namelen = 0,
 	};
@@ -626,48 +626,48 @@ static void erofsdump_print_supported_compressors(FILE *f, unsigned int mask)
 
 static void erofsdump_show_superblock(void)
 {
-	time_t time = sbi.build_time;
+	time_t time = g_sbi.build_time;
 	char uuid_str[37];
 	int i = 0;
 
 	fprintf(stdout, "Filesystem magic number:                      0x%04X\n",
 			EROFS_SUPER_MAGIC_V1);
 	fprintf(stdout, "Filesystem blocksize:                         %u\n",
-			erofs_blksiz(&sbi));
+			erofs_blksiz(&g_sbi));
 	fprintf(stdout, "Filesystem blocks:                            %llu\n",
-			sbi.total_blocks | 0ULL);
+			g_sbi.total_blocks | 0ULL);
 	fprintf(stdout, "Filesystem inode metadata start block:        %u\n",
-			sbi.meta_blkaddr);
+			g_sbi.meta_blkaddr);
 	fprintf(stdout, "Filesystem shared xattr metadata start block: %u\n",
-			sbi.xattr_blkaddr);
+			g_sbi.xattr_blkaddr);
 	fprintf(stdout, "Filesystem root nid:                          %llu\n",
-			sbi.root_nid | 0ULL);
-	if (erofs_sb_has_fragments(&sbi) && sbi.packed_nid > 0)
+			g_sbi.root_nid | 0ULL);
+	if (erofs_sb_has_fragments(&g_sbi) && g_sbi.packed_nid > 0)
 		fprintf(stdout, "Filesystem packed nid:                        %llu\n",
-			sbi.packed_nid | 0ULL);
-	if (erofs_sb_has_compr_cfgs(&sbi)) {
+			g_sbi.packed_nid | 0ULL);
+	if (erofs_sb_has_compr_cfgs(&g_sbi)) {
 		fprintf(stdout, "Filesystem compr_algs:                        ");
 		erofsdump_print_supported_compressors(stdout,
-			sbi.available_compr_algs);
+			g_sbi.available_compr_algs);
 	} else {
 		fprintf(stdout, "Filesystem lz4_max_distance:                  %u\n",
-			sbi.lz4_max_distance | 0U);
+			g_sbi.lz4_max_distance | 0U);
 	}
 	fprintf(stdout, "Filesystem sb_size:                           %u\n",
-			sbi.sb_size | 0U);
+			g_sbi.sb_size | 0U);
 	fprintf(stdout, "Filesystem inode count:                       %llu\n",
-			sbi.inos | 0ULL);
+			g_sbi.inos | 0ULL);
 	fprintf(stdout, "Filesystem created:                           %s",
 			ctime(&time));
 	fprintf(stdout, "Filesystem features:                          ");
 	for (; i < ARRAY_SIZE(feature_lists); i++) {
 		u32 feat = le32_to_cpu(feature_lists[i].compat ?
-				       sbi.feature_compat :
-				       sbi.feature_incompat);
+				       g_sbi.feature_compat :
+				       g_sbi.feature_incompat);
 		if (feat & feature_lists[i].flag)
 			fprintf(stdout, "%s ", feature_lists[i].name);
 	}
-	erofs_uuid_unparse_lower(sbi.uuid, uuid_str);
+	erofs_uuid_unparse_lower(g_sbi.uuid, uuid_str);
 	fprintf(stdout, "\nFilesystem UUID:                              %s\n",
 			uuid_str);
 }
@@ -684,13 +684,13 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
-	err = erofs_dev_open(&sbi, cfg.c_img_path, O_RDONLY | O_TRUNC);
+	err = erofs_dev_open(&g_sbi, cfg.c_img_path, O_RDONLY | O_TRUNC);
 	if (err) {
 		erofs_err("failed to open image file");
 		goto exit;
 	}
 
-	err = erofs_read_superblock(&sbi);
+	err = erofs_read_superblock(&g_sbi);
 	if (err) {
 		erofs_err("failed to read superblock");
 		goto exit_dev_close;
@@ -715,11 +715,11 @@ int main(int argc, char **argv)
 		erofsdump_show_fileinfo(dumpcfg.show_extent);
 
 exit_put_super:
-	erofs_put_super(&sbi);
+	erofs_put_super(&g_sbi);
 exit_dev_close:
-	erofs_dev_close(&sbi);
+	erofs_dev_close(&g_sbi);
 exit:
-	erofs_blob_closeall(&sbi);
+	erofs_blob_closeall(&g_sbi);
 	erofs_exit_configure();
 	return err;
 }

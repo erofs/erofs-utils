@@ -48,7 +48,7 @@ typedef u32 erofs_blk_t;
 #define NULL_ADDR_UL	((unsigned long)-1)
 
 /* global sbi */
-extern struct erofs_sb_info sbi;
+extern struct erofs_sb_info g_sbi;
 
 #define erofs_blksiz(sbi)	(1u << (sbi)->blkszbits)
 #define erofs_blknr(sbi, addr)  ((addr) >> (sbi)->blkszbits)
