@@ -1800,6 +1800,7 @@ static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 {
 	struct erofs_mkfs_dfops *q;
 	int err, err2;
+	struct erofs_sb_info *sbi = ctx->sbi ? ctx->sbi : ctx->u.root->sbi;
 
 	q = malloc(sizeof(*q));
 	if (!q)
@@ -1818,15 +1819,15 @@ static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 
 	q->head = 0;
 	q->tail = 0;
-	sbi.mkfs_dfops = q;
-	err = pthread_create(&sbi.dfops_worker, NULL,
-			     z_erofs_mt_dfops_worker, &sbi);
+	sbi->mkfs_dfops = q;
+	err = pthread_create(&sbi->dfops_worker, NULL,
+			     z_erofs_mt_dfops_worker, sbi);
 	if (err)
 		goto fail;
 
 	err = __erofs_mkfs_build_tree(ctx);
-	erofs_mkfs_go(&sbi, ~0, NULL, 0);
-	err2 = pthread_join(sbi.dfops_worker, NULL);
+	erofs_mkfs_go(sbi, ~0, NULL, 0);
+	err2 = pthread_join(sbi->dfops_worker, NULL);
 	if (!err)
 		err = err2;
 
