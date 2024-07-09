@@ -288,7 +288,7 @@ static inline u32 get_unaligned_le64(const void *p)
 
 static inline unsigned int fls_long(unsigned long x)
 {
-	return x ? sizeof(x) * 8 - __builtin_clz(x) : 0;
+	return x ? sizeof(x) * 8 - __builtin_clzl(x) : 0;
 }
 
 static inline unsigned long lowbit(unsigned long n)
