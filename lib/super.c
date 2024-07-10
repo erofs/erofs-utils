@@ -149,6 +149,10 @@ void erofs_put_super(struct erofs_sb_info *sbi)
 		sbi->devs = NULL;
 	}
 	erofs_xattr_prefixes_cleanup(sbi);
+	if (sbi->bmgr) {
+		erofs_buffer_exit(sbi->bmgr);
+		sbi->bmgr = NULL;
+	}
 }
 
 int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh,
@@ -176,7 +180,7 @@ int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh,
 	char *buf;
 	int ret;
 
-	*blocks         = erofs_mapbh(NULL);
+	*blocks         = erofs_mapbh(sbi->bmgr, NULL);
 	sb.blocks       = cpu_to_le32(*blocks);
 	memcpy(sb.uuid, sbi->uuid, sizeof(sb.uuid));
 	memcpy(sb.volume_name, sbi->volume_name, sizeof(sb.volume_name));
@@ -202,13 +206,12 @@ int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh,
 	return ret;
 }
 
-struct erofs_buffer_head *erofs_reserve_sb(void)
+struct erofs_buffer_head *erofs_reserve_sb(struct erofs_bufmgr *bmgr)
 {
 	struct erofs_buffer_head *bh;
 	int err;
 
-	erofs_buffer_init(0);
-	bh = erofs_balloc(META, 0, 0, 0);
+	bh = erofs_balloc(bmgr, META, 0, 0, 0);
 	if (IS_ERR(bh)) {
 		erofs_err("failed to allocate super: %s", PTR_ERR(bh));
 		return bh;
@@ -221,7 +224,7 @@ struct erofs_buffer_head *erofs_reserve_sb(void)
 	}
 
 	/* make sure that the super block should be the very first blocks */
-	(void)erofs_mapbh(bh->block);
+	(void)erofs_mapbh(NULL, bh->block);
 	if (erofs_btell(bh, false) != 0) {
 		erofs_err("failed to pin super block @ 0");
 		err = -EFAULT;

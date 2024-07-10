@@ -1121,7 +1121,7 @@ static void erofs_mkfs_showsummaries(erofs_blk_t nblocks)
 		"Filesystem %s metadata blocks: %u\n"
 		"Filesystem %s deduplicated bytes (of source files): %llu\n",
 		uuid_str, nblocks, 1U << g_sbi.blkszbits, g_sbi.inos | 0ULL,
-		incr, erofs_total_metablocks(),
+		incr, erofs_total_metablocks(g_sbi.bmgr),
 		incr, g_sbi.saved_by_deduplication | 0ULL);
 }
 
@@ -1245,7 +1245,12 @@ int main(int argc, char **argv)
 	}
 
 	if (!incremental_mode) {
-		sb_bh = erofs_reserve_sb();
+		g_sbi.bmgr = erofs_buffer_init(&g_sbi, 0);
+		if (!g_sbi.bmgr) {
+			err = -ENOMEM;
+			goto exit;
+		}
+		sb_bh = erofs_reserve_sb(g_sbi.bmgr);
 		if (IS_ERR(sb_bh)) {
 			err = PTR_ERR(sb_bh);
 			goto exit;
@@ -1270,7 +1275,11 @@ int main(int argc, char **argv)
 			u.startblk = DIV_ROUND_UP(u.st.st_size, erofs_blksiz(&g_sbi));
 		else
 			u.startblk = g_sbi.primarydevice_blocks;
-		erofs_buffer_init(u.startblk);
+		g_sbi.bmgr = erofs_buffer_init(&g_sbi, u.startblk);
+		if (!g_sbi.bmgr) {
+			err = -ENOMEM;
+			goto exit;
+		}
 		sb_bh = NULL;
 	}
 
@@ -1392,7 +1401,7 @@ int main(int argc, char **argv)
 	}
 
 	/* flush all buffers except for the superblock */
-	err = erofs_bflush(NULL);
+	err = erofs_bflush(g_sbi.bmgr, NULL);
 	if (err)
 		goto exit;
 
@@ -1405,7 +1414,7 @@ int main(int argc, char **argv)
 		goto exit;
 
 	/* flush all remaining buffers */
-	err = erofs_bflush(NULL);
+	err = erofs_bflush(g_sbi.bmgr, NULL);
 	if (err)
 		goto exit;
 
@@ -1449,5 +1458,6 @@ exit:
 	}
 	erofs_update_progressinfo("Build completed.\n");
 	erofs_mkfs_showsummaries(nblocks);
+	erofs_put_super(&g_sbi);
 	return 0;
 }

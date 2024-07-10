@@ -58,6 +58,7 @@ extern struct erofs_sb_info g_sbi;
 	(roundup(addr, erofs_blksiz(sbi)) >> (sbi)->blkszbits)
 
 struct erofs_buffer_head;
+struct erofs_bufmgr;
 
 struct erofs_device_info {
 	u8 tag[64];
@@ -131,6 +132,7 @@ struct erofs_sb_info {
 	pthread_t dfops_worker;
 	struct erofs_mkfs_dfops *mkfs_dfops;
 #endif
+	struct erofs_bufmgr *bmgr;
 	bool useqpl;
 };
 
@@ -402,7 +404,7 @@ int erofs_read_superblock(struct erofs_sb_info *sbi);
 void erofs_put_super(struct erofs_sb_info *sbi);
 int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh,
 		  erofs_blk_t *blocks);
-struct erofs_buffer_head *erofs_reserve_sb(void);
+struct erofs_buffer_head *erofs_reserve_sb(struct erofs_bufmgr *bmgr);
 int erofs_enable_sb_chksum(struct erofs_sb_info *sbi, u32 *crc);
 
 /* namei.c */

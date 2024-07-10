@@ -496,7 +496,7 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 		unsigned int i, ret;
 		erofs_blk_t nblocks;
 
-		nblocks = erofs_mapbh(NULL);
+		nblocks = erofs_mapbh(sbi->bmgr, NULL);
 		pos_out = erofs_btell(bh_devt, false);
 		i = 0;
 		do {
@@ -517,11 +517,11 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 		return 0;
 	}
 
-	bh = erofs_balloc(DATA, datablob_size, 0, 0);
+	bh = erofs_balloc(sbi->bmgr, DATA, datablob_size, 0, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 
-	erofs_mapbh(bh->block);
+	erofs_mapbh(NULL, bh->block);
 
 	pos_out = erofs_btell(bh, false);
 	remapped_base = erofs_blknr(sbi, pos_out);
@@ -626,13 +626,13 @@ int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices)
 	if (!sbi->devs)
 		return -ENOMEM;
 
-	bh_devt = erofs_balloc(DEVT,
+	bh_devt = erofs_balloc(sbi->bmgr, DEVT,
 		sizeof(struct erofs_deviceslot) * devices, 0, 0);
 	if (IS_ERR(bh_devt)) {
 		free(sbi->devs);
 		return PTR_ERR(bh_devt);
 	}
-	erofs_mapbh(bh_devt->block);
+	erofs_mapbh(NULL, bh_devt->block);
 	bh_devt->op = &erofs_skip_write_bhops;
 	sbi->devt_slotoff = erofs_btell(bh_devt, false) / EROFS_DEVT_SLOT_SIZE;
 	sbi->extra_devices = devices;

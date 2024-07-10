@@ -176,6 +176,7 @@ static int __allocate_inode_bh_data(struct erofs_inode *inode,
 				    unsigned long nblocks,
 				    int type)
 {
+	struct erofs_bufmgr *bmgr = inode->sbi->bmgr;
 	struct erofs_buffer_head *bh;
 	int ret;
 
@@ -186,7 +187,7 @@ static int __allocate_inode_bh_data(struct erofs_inode *inode,
 	}
 
 	/* allocate main data buffer */
-	bh = erofs_balloc(type, erofs_pos(inode->sbi, nblocks), 0, 0);
+	bh = erofs_balloc(bmgr, type, erofs_pos(inode->sbi, nblocks), 0, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 
@@ -194,7 +195,7 @@ static int __allocate_inode_bh_data(struct erofs_inode *inode,
 	inode->bh_data = bh;
 
 	/* get blkaddr of the bh */
-	ret = erofs_mapbh(bh->block);
+	ret = erofs_mapbh(NULL, bh->block);
 	DBG_BUGON(ret < 0);
 
 	/* write blocks except for the tail-end block */
@@ -314,7 +315,7 @@ erofs_nid_t erofs_lookupnid(struct erofs_inode *inode)
 	erofs_off_t off, meta_offset;
 
 	if (bh && (long long)inode->nid <= 0) {
-		erofs_mapbh(bh->block);
+		erofs_mapbh(NULL, bh->block);
 		off = erofs_btell(bh, false);
 
 		meta_offset = erofs_pos(sbi, sbi->meta_blkaddr);
@@ -739,6 +740,7 @@ static int erofs_prepare_tail_block(struct erofs_inode *inode)
 
 static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 {
+	struct erofs_bufmgr *bmgr = inode->sbi->bmgr;
 	unsigned int inodesize;
 	struct erofs_buffer_head *bh, *ibh;
 
@@ -768,7 +770,7 @@ static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 			inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 	}
 
-	bh = erofs_balloc(INODE, inodesize, 0, inode->idata_size);
+	bh = erofs_balloc(bmgr, INODE, inodesize, 0, inode->idata_size);
 	if (bh == ERR_PTR(-ENOSPC)) {
 		int ret;
 
@@ -781,7 +783,7 @@ noinline:
 		ret = erofs_prepare_tail_block(inode);
 		if (ret)
 			return ret;
-		bh = erofs_balloc(INODE, inodesize, 0, 0);
+		bh = erofs_balloc(bmgr, INODE, inodesize, 0, 0);
 		if (IS_ERR(bh))
 			return PTR_ERR(bh);
 		DBG_BUGON(inode->bh_inline);
@@ -860,13 +862,14 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		erofs_off_t pos, zero_pos;
 
 		if (!bh) {
-			bh = erofs_balloc(DATA, erofs_blksiz(sbi), 0, 0);
+			bh = erofs_balloc(sbi->bmgr, DATA,
+					  erofs_blksiz(sbi), 0, 0);
 			if (IS_ERR(bh))
 				return PTR_ERR(bh);
 			bh->op = &erofs_skip_write_bhops;
 
 			/* get blkaddr of bh */
-			ret = erofs_mapbh(bh->block);
+			ret = erofs_mapbh(NULL, bh->block);
 			inode->u.i_blkaddr = bh->block->blkaddr;
 			inode->bh_data = bh;
 		} else {
@@ -879,7 +882,7 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 				}
 				inode->lazy_tailblock = false;
 			}
-			ret = erofs_mapbh(bh->block);
+			ret = erofs_mapbh(NULL, bh->block);
 		}
 		DBG_BUGON(ret < 0);
 		pos = erofs_btell(bh, true) - erofs_blksiz(sbi);
@@ -1157,7 +1160,7 @@ static void erofs_fixup_meta_blkaddr(struct erofs_inode *rootdir)
 	struct erofs_sb_info *sbi = rootdir->sbi;
 	erofs_off_t off, meta_offset;
 
-	erofs_mapbh(bh->block);
+	erofs_mapbh(NULL, bh->block);
 	off = erofs_btell(bh, false);
 
 	if (off > rootnid_maxoffset)
@@ -1176,12 +1179,12 @@ static int erofs_inode_reserve_data_blocks(struct erofs_inode *inode)
 	struct erofs_buffer_head *bh;
 
 	/* allocate data blocks */
-	bh = erofs_balloc(DATA, alignedsz, 0, 0);
+	bh = erofs_balloc(sbi->bmgr, DATA, alignedsz, 0, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 
 	/* get blkaddr of the bh */
-	(void)erofs_mapbh(bh->block);
+	(void)erofs_mapbh(NULL, bh->block);
 
 	/* write blocks except for the tail-end block */
 	inode->u.i_blkaddr = bh->block->blkaddr;

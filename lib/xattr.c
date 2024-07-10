@@ -906,7 +906,7 @@ int erofs_build_shared_xattrs_from_path(struct erofs_sb_info *sbi, const char *p
 		return -ENOMEM;
 	}
 
-	bh = erofs_balloc(XATTR, shared_xattrs_size, 0, 0);
+	bh = erofs_balloc(sbi->bmgr, XATTR, shared_xattrs_size, 0, 0);
 	if (IS_ERR(bh)) {
 		free(sorted_n);
 		free(buf);
@@ -914,7 +914,7 @@ int erofs_build_shared_xattrs_from_path(struct erofs_sb_info *sbi, const char *p
 	}
 	bh->op = &erofs_skip_write_bhops;
 
-	erofs_mapbh(bh->block);
+	erofs_mapbh(NULL, bh->block);
 	off = erofs_btell(bh, false);
 
 	sbi->xattr_blkaddr = off / erofs_blksiz(sbi);

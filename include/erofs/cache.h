@@ -53,10 +53,22 @@ struct erofs_buffer_block {
 	struct erofs_buffer_head buffers;
 };
 
-static inline const int get_alignsize(int type, int *type_ret)
-{
-	struct erofs_sb_info *sbi = &g_sbi;
+struct erofs_bufmgr {
+	struct erofs_sb_info *sbi;
 
+	/* buckets for all mapped buffer blocks to boost up allocation */
+	struct list_head mapped_buckets[META + 1][EROFS_MAX_BLOCK_SIZE];
+
+	struct erofs_buffer_block blkh;
+	erofs_blk_t tail_blkaddr, metablkcnt;
+
+	/* last mapped buffer block to accelerate erofs_mapbh() */
+	struct erofs_buffer_block *last_mapped_block;
+};
+
+static inline const int get_alignsize(struct erofs_sb_info *sbi, int type,
+				      int *type_ret)
+{
 	if (type == DATA)
 		return erofs_blksiz(sbi);
 
@@ -85,12 +97,13 @@ extern const struct erofs_bhops erofs_skip_write_bhops;
 static inline erofs_off_t erofs_btell(struct erofs_buffer_head *bh, bool end)
 {
 	const struct erofs_buffer_block *bb = bh->block;
-	struct erofs_sb_info *sbi = &g_sbi;
+	struct erofs_bufmgr *bmgr =
+			(struct erofs_bufmgr *)bb->buffers.fsprivate;
 
 	if (bb->blkaddr == NULL_ADDR)
 		return NULL_ADDR_UL;
 
-	return erofs_pos(sbi, bb->blkaddr) +
+	return erofs_pos(bmgr->sbi, bb->blkaddr) +
 		(end ? list_next_entry(bh, list)->off : bh->off);
 }
 
@@ -101,20 +114,25 @@ static inline int erofs_bh_flush_generic_end(struct erofs_buffer_head *bh)
 	return 0;
 }
 
-void erofs_buffer_init(erofs_blk_t startblk);
+struct erofs_bufmgr *erofs_buffer_init(struct erofs_sb_info *sbi,
+				       erofs_blk_t startblk);
 int erofs_bh_balloon(struct erofs_buffer_head *bh, erofs_off_t incr);
 
-struct erofs_buffer_head *erofs_balloc(int type, erofs_off_t size,
+struct erofs_buffer_head *erofs_balloc(struct erofs_bufmgr *bmgr,
+				       int type, erofs_off_t size,
 				       unsigned int required_ext,
 				       unsigned int inline_ext);
 struct erofs_buffer_head *erofs_battach(struct erofs_buffer_head *bh,
 					int type, unsigned int size);
 
-erofs_blk_t erofs_mapbh(struct erofs_buffer_block *bb);
-int erofs_bflush(struct erofs_buffer_block *bb);
+erofs_blk_t erofs_mapbh(struct erofs_bufmgr *bmgr,
+			struct erofs_buffer_block *bb);
+int erofs_bflush(struct erofs_bufmgr *bmgr,
+		 struct erofs_buffer_block *bb);
 
 void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke);
-erofs_blk_t erofs_total_metablocks(void);
+erofs_blk_t erofs_total_metablocks(struct erofs_bufmgr *bmgr);
+void erofs_buffer_exit(struct erofs_bufmgr *bmgr);
 
 #ifdef __cplusplus
 }

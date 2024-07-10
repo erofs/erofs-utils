@@ -1356,6 +1356,7 @@ int z_erofs_mt_compress(struct z_erofs_compress_ictx *ictx)
 
 int erofs_mt_write_compressed_file(struct z_erofs_compress_ictx *ictx)
 {
+	struct erofs_sb_info *sbi = ictx->inode->sbi;
 	struct erofs_buffer_head *bh = NULL;
 	struct erofs_compress_work *head = ictx->mtworks, *cur;
 	erofs_blk_t blkaddr, compressed_blocks = 0;
@@ -1366,14 +1367,14 @@ int erofs_mt_write_compressed_file(struct z_erofs_compress_ictx *ictx)
 		pthread_cond_wait(&ictx->cond, &ictx->mutex);
 	pthread_mutex_unlock(&ictx->mutex);
 
-	bh = erofs_balloc(DATA, 0, 0, 0);
+	bh = erofs_balloc(sbi->bmgr, DATA, 0, 0, 0);
 	if (IS_ERR(bh)) {
 		ret = PTR_ERR(bh);
 		goto out;
 	}
 
 	DBG_BUGON(!head);
-	blkaddr = erofs_mapbh(bh->block);
+	blkaddr = erofs_mapbh(NULL, bh->block);
 
 	ret = 0;
 	do {
@@ -1531,12 +1532,12 @@ int erofs_write_compressed_file(struct z_erofs_compress_ictx *ictx)
 #endif
 
 	/* allocate main data buffer */
-	bh = erofs_balloc(DATA, 0, 0, 0);
+	bh = erofs_balloc(inode->sbi->bmgr, DATA, 0, 0, 0);
 	if (IS_ERR(bh)) {
 		ret = PTR_ERR(bh);
 		goto err_free_idata;
 	}
-	blkaddr = erofs_mapbh(bh->block); /* start_blkaddr */
+	blkaddr = erofs_mapbh(NULL, bh->block); /* start_blkaddr */
 
 	ictx->seg_num = 1;
 	sctx = (struct z_erofs_compress_sctx) {
@@ -1601,7 +1602,7 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 			DBG_BUGON(1);
 			return PTR_ERR(bh);
 		}
-		erofs_mapbh(bh->block);
+		erofs_mapbh(NULL, bh->block);
 		ret = erofs_dev_write(sbi, &lz4alg, erofs_btell(bh, false),
 				      sizeof(lz4alg));
 		bh->op = &erofs_drop_directly_bhops;
@@ -1625,7 +1626,7 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 			DBG_BUGON(1);
 			return PTR_ERR(bh);
 		}
-		erofs_mapbh(bh->block);
+		erofs_mapbh(NULL, bh->block);
 		ret = erofs_dev_write(sbi, &lzmaalg, erofs_btell(bh, false),
 				      sizeof(lzmaalg));
 		bh->op = &erofs_drop_directly_bhops;
@@ -1649,7 +1650,7 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 			DBG_BUGON(1);
 			return PTR_ERR(bh);
 		}
-		erofs_mapbh(bh->block);
+		erofs_mapbh(NULL, bh->block);
 		ret = erofs_dev_write(sbi, &zalg, erofs_btell(bh, false),
 				      sizeof(zalg));
 		bh->op = &erofs_drop_directly_bhops;
@@ -1672,7 +1673,7 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 			DBG_BUGON(1);
 			return PTR_ERR(bh);
 		}
-		erofs_mapbh(bh->block);
+		erofs_mapbh(NULL, bh->block);
 		ret = erofs_dev_write(sbi, &zalg, erofs_btell(bh, false),
 				      sizeof(zalg));
 		bh->op = &erofs_drop_directly_bhops;
