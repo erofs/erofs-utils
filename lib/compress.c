@@ -1245,7 +1245,7 @@ void z_erofs_mt_workfn(struct erofs_work *work, void *tlsp)
 	sctx->queue = tls->queue;
 	sctx->destbuf = tls->destbuf;
 	sctx->chandle = &tls->ccfg[cwork->alg_id].handle;
-
+	erofs_compressor_reset(sctx->chandle);
 	sctx->membuf = malloc(round_up(sctx->remaining, erofs_blksiz(sbi)));
 	if (!sctx->membuf) {
 		ret = -ENOMEM;

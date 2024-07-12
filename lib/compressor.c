@@ -155,3 +155,9 @@ int erofs_compressor_exit(struct erofs_compress *c)
 		return c->alg->c->exit(c);
 	return 0;
 }
+
+void erofs_compressor_reset(struct erofs_compress *c)
+{
+	if (c->alg && c->alg->c->reset)
+		c->alg->c->reset(c);
+}

@@ -3,22 +3,28 @@
 #include "erofs/print.h"
 #include "erofs/config.h"
 #include <libdeflate.h>
+#include <stdlib.h>
 #include "compressor.h"
 #include "erofs/atomic.h"
+
+struct erofs_libdeflate_context {
+	struct libdeflate_compressor *strm;
+	size_t last_uncompressed_size;
+};
 
 static int libdeflate_compress_destsize(const struct erofs_compress *c,
 				        const void *src, unsigned int *srcsize,
 				        void *dst, unsigned int dstsize)
 {
-	static size_t last_uncompressed_size = 0;
+	struct erofs_libdeflate_context *ctx = c->private_data;
 	size_t l = 0; /* largest input that fits so far */
 	size_t l_csize = 0;
 	size_t r = *srcsize + 1; /* smallest input that doesn't fit so far */
 	size_t m;
 	u8 tmpbuf[dstsize + 9];
 
-	if (last_uncompressed_size)
-		m = last_uncompressed_size * 15 / 16;
+	if (ctx->last_uncompressed_size)
+		m = ctx->last_uncompressed_size * 15 / 16;
 	else
 		m = dstsize * 4;
 	for (;;) {
@@ -27,7 +33,7 @@ static int libdeflate_compress_destsize(const struct erofs_compress *c,
 		m = max(m, l + 1);
 		m = min(m, r - 1);
 
-		csize = libdeflate_deflate_compress(c->private_data, src, m,
+		csize = libdeflate_deflate_compress(ctx->strm, src, m,
 						    tmpbuf, dstsize + 9);
 		/*printf("Tried %zu => %zu\n", m, csize);*/
 		if (csize > 0 && csize <= dstsize) {
@@ -68,40 +74,55 @@ static int libdeflate_compress_destsize(const struct erofs_compress *c,
 
 	/*printf("Choosing %zu => %zu\n", l, l_csize);*/
 	*srcsize = l;
-	last_uncompressed_size = l;
+	ctx->last_uncompressed_size = l;
 	return l_csize;
 }
 
 static int compressor_libdeflate_exit(struct erofs_compress *c)
 {
-	if (!c->private_data)
-		return -EINVAL;
+	struct erofs_libdeflate_context *ctx = c->private_data;
 
-	libdeflate_free_compressor(c->private_data);
+	if (!ctx)
+		return -EINVAL;
+	libdeflate_free_compressor(ctx->strm);
+	free(ctx);
 	return 0;
 }
 
 static int compressor_libdeflate_init(struct erofs_compress *c)
 {
 	static erofs_atomic_bool_t __warnonce;
+	struct erofs_libdeflate_context *ctx;
 
-	libdeflate_free_compressor(c->private_data);
-	c->private_data = libdeflate_alloc_compressor(c->compression_level);
-	if (!c->private_data)
+	DBG_BUGON(c->private_data);
+	ctx = calloc(1, sizeof(struct erofs_libdeflate_context));
+	if (!ctx)
 		return -ENOMEM;
-
+	ctx->strm = libdeflate_alloc_compressor(c->compression_level);
+	if (!ctx->strm) {
+		free(ctx);
+		return -ENOMEM;
+	}
+	c->private_data = ctx;
 	if (!erofs_atomic_test_and_set(&__warnonce))
 		erofs_warn("EXPERIMENTAL libdeflate compressor in use. Use at your own risk!");
 	return 0;
+}
+
+static void compressor_libdeflate_reset(struct erofs_compress *c)
+{
+	struct erofs_libdeflate_context *ctx = c->private_data;
+
+	ctx->last_uncompressed_size = 0;
 }
 
 static int erofs_compressor_libdeflate_setlevel(struct erofs_compress *c,
 						int compression_level)
 {
 	if (compression_level < 0)
-		compression_level = erofs_compressor_deflate.default_level;
+		compression_level = erofs_compressor_libdeflate.default_level;
 
-	if (compression_level > erofs_compressor_deflate.best_level) {
+	if (compression_level > erofs_compressor_libdeflate.best_level) {
 		erofs_err("invalid compression level %d", compression_level);
 		return -EINVAL;
 	}
@@ -114,6 +135,7 @@ const struct erofs_compressor erofs_compressor_libdeflate = {
 	.best_level = 12,
 	.init = compressor_libdeflate_init,
 	.exit = compressor_libdeflate_exit,
+	.reset = compressor_libdeflate_reset,
 	.setlevel = erofs_compressor_libdeflate_setlevel,
 	.compress_destsize = libdeflate_compress_destsize,
 };
