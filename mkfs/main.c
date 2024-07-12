@@ -231,6 +231,8 @@ enum {
 
 static unsigned int rebuild_src_count;
 static LIST_HEAD(rebuild_src_list);
+static u8 fixeduuid[16];
+static bool valid_fixeduuid;
 
 static int erofs_mkfs_feat_set_legacy_compress(bool en, const char *val,
 					       unsigned int vallen)
@@ -606,10 +608,11 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			cfg.c_timeinherit = TIMESTAMP_FIXED;
 			break;
 		case 'U':
-			if (erofs_uuid_parse(optarg, g_sbi.uuid)) {
+			if (erofs_uuid_parse(optarg, fixeduuid)) {
 				erofs_err("invalid UUID %s", optarg);
 				return -EINVAL;
 			}
+			valid_fixeduuid = true;
 			break;
 		case 2:
 			opt = erofs_parse_exclude_path(optarg, false);
@@ -1255,8 +1258,6 @@ int main(int argc, char **argv)
 			err = PTR_ERR(sb_bh);
 			goto exit;
 		}
-		/* generate new UUIDs for clean builds */
-		erofs_uuid_generate(g_sbi.uuid);
 	} else {
 		union {
 			struct stat st;
@@ -1282,6 +1283,12 @@ int main(int argc, char **argv)
 		}
 		sb_bh = NULL;
 	}
+
+	/* Use the user-defined UUID or generate one for clean builds */
+	if (valid_fixeduuid)
+		memcpy(g_sbi.uuid, fixeduuid, sizeof(g_sbi.uuid));
+	else if (!incremental_mode)
+		erofs_uuid_generate(g_sbi.uuid);
 
 	if (tar_mode && !erofstar.index_mode) {
 		err = erofs_diskbuf_init(1);
