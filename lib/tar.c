@@ -611,19 +611,6 @@ static int tarerofs_write_file_data(struct erofs_inode *inode,
 	return 0;
 }
 
-static int tarerofs_write_file_index(struct erofs_inode *inode,
-		struct erofs_tarfile *tar, erofs_off_t data_offset)
-{
-	int ret;
-
-	ret = tarerofs_write_chunkes(inode, data_offset);
-	if (ret)
-		return ret;
-	if (erofs_iostream_lskip(&tar->ios, inode->i_size))
-		return -EIO;
-	return 0;
-}
-
 int tarerofs_parse_tar(struct erofs_inode *root, struct erofs_tarfile *tar)
 {
 	char path[PATH_MAX];
@@ -631,7 +618,7 @@ int tarerofs_parse_tar(struct erofs_inode *root, struct erofs_tarfile *tar)
 	struct erofs_sb_info *sbi = root->sbi;
 	bool whout, opq, e = false;
 	struct stat st;
-	erofs_off_t tar_offset, data_offset;
+	erofs_off_t tar_offset, dataoff;
 
 	struct tar_header *th;
 	struct erofs_dentry *d;
@@ -658,6 +645,10 @@ restart:
 	tar_offset = tar->offset;
 	ret = erofs_iostream_read(&tar->ios, (void **)&th, sizeof(*th));
 	if (ret != sizeof(*th)) {
+		if (tar->headeronly_mode || tar->ddtaridx_mode) {
+			ret = 1;
+			goto out;
+		}
 		erofs_err("failed to read header block @ %llu", tar_offset);
 		ret = -EIO;
 		goto out;
@@ -691,7 +682,7 @@ restart:
 		cksum += (unsigned int)((u8*)th)[j];
 		ckksum += (int)((char*)th)[j];
 	}
-	if (csum != cksum && csum != ckksum) {
+	if (!tar->ddtaridx_mode && csum != cksum && csum != ckksum) {
 		erofs_err("chksum mismatch @ %llu", tar_offset);
 		ret = -EBADMSG;
 		goto out;
@@ -770,8 +761,9 @@ restart:
 			path[--j] = '\0';
 	}
 
-	data_offset = tar->offset;
-	tar->offset += st.st_size;
+	dataoff = tar->offset;
+	if (!(tar->headeronly_mode || tar->ddtaridx_mode))
+		tar->offset += st.st_size;
 	switch(th->typeflag) {
 	case '0':
 	case '7':
@@ -860,7 +852,7 @@ restart:
 
 	/* EROFS metadata index referring to the original tar data */
 	if (tar->index_mode && sbi->extra_devices &&
-	    erofs_blkoff(sbi, data_offset)) {
+	    erofs_blkoff(sbi, dataoff)) {
 		erofs_err("invalid tar data alignment @ %llu", tar_offset);
 		ret = -EIO;
 		goto out;
@@ -985,16 +977,27 @@ new_inode:
 		} else if (inode->i_size) {
 			if (tar->headeronly_mode) {
 				ret = erofs_write_zero_inode(inode);
+			} else if (tar->ddtaridx_mode) {
+				dataoff = le64_to_cpu(*(__le64 *)(th->devmajor));
+				if (tar->rvsp_mode) {
+					inode->datasource = EROFS_INODE_DATA_SOURCE_RESVSP;
+					inode->i_ino[1] = dataoff;
+					ret = 0;
+				} else {
+					ret = tarerofs_write_chunkes(inode, dataoff);
+				}
 			} else if (tar->rvsp_mode) {
 				inode->datasource = EROFS_INODE_DATA_SOURCE_RESVSP;
-				inode->i_ino[1] = data_offset;
+				inode->i_ino[1] = dataoff;
 				if (erofs_iostream_lskip(&tar->ios, inode->i_size))
 					ret = -EIO;
 				else
 					ret = 0;
 			} else if (tar->index_mode) {
-				ret = tarerofs_write_file_index(inode, tar,
-								data_offset);
+				ret = tarerofs_write_chunkes(inode, dataoff);
+				if (!ret && erofs_iostream_lskip(&tar->ios,
+								 inode->i_size))
+					ret = -EIO;
 			} else {
 				ret = tarerofs_write_file_data(inode, tar);
 			}
