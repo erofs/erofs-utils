@@ -490,9 +490,9 @@ int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 						ret = -EIO;
 						goto out;
 					}
-#if ST_MTIM_NSEC
-					ST_MTIM_NSEC(&eh->st) = n;
-#endif
+					ST_MTIM_NSEC_SET(&eh->st, n);
+				} else {
+					ST_MTIM_NSEC_SET(&eh->st, 0);
 				}
 				eh->use_mtime = true;
 			} else if (!strncmp(kv, "size=",
@@ -733,13 +733,12 @@ restart:
 
 	if (eh.use_mtime) {
 		st.st_mtime = eh.st.st_mtime;
-#if ST_MTIM_NSEC
-		ST_MTIM_NSEC(&st) = ST_MTIM_NSEC(&eh.st);
-#endif
+		ST_MTIM_NSEC_SET(&st, ST_MTIM_NSEC(&eh.st));
 	} else {
 		st.st_mtime = tarerofs_parsenum(th->mtime, sizeof(th->mtime));
 		if (errno)
 			goto invalid_tar;
+		ST_MTIM_NSEC_SET(&st, 0);
 	}
 
 	if (th->typeflag <= '7' && !eh.path) {

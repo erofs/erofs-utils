@@ -332,15 +332,18 @@ unsigned long __roundup_pow_of_two(unsigned long n)
 #define ST_ATIM_NSEC(stbuf) ((stbuf)->st_atim.tv_nsec)
 #define ST_CTIM_NSEC(stbuf) ((stbuf)->st_ctim.tv_nsec)
 #define ST_MTIM_NSEC(stbuf) ((stbuf)->st_mtim.tv_nsec)
+#define ST_MTIM_NSEC_SET(stbuf, val) (stbuf)->st_mtim.tv_nsec = (val)
 #elif defined(HAVE_STRUCT_STAT_ST_ATIMENSEC)
 /* macOS */
 #define ST_ATIM_NSEC(stbuf) ((stbuf)->st_atimensec)
 #define ST_CTIM_NSEC(stbuf) ((stbuf)->st_ctimensec)
 #define ST_MTIM_NSEC(stbuf) ((stbuf)->st_mtimensec)
+#define ST_MTIM_NSEC_SET(stbuf, val) (stbuf)->st_mtimensec = (val)
 #else
 #define ST_ATIM_NSEC(stbuf) 0
 #define ST_CTIM_NSEC(stbuf) 0
 #define ST_MTIM_NSEC(stbuf) 0
+#define ST_MTIM_NSEC_SET(stbuf, val) do { } while (0)
 #endif
 
 #define __erofs_likely(x)      __builtin_expect(!!(x), 1)
