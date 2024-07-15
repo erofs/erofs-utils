@@ -27,15 +27,17 @@ You may give multiple
 .B --device
 options in the correct order.
 .TP
-.B \-\-extract
-Check if all files are well encoded. This read all compressed files,
-and hence create more I/O load,
-so it might take too much time depending on the image.
+.BI "\-\-extract" "[=directory]"
+Test to extract the whole file system. It scans all inode data, including
+compressed inode data, which leads to more I/O and CPU load, so it might
+take a long time depending on the image size.
+
+Optionally extract contents of the \fIIMAGE\fR to \fIdirectory\fR.
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Display help string and exit.
 .TP
-\fB\-a\fR, \fB\-A\fR, \fB-y\R
+\fB\-a\fR, \fB\-A\fR, \fB-y\fR
 These options do nothing at all; they are provided only for compatibility with
 the fsck programs of other filesystems.
 .SH AUTHOR
