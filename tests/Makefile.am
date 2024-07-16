@@ -107,6 +107,9 @@ TESTS += erofs/023
 # 024 - verify deflate compressed image
 TESTS += erofs/024
 
+# 025 - regression test for corrupted directories with hardlinks
+TESTS += erofs/025
+
 EXTRA_DIST = common/rc erofs
 
 clean-local: clean-local-check
