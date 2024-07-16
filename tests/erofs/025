@@ -1,0 +1,53 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# A regression test for erofs-utils commit
+# 8cbc205185a1 ("erofs-utils: mkfs: fix corrupted directories with hardlinks")
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_root
+_require_erofs
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+
+mkdir -p $localdir/d1 $localdir/d2
+touch $localdir/d1/f1 $localdir/d1/f2
+ln $localdir/d1/f1 $localdir/d2/f3
+
+_scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+
+_scratch_mount 2>>$seqres.full
+
+# check if all files are accessible
+cat $localdir/d1/f1 || _fail "failed to check f1"
+cat $localdir/d1/f2 || _fail "failed to check f2"
+cat $localdir/d2/f3 || _fail "failed to check f3"
+
+_scratch_unmount
+
+echo Silence is golden
+status=0
+exit 0
