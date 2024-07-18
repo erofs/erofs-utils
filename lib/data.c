@@ -337,12 +337,15 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 		}
 
 		if (map.m_plen > bufsize) {
+			char *newraw;
+
 			bufsize = map.m_plen;
-			raw = realloc(raw, bufsize);
-			if (!raw) {
+			newraw = realloc(raw, bufsize);
+			if (!newraw) {
 				ret = -ENOMEM;
 				break;
 			}
+			raw = newraw;
 		}
 
 		ret = z_erofs_read_one_data(inode, &map, raw,
