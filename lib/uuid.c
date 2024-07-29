@@ -38,18 +38,30 @@ static int s_getrandom(void *out, unsigned size, bool insecure)
 
 	for (;;)
 	{
-#ifdef HAVE_SYS_RANDOM_H
-		ssize_t r = getrandom(out, size, flags);
-#else
-		ssize_t r = (ssize_t)syscall(__NR_getrandom, out, size, flags);
-#endif
+		ssize_t r;
 		int err;
+
+#ifdef HAVE_SYS_RANDOM_H
+		r = getrandom(out, size, flags);
+#elif defined(__NR_getrandom)
+		r = (ssize_t)syscall(__NR_getrandom, out, size, flags);
+#else
+		r = -1;
+		errno = ENOSYS;
+		(void)flags;
+#endif
 
 		if (r == size)
 			break;
 		err = errno;
 		if (err != EINTR) {
-			if (err == EINVAL && kflags) {
+			if (__erofs_unlikely(err == ENOSYS && insecure)) {
+				while (size) {
+					*(u8 *)out++ = rand() % 256;
+					--size;
+				}
+				err = 0;
+			} else if (err == EINVAL && kflags) {
 				// Kernel likely does not support GRND_INSECURE
 				erofs_grnd_flag = 0;
 				kflags = 0;
