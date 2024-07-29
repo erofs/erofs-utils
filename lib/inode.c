@@ -1580,7 +1580,7 @@ static int erofs_mkfs_handle_inode(struct erofs_inode *inode)
 	if (ret < 0)
 		return ret;
 
-	ret = erofs_prepare_xattr_ibody(inode);
+	ret = erofs_prepare_xattr_ibody(inode, false);
 	if (ret < 0)
 		return ret;
 
@@ -1644,7 +1644,7 @@ static int erofs_rebuild_handle_inode(struct erofs_inode *inode,
 	else if (inode->whiteouts)
 		erofs_set_origin_xattr(inode);
 
-	ret = erofs_prepare_xattr_ibody(inode);
+	ret = erofs_prepare_xattr_ibody(inode, incremental && IS_ROOT(inode));
 	if (ret < 0)
 		return ret;
 
@@ -1702,6 +1702,8 @@ static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild,
 		root->i_ino[1] = sbi->root_nid;
 		list_del(&root->i_hash);
 		erofs_insert_ihash(root);
+	} else if (cfg.c_root_xattr_isize) {
+		root->xattr_isize = cfg.c_root_xattr_isize;
 	}
 
 	err = !rebuild ? erofs_mkfs_handle_inode(root) :

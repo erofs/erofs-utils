@@ -659,16 +659,17 @@ static inline unsigned int erofs_next_xattr_align(unsigned int pos,
 			item->len[0] + item->len[1] - item->prefix_len);
 }
 
-int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
+int erofs_prepare_xattr_ibody(struct erofs_inode *inode, bool noroom)
 {
-	int ret;
-	struct inode_xattr_node *node;
+	unsigned int target_xattr_isize = inode->xattr_isize;
 	struct list_head *ixattrs = &inode->i_xattrs;
+	struct inode_xattr_node *node;
 	unsigned int h_shared_count;
+	int ret;
 
 	if (list_empty(ixattrs)) {
-		inode->xattr_isize = 0;
-		return 0;
+		ret = 0;
+		goto out;
 	}
 
 	/* get xattr ibody size */
@@ -683,6 +684,18 @@ int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
 			continue;
 		}
 		ret = erofs_next_xattr_align(ret, item);
+	}
+out:
+	while (ret < target_xattr_isize) {
+		ret += sizeof(struct erofs_xattr_entry);
+		if (ret < target_xattr_isize)
+			ret = EROFS_XATTR_ALIGN(ret +
+				min_t(int, target_xattr_isize - ret, UINT16_MAX));
+	}
+	if (noroom && target_xattr_isize && ret > target_xattr_isize) {
+		erofs_err("no enough space to keep xattrs @ nid %llu",
+			  inode->nid | 0ULL);
+		return -ENOSPC;
 	}
 	inode->xattr_isize = ret;
 	return ret;
@@ -1003,7 +1016,12 @@ char *erofs_export_xattr_ibody(struct erofs_inode *inode)
 		free(node);
 		put_xattritem(item);
 	}
-	DBG_BUGON(p > size);
+	if (p < size) {
+		memset(buf + p, 0, size - p);
+	} else if (__erofs_unlikely(p > size)) {
+		DBG_BUGON(1);
+		return ERR_PTR(-EFAULT);
+	}
 	return buf;
 }
 

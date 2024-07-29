@@ -81,6 +81,7 @@ static struct option long_options[] = {
 	{"zfeature-bits", required_argument, NULL, 521},
 	{"clean", optional_argument, NULL, 522},
 	{"incremental", optional_argument, NULL, 523},
+	{"root-xattr-isize", required_argument, NULL, 524},
 	{0, 0, 0, 0},
 };
 
@@ -173,6 +174,7 @@ static void usage(int argc, char **argv)
 		" --mount-point=X       X=prefix of target fs path (default: /)\n"
 		" --preserve-mtime      keep per-file modification time strictly\n"
 		" --offset=#            skip # bytes at the beginning of IMAGE.\n"
+		" --root-xattr-isize=#  ensure the inline xattr size of the root directory is # bytes at least\n"
 		" --aufs                replace aufs special files with overlayfs metadata\n"
 		" --tar=X               generate a full or index-only image from a tarball(-ish) source\n"
 		"                       (X = f|i|headerball; f=full mode, i=index mode,\n"
@@ -819,6 +821,13 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				}
 			}
 			incremental_mode = (opt == 523);
+			break;
+		case 524:
+			cfg.c_root_xattr_isize = strtoull(optarg, &endptr, 0);
+			if (*endptr != '\0') {
+				erofs_err("invalid the minimum inline xattr size %s", optarg);
+				return -EINVAL;
+			}
 			break;
 		case 'V':
 			version();

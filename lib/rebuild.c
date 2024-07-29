@@ -492,6 +492,11 @@ int erofs_rebuild_load_basedir(struct erofs_inode *dir)
 		erofs_err("failed to read inode @ %llu", fakeinode.nid);
 		return ret;
 	}
+
+	/* Inherit the maximum xattr size for the root directory */
+	if (__erofs_unlikely(IS_ROOT(dir)))
+		dir->xattr_isize = fakeinode.xattr_isize;
+
 	ctx = (struct erofs_rebuild_dir_context) {
 		.ctx.dir = &fakeinode,
 		.ctx.cb = erofs_rebuild_basedir_dirent_iter,

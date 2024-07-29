@@ -87,6 +87,7 @@ struct erofs_configure {
 	u32 c_uid, c_gid;
 	const char *mount_point;
 	long long c_uid_offset, c_gid_offset;
+	u32 c_root_xattr_isize;
 #ifdef WITH_ANDROID
 	char *target_out_path;
 	char *fs_config_file;

@@ -44,7 +44,7 @@ static inline unsigned int xattrblock_offset(struct erofs_inode *vi,
 	sizeof(struct erofs_xattr_entry) + 1; })
 
 int erofs_scan_file_xattrs(struct erofs_inode *inode);
-int erofs_prepare_xattr_ibody(struct erofs_inode *inode);
+int erofs_prepare_xattr_ibody(struct erofs_inode *inode, bool noroom);
 char *erofs_export_xattr_ibody(struct erofs_inode *inode);
 int erofs_build_shared_xattrs_from_path(struct erofs_sb_info *sbi, const char *path);
 
