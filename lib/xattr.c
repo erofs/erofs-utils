@@ -1450,7 +1450,7 @@ static int xattr_entrylist(struct xattr_iter *_it,
 		base_index = pf->prefix->base_index;
 	}
 
-	if (base_index >= ARRAY_SIZE(xattr_types))
+	if (!base_index || base_index >= ARRAY_SIZE(xattr_types))
 		return 1;
 	prefix = xattr_types[base_index].prefix;
 	prefix_len = xattr_types[base_index].prefix_len;
