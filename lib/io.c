@@ -258,8 +258,10 @@ repeat:
 #if defined(HAVE_SYS_STATFS_H) && defined(HAVE_FSTATFS)
 			struct statfs stfs;
 
-			if (again)
+			if (again) {
+				close(fd);
 				return -ENOTEMPTY;
+			}
 
 			/*
 			 * fses like EXT4 and BTRFS will flush dirty blocks
