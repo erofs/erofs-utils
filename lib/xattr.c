@@ -1020,6 +1020,7 @@ char *erofs_export_xattr_ibody(struct erofs_inode *inode)
 		memset(buf + p, 0, size - p);
 	} else if (__erofs_unlikely(p > size)) {
 		DBG_BUGON(1);
+		free(buf);
 		return ERR_PTR(-EFAULT);
 	}
 	return buf;
