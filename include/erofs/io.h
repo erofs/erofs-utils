@@ -34,7 +34,7 @@ struct erofs_vfops {
 	off_t (*lseek)(struct erofs_vfile *vf, u64 offset, int whence);
 	int (*fstat)(struct erofs_vfile *vf, struct stat *buf);
 	int (*xcopy)(struct erofs_vfile *vout, off_t pos,
-		     struct erofs_vfile *vin, int len, bool noseek);
+		     struct erofs_vfile *vin, unsigned int len, bool noseek);
 };
 
 /* don't extend this; instead, use payload for any extra information */
@@ -61,7 +61,7 @@ off_t erofs_io_lseek(struct erofs_vfile *vf, u64 offset, int whence);
 ssize_t erofs_copy_file_range(int fd_in, u64 *off_in, int fd_out, u64 *off_out,
 			      size_t length);
 int erofs_io_xcopy(struct erofs_vfile *vout, off_t pos,
-		   struct erofs_vfile *vin, int len, bool noseek);
+		   struct erofs_vfile *vin, unsigned int len, bool noseek);
 
 #ifdef __cplusplus
 }

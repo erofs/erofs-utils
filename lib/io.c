@@ -490,7 +490,7 @@ off_t erofs_io_lseek(struct erofs_vfile *vf, u64 offset, int whence)
 }
 
 int erofs_io_xcopy(struct erofs_vfile *vout, off_t pos,
-		   struct erofs_vfile *vin, int len, bool noseek)
+		   struct erofs_vfile *vin, unsigned int len, bool noseek)
 {
 	if (vout->ops)
 		return vout->ops->xcopy(vout, pos, vin, len, noseek);
@@ -519,7 +519,7 @@ int erofs_io_xcopy(struct erofs_vfile *vout, off_t pos,
 
 	do {
 		char buf[32768];
-		int ret = min_t(int, len, sizeof(buf));
+		int ret = min_t(unsigned int, len, sizeof(buf));
 
 		ret = erofs_io_read(vin, buf, ret);
 		if (ret < 0)
