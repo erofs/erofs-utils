@@ -702,11 +702,7 @@ again:
 
 	/* verify data chunk layout */
 	ret = erofs_verify_inode_data(inode, fd);
-	if (ret)
-		return ret;
-
-	if (close(fd))
-		return -errno;
+	close(fd);
 	return ret;
 }
 
