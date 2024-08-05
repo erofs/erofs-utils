@@ -1142,7 +1142,7 @@ int main(int argc, char **argv)
 	int err = 0;
 	struct erofs_buffer_head *sb_bh;
 	struct erofs_inode *root = NULL;
-	erofs_blk_t nblocks;
+	erofs_blk_t nblocks = 0;
 	struct timeval t;
 	FILE *packedfile = NULL;
 	FILE *blklst = NULL;
