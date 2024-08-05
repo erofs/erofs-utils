@@ -817,7 +817,8 @@ static const struct kite_matchfinder_cfg {
 /* 9 */ {32, 258, 258, 4096, true},	/* maximum compression */
 };
 
-static int kite_mf_init(struct kite_matchfinder *mf, int wsiz, int level)
+static int kite_mf_init(struct kite_matchfinder *mf, unsigned int wsiz,
+			int level)
 {
 	const struct kite_matchfinder_cfg *cfg;
 
