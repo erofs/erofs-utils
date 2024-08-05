@@ -397,7 +397,7 @@ static int parse_extended_opts(const char *opts)
 
 			if (!z_erofs_mkfs_features[i].feat) {
 				erofs_err("unknown extended option %.*s",
-					  p - token, token);
+					  (int)(p - token), token);
 				return -EINVAL;
 			}
 		}
