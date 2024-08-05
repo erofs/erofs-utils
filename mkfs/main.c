@@ -1067,7 +1067,7 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 			return ret;
 		}
 		if (src->extra_devices > 1) {
-			erofs_err("%s: unsupported number of extra devices",
+			erofs_err("%s: unsupported number %u of extra devices",
 				  src->devname, src->extra_devices);
 			return -EOPNOTSUPP;
 		}
