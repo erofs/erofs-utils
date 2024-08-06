@@ -32,7 +32,8 @@ static int compressor_lz4_exit(struct erofs_compress *c)
 
 static int compressor_lz4_init(struct erofs_compress *c)
 {
-	c->sbi->lz4_max_distance = LZ4_DISTANCE_MAX;
+	c->sbi->lz4.max_distance = max_t(u16, c->sbi->lz4.max_distance,
+					 LZ4_DISTANCE_MAX);
 	return 0;
 }
 

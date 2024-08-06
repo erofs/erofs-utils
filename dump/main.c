@@ -651,7 +651,7 @@ static void erofsdump_show_superblock(void)
 			g_sbi.available_compr_algs);
 	} else {
 		fprintf(stdout, "Filesystem lz4_max_distance:                  %u\n",
-			g_sbi.lz4_max_distance | 0U);
+			g_sbi.lz4.max_distance | 0U);
 	}
 	fprintf(stdout, "Filesystem sb_size:                           %u\n",
 			g_sbi.sb_size | 0U);

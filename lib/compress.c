@@ -1591,7 +1591,7 @@ static int z_erofs_build_compr_cfgs(struct erofs_sb_info *sbi,
 			.size = cpu_to_le16(sizeof(struct z_erofs_lz4_cfgs)),
 			.lz4 = {
 				.max_distance =
-					cpu_to_le16(sbi->lz4_max_distance),
+					cpu_to_le16(sbi->lz4.max_distance),
 				.max_pclusterblks =
 					cfg.c_mkfs_pclustersize_max >> sbi->blkszbits,
 			}
@@ -1686,6 +1686,7 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 {
 	int i, ret, id;
 	u32 max_dict_size[Z_EROFS_COMPRESSION_MAX] = {};
+	u32 available_compr_algs = 0;
 
 	for (i = 0; cfg.c_compr_opts[i].alg; ++i) {
 		struct erofs_compress *c = &erofs_ccfg[i].handle;
@@ -1699,7 +1700,7 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 		id = z_erofs_get_compress_algorithm_id(c);
 		erofs_ccfg[i].algorithmtype = id;
 		erofs_ccfg[i].enable = true;
-		sbi->available_compr_algs |= 1 << erofs_ccfg[i].algorithmtype;
+		available_compr_algs |= 1 << erofs_ccfg[i].algorithmtype;
 		if (erofs_ccfg[i].algorithmtype != Z_EROFS_COMPRESSION_LZ4)
 			erofs_sb_set_compr_cfgs(sbi);
 		if (c->dict_size > max_dict_size[id])
@@ -1710,13 +1711,31 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 	 * if primary algorithm is empty (e.g. compression off),
 	 * clear 0PADDING feature for old kernel compatibility.
 	 */
-	if (!cfg.c_compr_opts[0].alg ||
-	    (cfg.c_legacy_compress &&
-	     !strncmp(cfg.c_compr_opts[0].alg, "lz4", 3)))
+	if (!available_compr_algs ||
+	    (cfg.c_legacy_compress && available_compr_algs == 1))
 		erofs_sb_clear_lz4_0padding(sbi);
 
-	if (!cfg.c_compr_opts[0].alg)
+	if (!available_compr_algs)
 		return 0;
+
+	if (!sb_bh) {
+		u32 dalg = available_compr_algs & (~sbi->available_compr_algs);
+
+		if (dalg) {
+			erofs_err("unavailable algorithms 0x%x on incremental builds",
+				  dalg);
+			return -EOPNOTSUPP;
+		}
+		if (available_compr_algs & (1 << Z_EROFS_COMPRESSION_LZ4) &&
+		    sbi->lz4.max_pclusterblks << sbi->blkszbits <
+			cfg.c_mkfs_pclustersize_max) {
+			erofs_err("pclustersize %u is too large on incremental builds",
+				  cfg.c_mkfs_pclustersize_max);
+			return -EOPNOTSUPP;
+		}
+	} else {
+		sbi->available_compr_algs = available_compr_algs;
+	}
 
 	/*
 	 * if big pcluster is enabled, an extra CBLKCNT lcluster index needs
@@ -1736,7 +1755,7 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 		return -EINVAL;
 	}
 
-	if (erofs_sb_has_compr_cfgs(sbi)) {
+	if (sb_bh && erofs_sb_has_compr_cfgs(sbi)) {
 		ret = z_erofs_build_compr_cfgs(sbi, sb_bh, max_dict_size);
 		if (ret)
 			return ret;

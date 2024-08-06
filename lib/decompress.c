@@ -545,6 +545,30 @@ int z_erofs_decompress(struct z_erofs_decompress_req *rq)
 	return -EOPNOTSUPP;
 }
 
+static int z_erofs_load_lz4_config(struct erofs_sb_info *sbi,
+			    struct erofs_super_block *dsb, void *data, int size)
+{
+	struct z_erofs_lz4_cfgs *lz4 = data;
+	u16 distance;
+
+	if (lz4) {
+		if (size < sizeof(struct z_erofs_lz4_cfgs)) {
+			erofs_err("invalid lz4 cfgs, size=%u", size);
+			return -EINVAL;
+		}
+		distance = le16_to_cpu(lz4->max_distance);
+
+		sbi->lz4.max_pclusterblks = le16_to_cpu(lz4->max_pclusterblks);
+		if (!sbi->lz4.max_pclusterblks)
+			sbi->lz4.max_pclusterblks = 1;	/* reserved case */
+	} else {
+		distance = le16_to_cpu(dsb->u1.lz4_max_distance);
+		sbi->lz4.max_pclusterblks = 1;
+	}
+	sbi->lz4.max_distance = distance;
+	return 0;
+}
+
 int z_erofs_parse_cfgs(struct erofs_sb_info *sbi, struct erofs_super_block *dsb)
 {
 	unsigned int algs, alg;
@@ -553,8 +577,7 @@ int z_erofs_parse_cfgs(struct erofs_sb_info *sbi, struct erofs_super_block *dsb)
 
 	if (!erofs_sb_has_compr_cfgs(sbi)) {
 		sbi->available_compr_algs = 1 << Z_EROFS_COMPRESSION_LZ4;
-		sbi->lz4_max_distance = le16_to_cpu(dsb->u1.lz4_max_distance);
-		return 0;
+		return z_erofs_load_lz4_config(sbi, dsb, NULL, 0);
 	}
 
 	sbi->available_compr_algs = le16_to_cpu(dsb->u1.available_compr_algs);
@@ -578,10 +601,11 @@ int z_erofs_parse_cfgs(struct erofs_sb_info *sbi, struct erofs_super_block *dsb)
 			break;
 		}
 
-		if (alg == Z_EROFS_COMPRESSION_DEFLATE)
+		ret = 0;
+		if (alg == Z_EROFS_COMPRESSION_LZ4)
+			ret = z_erofs_load_lz4_config(sbi, dsb, data, size);
+		else if (alg == Z_EROFS_COMPRESSION_DEFLATE)
 			ret = z_erofs_load_deflate_config(sbi, dsb, data, size);
-		else
-			ret = 0;
 		free(data);
 		if (ret)
 			break;

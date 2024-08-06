@@ -188,7 +188,7 @@ int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh,
 	if (erofs_sb_has_compr_cfgs(sbi))
 		sb.u1.available_compr_algs = cpu_to_le16(sbi->available_compr_algs);
 	else
-		sb.u1.lz4_max_distance = cpu_to_le16(sbi->lz4_max_distance);
+		sb.u1.lz4_max_distance = cpu_to_le16(sbi->lz4.max_distance);
 
 	buf = calloc(sb_blksize, 1);
 	if (!buf) {

@@ -66,6 +66,13 @@ struct erofs_device_info {
 	u32 mapped_blkaddr;
 };
 
+/* all filesystem-wide lz4 configurations */
+struct erofs_sb_lz4_info {
+	u16 max_distance;
+	/* maximum possible blocks for pclusters in the filesystem */
+	u16 max_pclusterblks;
+};
+
 struct erofs_xattr_prefix_item {
 	struct erofs_xattr_long_prefix *prefix;
 	u8 infix_len;
@@ -75,6 +82,7 @@ struct erofs_xattr_prefix_item {
 
 struct erofs_mkfs_dfops;
 struct erofs_sb_info {
+	struct erofs_sb_lz4_info lz4;
 	struct erofs_device_info *devs;
 	char *devname;
 
@@ -102,10 +110,8 @@ struct erofs_sb_info {
 	u8 uuid[16];
 	char volume_name[16];
 
-	u16 available_compr_algs;
-	u16 lz4_max_distance;
-
 	u32 checksum;
+	u16 available_compr_algs;
 	u16 extra_devices;
 	union {
 		u16 devt_slotoff;		/* used for mkfs */
