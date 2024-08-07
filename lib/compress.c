@@ -1763,7 +1763,8 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 
 	z_erofs_mt_enabled = false;
 #ifdef EROFS_MT_ENABLED
-	if (cfg.c_mt_workers > 1 && (cfg.c_dedupe || cfg.c_fragments)) {
+	if (cfg.c_mt_workers >= 1 && (cfg.c_dedupe ||
+				      (cfg.c_fragments && !cfg.c_all_fragments))) {
 		if (cfg.c_dedupe)
 			erofs_warn("multi-threaded dedupe is NOT implemented for now");
 		if (cfg.c_fragments)
@@ -1771,7 +1772,7 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 		cfg.c_mt_workers = 0;
 	}
 
-	if (cfg.c_mt_workers > 1) {
+	if (cfg.c_mt_workers >= 1) {
 		ret = erofs_alloc_workqueue(&z_erofs_mt_ctrl.wq,
 					    cfg.c_mt_workers,
 					    cfg.c_mt_workers << 2,
