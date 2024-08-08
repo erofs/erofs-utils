@@ -342,6 +342,10 @@ ssize_t erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
 	ssize_t read;
 
 	if (device_id) {
+		if (device_id >= sbi->nblobs) {
+			erofs_err("invalid device id %d", device_id);
+			return -EIO;
+		}
 		read = erofs_io_pread(&((struct erofs_vfile) {
 				.fd = sbi->blobfd[device_id - 1],
 			}), buf, offset, len);
@@ -352,7 +356,8 @@ ssize_t erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
 	if (read < 0)
 		return read;
 	if (read < len) {
-		erofs_info("reach EOF of device, pading with zeroes");
+		erofs_info("reach EOF of device @ %llu, pading with zeroes",
+			   offset | 0ULL);
 		memset(buf + read, 0, len - read);
 	}
 	return 0;
