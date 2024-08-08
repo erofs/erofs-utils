@@ -82,6 +82,8 @@ static struct option long_options[] = {
 	{"clean", optional_argument, NULL, 522},
 	{"incremental", optional_argument, NULL, 523},
 	{"root-xattr-isize", required_argument, NULL, 524},
+	{"mkfs-time", no_argument, NULL, 525},
+	{"all-time", no_argument, NULL, 526},
 	{0, 0, 0, 0},
 };
 
@@ -150,7 +152,9 @@ static void usage(int argc, char **argv)
 		" -C#                   specify the size of compress physical cluster in bytes\n"
 		" -EX[,...]             X=extended options\n"
 		" -L volume-label       set the volume label (maximum 16)\n"
-		" -T#                   set a fixed UNIX timestamp # to all files\n"
+		" -T#                   specify a fixed UNIX timestamp # as build time\n"
+		"    --all-time         the timestamp is also applied to all files (default)\n"
+		"    --mkfs-time        the timestamp is applied as build time only\n"
 		" -UX                   use a given filesystem UUID\n"
 		" --all-root            make all files owned by root\n"
 		" --blobdev=X           specify an extra device X to store chunked data\n"
@@ -548,6 +552,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 	int opt, i, err;
 	bool quiet = false;
 	int tarerofs_decoder = 0;
+	bool has_timestamp = false;
 
 	while ((opt = getopt_long(argc, argv, "C:E:L:T:U:b:d:x:z:Vh",
 				  long_options, NULL)) != -1) {
@@ -607,7 +612,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				erofs_err("invalid UNIX timestamp %s", optarg);
 				return -EINVAL;
 			}
-			cfg.c_timeinherit = TIMESTAMP_FIXED;
+			has_timestamp = true;
 			break;
 		case 'U':
 			if (erofs_uuid_parse(optarg, fixeduuid)) {
@@ -829,6 +834,12 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				return -EINVAL;
 			}
 			break;
+		case 525:
+			cfg.c_timeinherit = TIMESTAMP_NONE;
+			break;
+		case 526:
+			cfg.c_timeinherit = TIMESTAMP_FIXED;
+			break;
 		case 'V':
 			version();
 			exit(0);
@@ -984,6 +995,9 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		}
 		cfg.c_mkfs_pclustersize_packed = pclustersize_packed;
 	}
+
+	if (has_timestamp && cfg.c_timeinherit == TIMESTAMP_UNSPECIFIED)
+		cfg.c_timeinherit = TIMESTAMP_FIXED;
 	return 0;
 }
 

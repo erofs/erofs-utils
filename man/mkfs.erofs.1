@@ -100,8 +100,10 @@ Set the volume label for the filesystem to
 The maximum length of the volume label is 16 bytes.
 .TP
 .BI "\-T " #
-Set all files to the given UNIX timestamp. Reproducible builds require setting
-all to a specific one. By default, the source file's modification time is used.
+Specify a UNIX timestamp for image creation time for reproducible builds.
+If \fI--mkfs-time\fR is not specified, it will behave as \fI--all-time\fR:
+setting all files to the specified UNIX timestamp instead of using the
+modification times of the source files.
 .TP
 .BI "\-U " UUID
 Set the universally unique identifier (UUID) of the filesystem to
@@ -111,6 +113,10 @@ like this: "c1b9d5a2-f162-11cf-9ece-0020afc76f16".
 .TP
 .B \-\-all-root
 Make all files owned by root.
+.TP
+.B \-\-all-time
+(used together with \fB-T\fR) set all files to the fixed timestamp. This is the
+default.
 .TP
 .BI "\-\-blobdev " file
 Specify an extra blob device to store chunk-based data.
@@ -176,6 +182,10 @@ can reduce total metadata size. Implied by
 .TP
 .BI "\-\-max-extent-bytes " #
 Specify maximum decompressed extent size in bytes.
+.TP
+.B \-\-mkfs-time
+(used together with \fB-T\fR) the given timestamp is only applied to the build
+time.
 .TP
 .B "\-\-preserve-mtime"
 Use extended inodes instead of compact inodes if the file modification time
