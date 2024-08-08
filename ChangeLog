@@ -1,3 +1,19 @@
+erofs-utils 1.8
+
+ * This release includes the following updates:
+   - (mkfs.erofs) support multi-threaded compression (Yifan Zhao);
+   - support Intel IAA hardware accelerator with Intel QPL;
+   - add preliminary Zstandard support;
+   - (erofsfuse) use FUSE low-level APIs and support multi-threading (Li Yiyan);
+   - (mkfs.erofs) support tar source without data (Mike Baynton);
+   - (mkfs.erofs) support incremental builds (incomplete, EXPERIMENTAL);
+   - (mkfs.erofs) other build performance improvements;
+   - (erofsfuse) support building erofsfuse as a static library (ComixHe);
+   - various bugfixes and cleanups (Sandeep Dhavale, Noboru Asai,
+           Luke T. Shumaker, Yifan Zhao, Hongzhen Luo and Tianyi Liu).
+
+ -- Gao Xiang <xiang@kernel.org>  Fri, 09 Aug 2024 00:00:00 +0800
+
 erofs-utils 1.7.1
 
  * A quick maintenance release includes the following fixes:
