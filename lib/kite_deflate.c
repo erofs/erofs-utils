@@ -746,7 +746,7 @@ int kite_mf_getmatches_hc3(struct kite_matchfinder *mf, u16 depth, u16 bestlen)
 	unsigned int v, hv, i, k, p, wsiz;
 
 	if (mf->end - cur < bestlen + 1)
-		return 0;
+		return -1;
 
 	v = get_unaligned((u16 *)cur);
 	hv = v ^ crc_ccitt_table[cur[2]];
@@ -793,6 +793,14 @@ int kite_mf_getmatches_hc3(struct kite_matchfinder *mf, u16 depth, u16 bestlen)
 	mf->offset++;
 	mf->cyclic_pos = (mf->cyclic_pos + 1) & (wsiz - 1);
 	return k - 1;
+}
+
+static void kite_mf_hc3_skip(struct kite_matchfinder *mf)
+{
+	if (kite_mf_getmatches_hc3(mf, 0, 2) >= 0)
+		return;
+	mf->offset++;
+	/* mf->cyclic_pos = (mf->cyclic_pos + 1) & (mf->wsiz - 1); */
 }
 
 /* let's align with zlib */
@@ -1057,7 +1065,7 @@ static bool kite_deflate_fast(struct kite_deflate *s)
 		int matches = kite_mf_getmatches_hc3(mf, mf->depth,
 				kMatchMinLen - 1);
 
-		if (matches) {
+		if (matches > 0) {
 			unsigned int len = mf->matches[matches].len;
 			unsigned int dist = mf->matches[matches].dist;
 
@@ -1072,7 +1080,7 @@ static bool kite_deflate_fast(struct kite_deflate *s)
 			s->pos_in += len;
 			/* skip the rest bytes */
 			while (--len)
-				(void)kite_mf_getmatches_hc3(mf, 0, 0);
+				kite_mf_hc3_skip(mf);
 		} else {
 nomatch:
 			mf->matches[0].dist = s->in[s->pos_in];
@@ -1115,17 +1123,19 @@ static bool kite_deflate_slow(struct kite_deflate *s)
 		if (len0 < mf->max_lazy) {
 			matches = kite_mf_getmatches_hc3(mf, mf->depth >>
 				(len0 >= mf->good_len), len0);
-			if (matches) {
+			if (matches > 0) {
 				len = mf->matches[matches].len;
 				if (len == kMatchMinLen &&
 				    mf->matches[matches].dist > ZLIB_DISTANCE_TOO_FAR) {
 					matches = 0;
 					len = kMatchMinLen - 1;
 				}
+			} else {
+				matches = 0;
 			}
 		} else {
 			matches = 0;
-			(void)kite_mf_getmatches_hc3(mf, 0, 0);
+			kite_mf_hc3_skip(mf);
 		}
 
 		if (len < len0) {
@@ -1136,7 +1146,7 @@ static bool kite_deflate_slow(struct kite_deflate *s)
 			s->pos_in += --len0;
 			/* skip the rest bytes */
 			while (--len0)
-				(void)kite_mf_getmatches_hc3(mf, 0, 0);
+				kite_mf_hc3_skip(mf);
 			s->prev_valid = false;
 			s->prev_longest = 0;
 		} else {
