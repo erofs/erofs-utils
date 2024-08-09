@@ -1,3 +1,12 @@
+erofs-utils 1.8.1
+
+ * A quick maintenance release includes the following fixes:
+   - (mkfs.erofs) fix unexpected data truncation of large uncompressed files;
+   - (erofsfuse) fix decompression errors when using libdeflate compressor;
+   - (mkfs.erofs) fix an out-of-bound memory read issue with kite-deflate.
+
+ -- Gao Xiang <xiang@kernel.org>  Sat, 10 Aug 2024 00:00:00 +0800
+
 erofs-utils 1.8
 
  * This release includes the following updates:
