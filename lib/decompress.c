@@ -247,32 +247,47 @@ static int z_erofs_decompress_deflate(struct z_erofs_decompress_req *rq)
 	unsigned int inputmargin;
 	struct libdeflate_decompressor *inf;
 	enum libdeflate_result ret;
+	unsigned int decodedcapacity;
 
 	inputmargin = z_erofs_fixup_insize(src, rq->inputsize);
 	if (inputmargin >= rq->inputsize)
 		return -EFSCORRUPTED;
 
-	if (rq->decodedskip) {
-		buff = malloc(rq->decodedlength);
+	decodedcapacity = rq->decodedlength << (4 * rq->partial_decoding);
+	if (rq->decodedskip || rq->partial_decoding) {
+		buff = malloc(decodedcapacity);
 		if (!buff)
 			return -ENOMEM;
 		dest = buff;
 	}
 
 	inf = libdeflate_alloc_decompressor();
-	if (!inf)
-		return -ENOMEM;
+	if (!inf) {
+		ret = -ENOMEM;
+		goto out_free_mem;
+	}
 
 	if (rq->partial_decoding) {
-		ret = libdeflate_deflate_decompress(inf, src + inputmargin,
-				rq->inputsize - inputmargin, dest,
-				rq->decodedlength, &actual_out);
-		if (ret && ret != LIBDEFLATE_INSUFFICIENT_SPACE) {
-			ret = -EIO;
-			goto out_inflate_end;
+		while (1) {
+			ret = libdeflate_deflate_decompress(inf, src + inputmargin,
+					rq->inputsize - inputmargin, dest,
+					decodedcapacity, &actual_out);
+			if (ret == LIBDEFLATE_SUCCESS)
+				break;
+			if (ret != LIBDEFLATE_INSUFFICIENT_SPACE) {
+				ret = -EIO;
+				goto out_inflate_end;
+			}
+			decodedcapacity = decodedcapacity << 1;
+			dest = realloc(buff, decodedcapacity);
+			if (!dest) {
+				ret = -ENOMEM;
+				goto out_inflate_end;
+			}
+			buff = dest;
 		}
 
-		if (actual_out != rq->decodedlength) {
+		if (actual_out < rq->decodedlength) {
 			ret = -EIO;
 			goto out_inflate_end;
 		}
@@ -280,18 +295,19 @@ static int z_erofs_decompress_deflate(struct z_erofs_decompress_req *rq)
 		ret = libdeflate_deflate_decompress(inf, src + inputmargin,
 				rq->inputsize - inputmargin, dest,
 				rq->decodedlength, NULL);
-		if (ret) {
+		if (ret != LIBDEFLATE_SUCCESS) {
 			ret = -EIO;
 			goto out_inflate_end;
 		}
 	}
 
-	if (rq->decodedskip)
+	if (rq->decodedskip || rq->partial_decoding)
 		memcpy(rq->out, dest + rq->decodedskip,
 		       rq->decodedlength - rq->decodedskip);
 
 out_inflate_end:
 	libdeflate_free_decompressor(inf);
+out_free_mem:
 	if (buff)
 		free(buff);
 	return ret;
