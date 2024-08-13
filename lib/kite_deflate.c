@@ -892,7 +892,7 @@ static bool deflate_count_code(struct kite_deflate *s, bool literal,
 {
 	struct kite_deflate_table *t = s->tab;
 	unsigned int lenbase = (literal ? 0 : kSymbolMatch);
-	u64 rem = (s->outlen - s->pos_out) * 8 - s->bitpos;
+	u64 rem = (s->outlen - s->pos_out) * 8ULL - s->bitpos;
 	bool recalc = false;
 	unsigned int bits;
 
