@@ -8,6 +8,7 @@
 #include "erofs/list.h"
 #include "erofs/print.h"
 #include "erofs/exclude.h"
+#include "erofs/internal.h"
 
 #define EXCLUDE_RULE_EXACT_SIZE	offsetof(struct erofs_exclude_rule, reg)
 #define EXCLUDE_RULE_REGEX_SIZE	sizeof(struct erofs_exclude_rule)
