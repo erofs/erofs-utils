@@ -9,7 +9,7 @@ scm_version()
 		# If we are at a tagged commit, we ignore it.
 		if [ -z "$(git describe --exact-match 2>/dev/null)" ]; then
 			# Add -g and 8 hex chars.
-			printf '%s%s' -g "$(echo $head | cut -c1-8)"
+			printf -- '-g%.8s' "$head"
 		fi
 		# Check for uncommitted changes.
 		# This script must avoid any write attempt to the source tree,
@@ -30,4 +30,8 @@ scm_version()
 	fi
 }
 
-echo $(sed -n '1p' VERSION | tr -d '\n')$(scm_version)
+if [ -n "$EROFS_UTILS_VERSION" ]; then
+	echo "$EROFS_UTILS_VERSION"
+else
+	echo $(head -n1 VERSION)$(scm_version)
+fi
