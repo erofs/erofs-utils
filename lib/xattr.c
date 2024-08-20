@@ -448,6 +448,9 @@ static int read_xattrs_from_file(const char *path, mode_t mode,
 			ret = PTR_ERR(item);
 			goto err;
 		}
+		/* skip unidentified xattrs */
+		if (!item)
+			continue;
 
 		ret = erofs_xattr_add(ixattrs, item);
 		if (ret < 0)
