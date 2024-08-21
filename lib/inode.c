@@ -1326,6 +1326,7 @@ struct erofs_mkfs_dfops {
 	pthread_cond_t full, empty, drain;
 	struct erofs_mkfs_jobitem *queue;
 	unsigned int entries, head, tail;
+	bool idle;	/* initialize as false before the dfops worker runs */
 };
 
 #define EROFS_MT_QUEUE_SIZE 128
@@ -1335,7 +1336,8 @@ static void erofs_mkfs_flushjobs(struct erofs_sb_info *sbi)
 	struct erofs_mkfs_dfops *q = sbi->mkfs_dfops;
 
 	pthread_mutex_lock(&q->lock);
-	pthread_cond_wait(&q->drain, &q->lock);
+	if (!q->idle)
+		pthread_cond_wait(&q->drain, &q->lock);
 	pthread_mutex_unlock(&q->lock);
 }
 
@@ -1345,6 +1347,8 @@ static void *erofs_mkfs_pop_jobitem(struct erofs_mkfs_dfops *q)
 
 	pthread_mutex_lock(&q->lock);
 	while (q->head == q->tail) {
+		/* the worker has handled everything only if sleeping here */
+		q->idle = true;
 		pthread_cond_signal(&q->drain);
 		pthread_cond_wait(&q->empty, &q->lock);
 	}
@@ -1390,6 +1394,7 @@ static int erofs_mkfs_go(struct erofs_sb_info *sbi,
 	item->type = type;
 	memcpy(&item->u, elem, size);
 	q->tail = (q->tail + 1) & (q->entries - 1);
+	q->idle = false;
 
 	pthread_cond_signal(&q->empty);
 	pthread_mutex_unlock(&q->lock);
@@ -1812,7 +1817,7 @@ static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 	int err, err2;
 	struct erofs_sb_info *sbi = ctx->sbi ? ctx->sbi : ctx->u.root->sbi;
 
-	q = malloc(sizeof(*q));
+	q = calloc(1, sizeof(*q));
 	if (!q)
 		return -ENOMEM;
 
@@ -1827,8 +1832,6 @@ static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 	pthread_cond_init(&q->full, NULL);
 	pthread_cond_init(&q->drain, NULL);
 
-	q->head = 0;
-	q->tail = 0;
 	sbi->mkfs_dfops = q;
 	err = pthread_create(&sbi->dfops_worker, NULL,
 			     z_erofs_mt_dfops_worker, sbi);
