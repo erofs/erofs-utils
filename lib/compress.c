@@ -497,8 +497,8 @@ static bool z_erofs_fixup_deduped_fragment(struct z_erofs_compress_sctx *ctx,
 	inode->fragmentoff += inode->fragment_size - newsize;
 	inode->fragment_size = newsize;
 
-	erofs_dbg("Reducing fragment size to %u at %llu",
-		  inode->fragment_size, inode->fragmentoff | 0ULL);
+	erofs_dbg("Reducing fragment size to %llu at %llu",
+		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL);
 
 	/* it's the end */
 	DBG_BUGON(ctx->tail - ctx->head + ctx->remaining != newsize);

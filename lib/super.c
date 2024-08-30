@@ -213,7 +213,8 @@ struct erofs_buffer_head *erofs_reserve_sb(struct erofs_bufmgr *bmgr)
 
 	bh = erofs_balloc(bmgr, META, 0, 0, 0);
 	if (IS_ERR(bh)) {
-		erofs_err("failed to allocate super: %s", PTR_ERR(bh));
+		erofs_err("failed to allocate super: %s",
+			  erofs_strerror(PTR_ERR(bh)));
 		return bh;
 	}
 	bh->op = &erofs_skip_write_bhops;

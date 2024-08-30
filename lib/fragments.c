@@ -138,7 +138,7 @@ static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 	inode->fragment_size = deduped;
 	inode->fragmentoff = pos;
 
-	erofs_dbg("Dedupe %u tail data at %llu", inode->fragment_size,
+	erofs_dbg("Dedupe %llu tail data at %llu", inode->fragment_size | 0ULL,
 		  inode->fragmentoff | 0ULL);
 out:
 	free(data);
@@ -283,8 +283,8 @@ int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd,
 		goto out;
 	}
 
-	erofs_dbg("Recording %u fragment data at %lu", inode->fragment_size,
-		  inode->fragmentoff);
+	erofs_dbg("Recording %llu fragment data at %llu",
+		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL);
 
 	if (memblock)
 		rc = z_erofs_fragments_dedupe_insert(memblock,
@@ -316,8 +316,8 @@ int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
 	if (fwrite(data, len, 1, packedfile) != 1)
 		return -EIO;
 
-	erofs_dbg("Recording %u fragment data at %lu", inode->fragment_size,
-		  inode->fragmentoff);
+	erofs_dbg("Recording %llu fragment data at %llu",
+		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL);
 
 	ret = z_erofs_fragments_dedupe_insert(data, len, inode->fragmentoff,
 					      tofcrc);

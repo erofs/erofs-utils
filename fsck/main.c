@@ -807,8 +807,8 @@ static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 	curr_pos = prev_pos;
 
 	if (prev_pos + ctx->de_namelen >= PATH_MAX) {
-		erofs_err("unable to fsck since the path is too long (%u)",
-			  curr_pos + ctx->de_namelen);
+		erofs_err("unable to fsck since the path is too long (%llu)",
+			  (curr_pos + ctx->de_namelen) | 0ULL);
 		return -EOPNOTSUPP;
 	}
 

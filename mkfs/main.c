@@ -274,7 +274,7 @@ static int erofs_mkfs_feat_set_fragments(bool en, const char *val,
 		u64 i = strtoull(val, &endptr, 0);
 
 		if (endptr - val != vallen) {
-			erofs_err("invalid pcluster size %s for the packed file %s", val);
+			erofs_err("invalid pcluster size %s for the packed file", val);
 			return -EINVAL;
 		}
 		pclustersize_packed = i;
