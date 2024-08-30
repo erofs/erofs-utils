@@ -7,9 +7,6 @@ extern "C"
 {
 #endif
 
-#if defined(HAVE_ZLIB)
-#include <zlib.h>
-#endif
 #include <sys/stat.h>
 
 #include "internal.h"
@@ -28,14 +25,7 @@ struct erofs_pax_header {
 #define EROFS_IOS_DECODER_GZIP		1
 #define EROFS_IOS_DECODER_LIBLZMA	2
 
-#ifdef HAVE_LIBLZMA
-#include <lzma.h>
-struct erofs_iostream_liblzma {
-	u8 inbuf[32768];
-	lzma_stream strm;
-	int fd;
-};
-#endif
+struct erofs_iostream_liblzma;
 
 struct erofs_iostream {
 	union {

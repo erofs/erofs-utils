@@ -3,9 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#if defined(HAVE_ZLIB)
-#include <zlib.h>
-#endif
 #include "erofs/print.h"
 #include "erofs/cache.h"
 #include "erofs/diskbuf.h"
@@ -15,6 +12,9 @@
 #include "erofs/xattr.h"
 #include "erofs/blobchunk.h"
 #include "erofs/rebuild.h"
+#if defined(HAVE_ZLIB)
+#include <zlib.h>
+#endif
 
 /* This file is a tape/volume header.  Ignore it on extraction.  */
 #define GNUTYPE_VOLHDR 'V'
@@ -38,6 +38,15 @@ struct tar_header {
 	char prefix[155];	/* 345-499 */
 	char padding[12];	/* 500-512 (pad to exactly the 512 byte) */
 };
+
+#ifdef HAVE_LIBLZMA
+#include <lzma.h>
+struct erofs_iostream_liblzma {
+	u8 inbuf[32768];
+	lzma_stream strm;
+	int fd;
+};
+#endif
 
 void erofs_iostream_close(struct erofs_iostream *ios)
 {
