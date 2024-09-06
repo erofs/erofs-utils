@@ -1392,7 +1392,8 @@ static int erofs_mkfs_go(struct erofs_sb_info *sbi,
 
 	item = q->queue + q->tail;
 	item->type = type;
-	memcpy(&item->u, elem, size);
+	if (size)
+		memcpy(&item->u, elem, size);
 	q->tail = (q->tail + 1) & (q->entries - 1);
 	q->idle = false;
 
