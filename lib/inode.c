@@ -1744,7 +1744,8 @@ static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild,
 				continue;
 
 			if (!erofs_inode_visited(inode)) {
-				DBG_BUGON(rebuild &&
+				DBG_BUGON(rebuild && (inode->i_nlink == 1 ||
+					  S_ISDIR(inode->i_mode)) &&
 					  erofs_parent_inode(inode) != dir);
 				erofs_mark_parent_inode(inode, dir);
 
