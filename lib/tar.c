@@ -283,9 +283,9 @@ static long long tarerofs_otoi(const char *ptr, int len)
 	inp[len] = '\0';
 
 	errno = 0;
-	val = strtol(ptr, &endp, 8);
-	if ((!val && endp == inp) |
-	     (*endp && *endp != ' '))
+	val = strtol(inp, &endp, 8);
+	if ((*endp == '\0' && endp == inp) |
+	    (*endp != '\0' && *endp != ' '))
 		errno = EINVAL;
 	return val;
 }
@@ -663,18 +663,19 @@ restart:
 		goto out;
 	}
 	tar->offset += sizeof(*th);
-	if (*th->name == '\0') {
-		if (e) {	/* end of tar 2 empty blocks */
-			ret = 1;
-			goto out;
-		}
-		e = true;	/* empty jump to next block */
-		goto restart;
-	}
 
 	/* chksum field itself treated as ' ' */
 	csum = tarerofs_otoi(th->chksum, sizeof(th->chksum));
 	if (errno) {
+		if (*th->name == '\0') {
+out_eot:
+			if (e) {	/* end of tar 2 empty blocks */
+				ret = 1;
+				goto out;
+			}
+			e = true;	/* empty jump to next block */
+			goto restart;
+		}
 		erofs_err("invalid chksum @ %llu", tar_offset);
 		ret = -EBADMSG;
 		goto out;
@@ -692,6 +693,11 @@ restart:
 		ckksum += (int)((char*)th)[j];
 	}
 	if (!tar->ddtaridx_mode && csum != cksum && csum != ckksum) {
+		/* should not bail out here, just in case */
+		if (*th->name == '\0') {
+			DBG_BUGON(1);
+			goto out_eot;
+		}
 		erofs_err("chksum mismatch @ %llu", tar_offset);
 		ret = -EBADMSG;
 		goto out;
