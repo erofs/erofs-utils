@@ -834,7 +834,7 @@ static int kite_mf_init(struct kite_matchfinder *mf, unsigned int wsiz,
 		return -EINVAL;
 	cfg = &kite_mfcfg[level];
 
-	if (wsiz > kHistorySize32 || (1 << ilog2(wsiz)) != wsiz)
+	if (wsiz > kHistorySize32 || (wsiz & (wsiz - 1)))
 		return -EINVAL;
 
 	mf->hash = calloc(0x10000, sizeof(mf->hash[0]));
