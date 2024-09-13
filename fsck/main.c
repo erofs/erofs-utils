@@ -9,10 +9,12 @@
 #include <utime.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/xattr.h>
 #include "erofs/print.h"
 #include "erofs/compress.h"
 #include "erofs/decompress.h"
 #include "erofs/dir.h"
+#include "erofs/xattr.h"
 #include "../lib/compressor.h"
 
 static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid);
@@ -31,6 +33,7 @@ struct erofsfsck_cfg {
 	bool overwrite;
 	bool preserve_owner;
 	bool preserve_perms;
+	bool dump_xattrs;
 };
 static struct erofsfsck_cfg fsckcfg;
 
@@ -48,6 +51,8 @@ static struct option long_options[] = {
 	{"no-preserve-owner", no_argument, 0, 10},
 	{"no-preserve-perms", no_argument, 0, 11},
 	{"offset", required_argument, 0, 12},
+	{"xattrs", no_argument, 0, 13},
+	{"no-xattrs", no_argument, 0, 14},
 	{0, 0, 0, 0},
 };
 
@@ -98,6 +103,7 @@ static void usage(int argc, char **argv)
 		" --extract[=X]          check if all files are well encoded, optionally\n"
 		"                        extract to X\n"
 		" --offset=#             skip # bytes at the beginning of IMAGE\n"
+		" --[no-]xattrs          whether to dump extended attributes (default off)\n"
 		"\n"
 		" -a, -A, -y             no-op, for compatibility with fsck of other filesystems\n"
 		"\n"
@@ -224,6 +230,12 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 				erofs_err("invalid disk offset %s", optarg);
 				return -EINVAL;
 			}
+			break;
+		case 13:
+			fsckcfg.dump_xattrs = true;
+			break;
+		case 14:
+			fsckcfg.dump_xattrs = false;
 			break;
 		default:
 			return -EINVAL;
@@ -408,6 +420,95 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 		remaining -= entry_sz;
 	}
 out:
+	return ret;
+}
+
+static int erofsfsck_dump_xattrs(struct erofs_inode *inode)
+{
+	static bool ignore_xattrs = false;
+	char *keylst, *key;
+	ssize_t kllen;
+	int ret;
+
+	kllen = erofs_listxattr(inode, NULL, 0);
+	if (kllen <= 0)
+		return kllen;
+	keylst = malloc(kllen);
+	if (!keylst)
+		return -ENOMEM;
+	ret = erofs_listxattr(inode, keylst, kllen);
+	if (ret != kllen) {
+		erofs_err("failed to list xattrs @ nid %llu",
+			  inode->nid | 0ULL);
+		ret = -EINVAL;
+		goto out;
+	}
+	ret = 0;
+	for (key = keylst; key < keylst + kllen; key += strlen(key) + 1) {
+		unsigned int index, len;
+		void *value = NULL;
+		size_t size = 0;
+
+		ret = erofs_getxattr(inode, key, NULL, 0);
+		if (ret <= 0) {
+			DBG_BUGON(1);
+			erofs_err("failed to get xattr value size of `%s` @ nid %llu",
+				  key, inode->nid | 0ULL);
+			break;
+		}
+		size = ret;
+		value = malloc(size);
+		if (!value) {
+			ret = -ENOMEM;
+			break;
+		}
+		ret = erofs_getxattr(inode, key, value, size);
+		if (ret < 0) {
+			erofs_err("failed to get xattr `%s` @ nid %llu, because of `%s`", key,
+				  inode->nid | 0ULL, erofs_strerror(ret));
+			free(value);
+			break;
+		}
+		if (fsckcfg.extract_path)
+#ifdef HAVE_LSETXATTR
+			ret = lsetxattr(fsckcfg.extract_path, key, value, size,
+					0);
+#elif defined(__APPLE__)
+			ret = setxattr(fsckcfg.extract_path, key, value, size,
+				       0, XATTR_NOFOLLOW);
+#else
+			ret = -EOPNOTSUPP;
+#endif
+		else
+			ret = 0;
+		free(value);
+		if (ret == -EPERM && !fsckcfg.superuser) {
+			if (__erofs_unlikely(!erofs_xattr_prefix_matches(key,
+					&index, &len))) {
+				erofs_err("failed to match the prefix of `%s` @ nid %llu",
+					  key, inode->nid | 0ULL);
+				ret = -EINVAL;
+				break;
+			}
+			if (index != EROFS_XATTR_INDEX_USER) {
+				if (!ignore_xattrs) {
+					erofs_warn("ignored xattr `%s` @ nid %llu, due to non-superuser",
+						   key, inode->nid | 0ULL);
+					ignore_xattrs = true;
+				}
+				ret = 0;
+				continue;
+			}
+
+		}
+		if (ret) {
+			erofs_err("failed to set xattr `%s` @ nid %llu because of `%s`",
+				  key, inode->nid | 0ULL, erofs_strerror(ret));
+			break;
+		}
+	}
+out:
+	free(keylst);
 	return ret;
 }
 
@@ -900,14 +1001,22 @@ static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 		goto out;
 	}
 
-	/* verify xattr field */
-	ret = erofs_verify_xattr(&inode);
-	if (ret)
-		goto out;
+	if (!(fsckcfg.check_decomp && fsckcfg.dump_xattrs)) {
+		/* verify xattr field */
+		ret = erofs_verify_xattr(&inode);
+		if (ret)
+			goto out;
+	}
 
 	ret = erofsfsck_extract_inode(&inode);
 	if (ret && ret != -ECANCELED)
 		goto out;
+
+	if (fsckcfg.check_decomp && fsckcfg.dump_xattrs) {
+		ret = erofsfsck_dump_xattrs(&inode);
+		if (ret)
+			return ret;
+	}
 
 	/* XXXX: the dir depth should be restricted in order to avoid loops */
 	if (S_ISDIR(inode.i_mode)) {
@@ -955,6 +1064,7 @@ int main(int argc, char *argv[])
 	fsckcfg.overwrite = false;
 	fsckcfg.preserve_owner = fsckcfg.superuser;
 	fsckcfg.preserve_perms = fsckcfg.superuser;
+	fsckcfg.dump_xattrs = false;
 
 	err = erofsfsck_parse_options_cfg(argc, argv);
 	if (err) {

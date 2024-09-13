@@ -260,6 +260,7 @@ AC_CHECK_FUNCS(m4_flatten([
 	gettimeofday
 	lgetxattr
 	llistxattr
+	lsetxattr
 	memset
 	realpath
 	lseek64
