@@ -798,10 +798,10 @@ static int comp_shared_xattr_item(const void *a, const void *b)
 
 	ia = *((const struct xattr_item **)a);
 	ib = *((const struct xattr_item **)b);
-	la = ia->len[0] + ia->len[1];
-	lb = ib->len[0] + ib->len[1];
+	la = EROFS_XATTR_KVSIZE(ia->len);
+	lb = EROFS_XATTR_KVSIZE(ib->len);
 
-	ret = strncmp(ia->kvbuf, ib->kvbuf, min(la, lb));
+	ret = memcmp(ia->kvbuf, ib->kvbuf, min(la, lb));
 	if (ret != 0)
 		return ret;
 
