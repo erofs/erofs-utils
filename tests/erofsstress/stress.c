@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -27,6 +28,9 @@
 #define MAX_SCAN_CHUNKSIZE	(256 * 1024)
 
 bool superuser;
+bool direct_io = false;
+bool mmap_flag = false;
+bool fadvise_flag = false;
 unsigned int nprocs = 1, loops = 1, r_seed;
 sig_atomic_t should_stop = 0;
 
@@ -114,6 +118,8 @@ int drop_file_cache(int fd, int mode)
 
 struct fent {
 	char *subpath;
+	void *fd_ptr;
+	void *chkfd_ptr;
 	int  fd, chkfd;
 };
 
@@ -282,58 +288,274 @@ static int testdir_fd = -1, chkdir_fd = -1;
 
 int tryopen(struct fent *fe)
 {
+	int err;
+	uint64_t filesize;
+	
 	if (fe->fd < 0) {
-		fe->fd = openat(testdir_fd, fe->subpath, O_RDONLY);
+		fe->fd = openat(testdir_fd, fe->subpath, direct_io ? O_RDONLY | O_DIRECT : O_RDONLY);
 		if (fe->fd < 0)
 			return -errno;
 
 		/* use force_page_cache_readahead for every read request */
 		posix_fadvise(fe->fd, 0, 0, POSIX_FADV_RANDOM);
+		
+		filesize = lseek64(fe->fd, 0, SEEK_END);
+		if (mmap_flag) {
+			fe->fd_ptr = mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fe->fd, 0);
+			if (fe->fd_ptr == MAP_FAILED) {
+				fprintf(stderr, "%s failed mmap\n", __func__);
+				return -errno;
+			}
+		}
 	}
 
-	if (chkdir_fd >= 0 && fe->chkfd < 0)
-		fe->chkfd = openat(chkdir_fd, fe->subpath, O_RDONLY);
+	if (chkdir_fd >= 0 && fe->chkfd < 0) {
+		fe->chkfd = openat(chkdir_fd, fe->subpath, direct_io ? O_RDONLY | O_DIRECT : O_RDONLY);
+		
+		if (fe->chkfd > 0) {
+			filesize = lseek64(fe->chkfd, 0, SEEK_END);
+			if (mmap_flag) {
+				fe->chkfd_ptr = mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fe->chkfd, 0);
+				if (fe->chkfd_ptr == MAP_FAILED) {
+					fprintf(stderr, "%s failed mmap\n", __func__);
+					return -errno;
+				}
+			}
+		} else
+			fe->chkfd_ptr = NULL;
+	}
 	return 0;
 }
 
-int doscan(int fd, int chkfd, uint64_t filesize, uint64_t chunksize)
+void mismatch_output(struct  fent *ent, uint64_t pos, uint64_t chunksize)
 {
-	static char buf[MAX_SCAN_CHUNKSIZE], chkbuf[MAX_SCAN_CHUNKSIZE];
+	int fd, ret;
+	ssize_t nread, nread2;
+	char filename[20];
+	char *buf, *chkbuf;
+	
+	ret = posix_memalign(&buf, PAGE_SIZE, MAX_SCAN_CHUNKSIZE);
+	if (ret) {
+		fprintf(stderr, "posix_memalign failed: %s\n", strerror(ret));
+		goto cleanup;
+	}
+	nread = pread64(ent->fd, buf, chunksize, pos);
+	if (nread <= 0) {
+		fprintf(stderr, "read file failed");
+		goto cleanup;
+	}
+	
+	ret = posix_memalign(&chkbuf, PAGE_SIZE, MAX_SCAN_CHUNKSIZE);
+	if (ret) {
+		fprintf(stderr, "posix_memalign failed: %s\n", strerror(ret));
+		goto cleanup;
+	}
+	nread2 = pread64(ent->chkfd, chkbuf, chunksize, pos);
+	if (nread2 <=0) {
+		fprintf(stderr, "read file failed");
+		goto cleanup;
+	}
+	
+	sprintf(filename, "%d", getpid());
+	strcat(filename, "_mismatch");
+	fd = open(filename, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR);
+	if (fd == -1) {
+		fprintf(stderr, "error opening file");
+		goto cleanup;
+	}
+	
+	ret = write(fd, ent->subpath, strlen(ent->subpath));
+	if (ret == -1) {
+		fprintf(stderr, "error writing file");
+		goto cleanup;
+	}
+	write(fd, "\n", 1);
+	
+	ret = write(fd, buf, nread);
+	if (ret == -1) {
+		fprintf(stderr, "error writing file");
+		goto cleanup;
+	}
+	write(fd, "\n", 1);
+	ret = write(fd, chkbuf, nread2);
+	if (ret == -1) {
+		fprintf(stderr, "error writing file");
+		goto cleanup;
+	}
+cleanup:
+	free(buf);
+	free(chkbuf);
+}
+
+int doscan(struct fent *ent, uint64_t filesize, uint64_t chunksize)
+{
+	char *buf, *chkbuf;
 	uint64_t pos;
+	int err = 0;
 
 	printf("doscan(%u): filesize: %llu, chunksize: %llu\n",
 	       getpid(), (unsigned long long)filesize,
 	       (unsigned long long)chunksize);
-
+	
+	err = posix_memalign(&buf, PAGE_SIZE, MAX_SCAN_CHUNKSIZE);
+	if (err) {
+		fprintf(stderr, "posix_memalign failed: %s\n", strerror(err));
+		goto cleanup;
+	}
+	
+	err = posix_memalign(&chkbuf, PAGE_SIZE, MAX_SCAN_CHUNKSIZE);
+	if (err) {
+		fprintf(stderr, "posix_memalign failed: %s\n", strerror(err));
+		goto cleanup;
+	}
+	
 	for (pos = 0; pos < filesize; pos += chunksize) {
 		ssize_t nread, nread2;
+		
+		nread = pread64(ent->fd, buf, chunksize, pos);
+		if (nread <= 0) {
+			err = -errno;
+			goto cleanup;
+		}
 
-		nread = pread64(fd, buf, chunksize, pos);
+		if (nread < chunksize && nread != filesize - pos) {
+			err = -ERANGE;
+			goto cleanup;
+		}
 
-		if (nread <= 0)
-			return -errno;
-
-		if (nread < chunksize && nread != filesize - pos)
-			return -ERANGE;
-
-		if (chkfd < 0)
+		if (ent->chkfd < 0)
 			continue;
 
-		nread2 = pread64(chkfd, chkbuf, chunksize, pos);
-		if (nread2 <= 0)
-			return -errno;
+		nread2 = pread64(ent->chkfd, chkbuf, chunksize, pos);
+		if (nread2 <= 0) {
+			err = -errno;
+			goto cleanup;
+		}
 
-		if (nread != nread2)
-			return -EFBIG;
+		if (nread != nread2) {
+			err = -EFBIG;
+			goto cleanup;
+		}
 
 		if (memcmp(buf, chkbuf, nread)) {
 			fprintf(stderr, "doscan: %llu bytes mismatch @ %llu\n",
 				(unsigned long long)chunksize,
 				(unsigned long long)pos);
+			mismatch_output(ent, pos, chunksize);
+			err = -EBADMSG;
+			goto cleanup;
+		}
+	}
+	
+cleanup:
+	free(buf);
+	free(chkbuf);
+	return err;
+}
+
+int doscan_mmap(struct fent *ent, uint64_t filesize, uint64_t chunksize)
+{
+	uint64_t pos, nread;
+
+	printf("doscan_mmap(%u): filesize: %llu, chunksize: %llu\n",
+	       getpid(), (unsigned long long)filesize,
+	       (unsigned long long)chunksize);
+	       
+	if (ent->chkfd >= 0 && lseek(ent->chkfd, 0, SEEK_END) != filesize)
+		return -EFBIG;
+	
+	for (pos = 0; pos < filesize; pos += chunksize) {
+		
+		if (pos + chunksize < filesize)
+			nread = chunksize;
+		else
+			nread = filesize - pos;
+		
+		if (ent->chkfd < 0)
+			continue;
+			
+		if (memcmp(ent->fd_ptr + pos, ent->chkfd_ptr + pos, nread)) {
+			fprintf(stderr, "doscan_mmap: %llu bytes mismatch @ %llu\n",
+				(unsigned long long)chunksize,
+				(unsigned long long)pos);
+			mismatch_output(ent, pos, chunksize);
 			return -EBADMSG;
 		}
 	}
 	return 0;
+}
+
+int doscan_fadvise(struct fent *ent, uint64_t filesize, uint64_t chunksize)
+{
+	int err;
+	uint64_t pos, nread;
+
+	printf("doscan_fadvise(%u): filesize: %llu, chunksize: %llu\n",
+	       getpid(), (unsigned long long)filesize,
+	       (unsigned long long)chunksize);
+	       
+	if (ent->chkfd >= 0 && lseek(ent->chkfd, 0, SEEK_END) != filesize)
+		return -EFBIG;
+	
+	for (pos = 0; pos < filesize; pos += chunksize) {
+		
+		if (pos + chunksize < filesize)
+			nread = chunksize;
+		else
+			nread = filesize - pos;
+		
+		err = posix_fadvise(ent->fd, pos, nread, POSIX_FADV_WILLNEED);
+		if (err) {
+			perror("posix_fadvise");
+			return -errno;;
+		}
+		
+		if (ent->chkfd < 0)
+			continue;
+			
+		err = posix_fadvise(ent->chkfd, pos, nread, POSIX_FADV_WILLNEED);
+		if (err) {
+			perror("posix_fadvise");
+			return -errno;
+		}
+	}
+	return 0;
+}
+
+int doscan_random(struct fent *ent, uint64_t filesize, uint64_t chunksize)
+{
+	bool flag = false;
+	int err;
+	int randnum;
+	
+	srand(time(NULL));
+	while(true) {
+		if (flag)
+			break;
+		
+		randnum = rand() % 3 + 1;
+		switch(randnum) {
+		case 1:
+			flag = true;
+			err = doscan(ent, filesize, chunksize);
+			break;
+		case 2:
+			if (mmap_flag) {
+				flag = true;
+				err = doscan_mmap(ent, filesize, chunksize);
+			}
+			break;
+		case 3:
+			if (fadvise_flag) {
+				flag = true;
+				err = doscan_fadvise(ent, filesize, chunksize);
+			}
+			break;
+		default:
+			break;
+		}
+	}
+	return err;
 }
 
 int getdents_f(struct fent *fe)
@@ -379,17 +601,30 @@ int readlink_f(struct fent *fe)
 	return 0;
 }
 
-int read_f(int fd, int chkfd, uint64_t filesize)
+int read_f(struct fent *ent, uint64_t filesize)
 {
-	static char buf[MAX_CHUNKSIZE], chkbuf[MAX_CHUNKSIZE];
+	char *buf, *chkbuf;
 	uint64_t lr, off, len, trimmed;
 	size_t nread, nread2;
+	int err = 0;
 
 	lr = ((uint64_t) random() << 32) + random();
 	off = lr % filesize;
 	len = (random() % MAX_CHUNKSIZE) + 1;
 	trimmed = len;
-
+	
+	err = posix_memalign(&buf, PAGE_SIZE, MAX_SCAN_CHUNKSIZE);
+	if (err) {
+		fprintf(stderr, "posix_memalign failed: %s\n", strerror(err));
+		goto cleanup;
+	}
+	
+	err = posix_memalign(&chkbuf, PAGE_SIZE, MAX_SCAN_CHUNKSIZE);
+	if (err) {
+		fprintf(stderr, "posix_memalign failed: %s\n", strerror(err));
+		goto cleanup;
+	}
+	
 	if (off + len > filesize) {
 		uint64_t a = filesize - off + 16 * getpagesize();
 
@@ -397,44 +632,175 @@ int read_f(int fd, int chkfd, uint64_t filesize)
 			len %= a;
 		trimmed = len <= filesize - off ? len : filesize - off;
 	}
-
+	
+	if (direct_io) {
+		off = (((off - 1) >> PAGE_SHIFT) + 1)
+			<< PAGE_SHIFT;
+		trimmed = len = (((len - 1) >> PAGE_SHIFT) + 1)
+			<< PAGE_SHIFT;
+		if (!len || off + len > filesize)
+			goto cleanup;
+	}
+	
 	printf("read_f(%u): %llu bytes @ %llu\n", getpid(),
-	       len | 0ULL, off | 0ULL);
+	       len | 0ULL, off | 0ULL);	
 
-	nread = pread64(fd, buf, len, off);
+	nread = pread64(ent->fd, buf, len, off);
 	if (nread != trimmed) {
 		fprintf(stderr, "read_f(%d, %u): failed to read %llu bytes @ %llu\n",
 			__LINE__, getpid(), len | 0ULL, off | 0ULL);
-		return -errno;
+		err = -errno;
+		goto cleanup;
 	}
 
-	if (chkfd < 0)
-		return 0;
+	if (ent->chkfd < 0)
+		goto cleanup;
 
-	nread2 = pread64(chkfd, chkbuf, len, off);
+	nread2 = pread64(ent->chkfd, chkbuf, len, off);
 	if (nread2 <= 0) {
 		fprintf(stderr, "read_f(%d, %u): failed to read %llu bytes @ %llu\n",
 			__LINE__, getpid(), len | 0ULL, off | 0ULL);
-		return -errno;
+		err = -errno;
+		goto cleanup;
 	}
 
 	if (nread != nread2) {
 		fprintf(stderr, "read_f(%d, %u): size mismatch %llu bytes @ %llu\n",
 			__LINE__, getpid(), len | 0ULL, off | 0ULL);
-		return -EFBIG;
+		mismatch_output(ent, off, len);
+		err = -EFBIG;
+		goto cleanup;
 	}
 
 	if (memcmp(buf, chkbuf, nread)) {
 		fprintf(stderr, "read_f(%d, %u): data mismatch %llu bytes @ %llu\n",
 			__LINE__, getpid(), len | 0ULL, off | 0ULL);
+		mismatch_output(ent, off, len);
+		err = -EBADMSG;
+		goto cleanup;
+	}
+	
+cleanup:
+	free(buf);
+	free(chkbuf);
+	return err;
+}
+
+int read_f_mmap(struct fent *ent, uint64_t filesize)
+{
+	uint64_t lr, off, len, trimmed;
+	
+	lr = ((uint64_t) random() << 32) + random();
+	off = lr % filesize;
+	len = (random() % MAX_CHUNKSIZE) + 1;
+	trimmed = len;
+	
+	if (off + len > filesize) {
+		uint64_t a = filesize - off + 16 * getpagesize();
+
+		if (len > a)
+			len %= a;
+		trimmed = len <= filesize - off ? len : filesize - off;
+	}
+	
+	printf("read_f_mmap(%u): %llu bytes @ %llu\n", getpid(),
+	       len | 0ULL, off | 0ULL);
+	
+	if (ent->chkfd >= 0 && lseek(ent->chkfd, 0, SEEK_END) != filesize)
+		return -EFBIG;
+	
+	if (ent->chkfd < 0)
+		return 0;
+		
+	if (memcmp(ent->fd_ptr + off, ent->chkfd_ptr + off, trimmed)) {
+		fprintf(stderr, "read_f_mmap(%d, %u): data mismatch %llu bytes @ %llu\n",
+			__LINE__, getpid(), len | 0ULL, off | 0ULL);
+		mismatch_output(ent, off, len);
 		return -EBADMSG;
 	}
 	return 0;
 }
 
-int testfd(int fd, int chkfd, int mode)
+int read_f_fadvise(struct fent *ent, uint64_t filesize)
 {
-	const off64_t filesize = lseek64(fd, 0, SEEK_END);
+	int err;
+	uint64_t lr, off, len, trimmed;
+	
+	lr = ((uint64_t) random() << 32) + random();
+	off = lr % filesize;
+	len = (random() % MAX_CHUNKSIZE) + 1;
+	trimmed = len;
+	
+	if (off + len > filesize) {
+		uint64_t a = filesize - off + 16 * getpagesize();
+
+		if (len > a)
+			len %= a;
+		trimmed = len <= filesize - off ? len : filesize - off;
+	}
+	
+	printf("read_f_fadvise(%u): %llu bytes @ %llu\n", getpid(),
+	       len | 0ULL, off | 0ULL);
+	
+	err = posix_fadvise(ent->fd, off, trimmed, POSIX_FADV_WILLNEED);
+	if (err) {
+		perror("posix_fadvise");
+		return -errno;
+	}
+	
+	if (ent->chkfd >= 0 && lseek(ent->chkfd, 0, SEEK_END) != filesize)
+		return -EFBIG;
+	
+	if (ent->chkfd < 0)
+		return 0;
+		
+	err = posix_fadvise(ent->chkfd, off, trimmed, POSIX_FADV_WILLNEED);
+	if (err) {
+		perror("posix_fadvise");
+		return -errno;
+	}
+	return 0;
+}
+
+int read_f_random(struct fent * ent, uint64_t filesize)
+{
+	bool flag = false;
+	int err;
+	int randnum;
+	
+	srand(time(NULL));
+	while(true) {
+		if (flag)
+			break;
+		
+		randnum = rand() % 3 + 1;
+		switch(randnum) {
+		case 1:
+			flag = true;
+			err = read_f(ent, filesize);
+			break;
+		case 2:
+			if (mmap_flag) {
+				flag = true;
+				err = read_f_mmap(ent, filesize);
+			}
+			break;
+		case 3:
+			if (fadvise_flag) {
+				flag = true;
+				err = read_f_fadvise(ent, filesize);
+			}
+			break;
+		default:
+			break;
+		}
+	}
+	return err;
+}
+
+int testfd(struct fent *ent, int mode)
+{
+	const off64_t filesize = lseek64(ent->fd, 0, SEEK_END);
 	uint64_t chunksize, maxchunksize;
 	int err;
 
@@ -450,16 +816,16 @@ int testfd(int fd, int chkfd, int mode)
 			<< PAGE_SHIFT;
 		if (!chunksize)
 			chunksize = PAGE_SIZE;
-		err = doscan(fd, chkfd, filesize, chunksize);
+		err = doscan_random(ent, filesize, chunksize);
 		if (err)
 			return err;
-	} else if (mode == RANDSCAN_UNALIGNED) {
+	} else if (mode == RANDSCAN_UNALIGNED && !direct_io) {
 		chunksize = (random() * random() % MAX_SCAN_CHUNKSIZE) + 1;
-		err = doscan(fd, chkfd, filesize, chunksize);
+		err = doscan_random(ent, filesize, chunksize);
 		if (err)
 			return err;
 	} else if (mode == RANDREAD) {
-		err = read_f(fd, chkfd, filesize);
+		err = read_f_random(ent, filesize);
 		if (err)
 			return err;
 	}
@@ -470,7 +836,6 @@ int doproc(int mode)
 {
 	struct fent *fe;
 	int ret;
-
 	if (mode <= GETDENTS) {
 		fe = getfent(FT_DIRm, random());
 		if (!fe)
@@ -492,7 +857,7 @@ int doproc(int mode)
 	ret = tryopen(fe);
 	if (ret)
 		return ret;
-	return testfd(fe->fd, fe->chkfd, mode);
+	return testfd(fe, mode);
 }
 
 void randomdelay(void)
@@ -522,7 +887,7 @@ static int parse_options(int argc, char *argv[])
 	char *testdir, *chkdir;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "l:p:s:")) != -1) {
+	while ((opt = getopt(argc, argv, "l:p:s:dmf")) != -1) {
 		switch (opt) {
 		case 'l':
 			loops = atoi(optarg);
@@ -546,6 +911,15 @@ static int parse_options(int argc, char *argv[])
 					r_seed);
 				return -EINVAL;
 			}
+			break;
+		case 'd':
+			direct_io = true;
+			break;
+		case 'm':
+			mmap_flag = true;
+			break;
+		case 'f':
+			fadvise_flag = true;
 			break;
 		default: /* '?' */
 			return -EINVAL;
@@ -585,7 +959,10 @@ void usage(void)
 	      " -l#     specifies the no. of times the testrun should loop.\n"
 	      "         *use 0 for infinite (default 1)\n"
 	      " -p#     specifies the no. of processes (default 1)\n"
-	      " -s#     specifies the seed for the random generator (default random)\n",
+	      " -s#     specifies the seed for the random generator (default random)\n"
+	      " -d      using direct_io to start stress test\n"
+	      " -m      using mmap to start stress test\n"
+	      " -f      using fadvise to start stress test\n",
 	      stderr);
 }
 
