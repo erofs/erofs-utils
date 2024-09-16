@@ -2,7 +2,7 @@
 # Makefile.am
 
 AUTOMAKE_OPTIONS = serial-tests
-SUBDIRS = src
+SUBDIRS = src erofsstress
 
 TESTS =
 

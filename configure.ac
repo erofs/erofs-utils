@@ -636,5 +636,6 @@ AC_CONFIG_FILES([Makefile
 		 fuse/Makefile
 		 fsck/Makefile
 		 tests/Makefile
+		 tests/erofsstress/Makefile
 		 tests/src/Makefile])
 AC_OUTPUT
