@@ -15,6 +15,7 @@
 #include "erofs/decompress.h"
 #include "erofs/dir.h"
 #include "erofs/xattr.h"
+#include "fssum.h"
 #include "../lib/compressor.h"
 
 static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid);
@@ -34,6 +35,7 @@ struct erofsfsck_cfg {
 	bool preserve_owner;
 	bool preserve_perms;
 	bool dump_xattrs;
+	bool fssum;
 };
 static struct erofsfsck_cfg fsckcfg;
 
@@ -53,6 +55,7 @@ static struct option long_options[] = {
 	{"offset", required_argument, 0, 12},
 	{"xattrs", no_argument, 0, 13},
 	{"no-xattrs", no_argument, 0, 14},
+	{"fssum", no_argument, 0, 13},
 	{0, 0, 0, 0},
 };
 
@@ -104,6 +107,7 @@ static void usage(int argc, char **argv)
 		"                        extract to X\n"
 		" --offset=#             skip # bytes at the beginning of IMAGE\n"
 		" --[no-]xattrs          whether to dump extended attributes (default off)\n"
+		" --fssum                calculate the checksum of iamge\n"
 		"\n"
 		" -a, -A, -y             no-op, for compatibility with fsck of other filesystems\n"
 		"\n"
@@ -235,7 +239,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 			fsckcfg.dump_xattrs = true;
 			break;
 		case 14:
-			fsckcfg.dump_xattrs = false;
+			fsckcfg.fssum = true;
 			break;
 		default:
 			return -EINVAL;
@@ -1041,6 +1045,20 @@ out:
 	return ret;
 }
 
+static int erofsfsck_sum_image(struct erofs_sb_info *sbi)
+{
+	struct erofs_dir_context ctx = {
+		.flags = 0,
+		.pnid = 0,
+		.dir = NULL,
+		.de_nid = sbi->root_nid,
+		.dname = "",
+		.de_namelen = 0,
+	};
+	
+	return erofs_fssum_calculate(&ctx);
+}
+
 #ifdef FUZZING
 int erofsfsck_fuzz_one(int argc, char *argv[])
 #else
@@ -1062,6 +1080,7 @@ int main(int argc, char *argv[])
 	fsckcfg.check_decomp = false;
 	fsckcfg.force = false;
 	fsckcfg.overwrite = false;
+	fsckcfg.fssum = false;
 	fsckcfg.preserve_owner = fsckcfg.superuser;
 	fsckcfg.preserve_perms = fsckcfg.superuser;
 	fsckcfg.dump_xattrs = false;
@@ -1127,6 +1146,11 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	if (fsckcfg.fssum) {
+		err = erofsfsck_sum_image(&g_sbi);
+		if (err)
+			erofs_err("fssum calculation for image falied");
+	}
 exit_hardlink:
 	if (fsckcfg.extract_path)
 		erofsfsck_hardlink_exit();
