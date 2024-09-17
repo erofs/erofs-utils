@@ -342,7 +342,7 @@ ssize_t erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
 	ssize_t read;
 
 	if (device_id) {
-		if (device_id >= sbi->nblobs) {
+		if (device_id > sbi->nblobs) {
 			erofs_err("invalid device id %d", device_id);
 			return -EIO;
 		}
