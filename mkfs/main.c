@@ -965,11 +965,6 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		cfg.c_showprogress = false;
 	}
 
-	if (cfg.c_compr_opts[0].alg && erofs_blksiz(&g_sbi) != getpagesize())
-		erofs_warn("Please note that subpage blocksize with compression isn't yet supported in kernel. "
-			   "This compressed image will only work with bs = ps = %u bytes",
-			   erofs_blksiz(&g_sbi));
-
 	if (pclustersize_max) {
 		if (pclustersize_max < erofs_blksiz(&g_sbi) ||
 		    pclustersize_max % erofs_blksiz(&g_sbi)) {
