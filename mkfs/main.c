@@ -1091,7 +1091,8 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 	if (datamode != EROFS_REBUILD_DATA_BLOB_INDEX)
 		return 0;
 
-	if (extra_devices != rebuild_src_count) {
+	/* Each blob has either no extra device or only one device for TarFS */
+	if (extra_devices && extra_devices != rebuild_src_count) {
 		erofs_err("extra_devices(%u) is mismatched with source images(%u)",
 			  extra_devices, rebuild_src_count);
 		return -EOPNOTSUPP;
