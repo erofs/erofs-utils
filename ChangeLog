@@ -1,3 +1,18 @@
+erofs-utils 1.8.2
+
+ * Another maintenance release includes the following fixes:
+   - (mkfs.erofs) Fix build on GNU/Hurd (Ahelenia Ziemiańska);
+   - (mkfs.erofs) Fix maximum volume label length (Naoto Yamaguchi);
+   - (mkfs.erofs) Correctly skip unidentified xattrs (Sandeep Dhavale);
+   - (fsck.erofs) Support exporting xattrs optionally (Hongzhen Luo);
+   - (mkfs.erofs) Correctly sort shared xattrs (Sheng Yong);
+   - (mkfs.erofs) Allow pax headers with empty names;
+   - (mkfs.erofs) Add `--sort=none` option for tarballs;
+   - (mkfs.erofs) Fix broken compressed packed inodes (Danny Lin);
+   - Several minor random fixes.
+
+ -- Gao Xiang <xiang@kernel.org>  Tue, 24 Sep 2024 00:00:00 +0800
+
 erofs-utils 1.8.1
 
  * A quick maintenance release includes the following fixes:
