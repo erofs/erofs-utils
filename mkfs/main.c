@@ -84,6 +84,7 @@ static struct option long_options[] = {
 	{"root-xattr-isize", required_argument, NULL, 524},
 	{"mkfs-time", no_argument, NULL, 525},
 	{"all-time", no_argument, NULL, 526},
+	{"sort", required_argument, NULL, 527},
 	{0, 0, 0, 0},
 };
 
@@ -180,6 +181,7 @@ static void usage(int argc, char **argv)
 		" --offset=#            skip # bytes at the beginning of IMAGE.\n"
 		" --root-xattr-isize=#  ensure the inline xattr size of the root directory is # bytes at least\n"
 		" --aufs                replace aufs special files with overlayfs metadata\n"
+		" --sort=<path,none>    data sorting order for tarballs as input (default: path)\n"
 		" --tar=X               generate a full or index-only image from a tarball(-ish) source\n"
 		"                       (X = f|i|headerball; f=full mode, i=index mode,\n"
 		"                                            headerball=file data is omited in the source stream)\n"
@@ -839,6 +841,10 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			break;
 		case 526:
 			cfg.c_timeinherit = TIMESTAMP_FIXED;
+			break;
+		case 527:
+			if (!strcmp(optarg, "none"))
+				erofstar.try_no_reorder = true;
 			break;
 		case 'V':
 			version();

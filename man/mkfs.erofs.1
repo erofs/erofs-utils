@@ -192,7 +192,18 @@ Use extended inodes instead of compact inodes if the file modification time
 would overflow compact inodes. This is the default. Overrides
 .BR --ignore-mtime .
 .TP
-.BI "\-\-tar, \-\-tar="MODE
+.BI "\-\-sort=" MODE
+Inode data sorting order for tarballs as input.
+
+\fIMODE\fR may be one of \fBnone\fR or \fBpath\fR.
+
+\fBnone\fR: No particular data order is specified for the target image to
+avoid unnecessary overhead; Currently, it takes effect if `-E^inline_data` is
+specified and no compression is applied.
+
+\fBpath\fR: Data order strictly follows the tree generation order. (default)
+.TP
+.BI "\-\-tar, \-\-tar=" MODE
 Treat \fISOURCE\fR as a tarball or tarball-like "headerball" rather than as a
 directory.
 

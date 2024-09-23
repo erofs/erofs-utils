@@ -171,14 +171,12 @@ struct erofs_dentry *erofs_d_alloc(struct erofs_inode *parent,
 	return d;
 }
 
-/* allocate main data for a inode */
-static int __allocate_inode_bh_data(struct erofs_inode *inode,
-				    unsigned long nblocks,
-				    int type)
+/* allocate main data for an inode */
+int erofs_allocate_inode_bh_data(struct erofs_inode *inode, erofs_blk_t nblocks)
 {
 	struct erofs_bufmgr *bmgr = inode->sbi->bmgr;
 	struct erofs_buffer_head *bh;
-	int ret;
+	int ret, type;
 
 	if (!nblocks) {
 		/* it has only tail-end data */
@@ -187,6 +185,7 @@ static int __allocate_inode_bh_data(struct erofs_inode *inode,
 	}
 
 	/* allocate main data buffer */
+	type = S_ISDIR(inode->i_mode) ? DIRA : DATA;
 	bh = erofs_balloc(bmgr, type, erofs_pos(inode->sbi, nblocks), 0, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
@@ -431,7 +430,7 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 	q = used = blkno = 0;
 
 	/* allocate dir main data */
-	ret = __allocate_inode_bh_data(dir, erofs_blknr(sbi, dir->i_size), DIRA);
+	ret = erofs_allocate_inode_bh_data(dir, erofs_blknr(sbi, dir->i_size));
 	if (ret)
 		return ret;
 
@@ -487,7 +486,7 @@ int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 
 	inode->datalayout = EROFS_INODE_FLAT_INLINE;
 
-	ret = __allocate_inode_bh_data(inode, nblocks, DATA);
+	ret = erofs_allocate_inode_bh_data(inode, nblocks);
 	if (ret)
 		return ret;
 
@@ -514,15 +513,15 @@ static bool erofs_file_is_compressible(struct erofs_inode *inode)
 
 static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 {
-	int ret;
+	struct erofs_sb_info *sbi = inode->sbi;
 	erofs_blk_t nblocks, i;
 	unsigned int len;
-	struct erofs_sb_info *sbi = inode->sbi;
+	int ret;
 
 	inode->datalayout = EROFS_INODE_FLAT_INLINE;
 	nblocks = inode->i_size >> sbi->blkszbits;
 
-	ret = __allocate_inode_bh_data(inode, nblocks, DATA);
+	ret = erofs_allocate_inode_bh_data(inode, nblocks);
 	if (ret)
 		return ret;
 

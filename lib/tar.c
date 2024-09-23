@@ -119,7 +119,7 @@ int erofs_iostream_open(struct erofs_iostream *ios, int fd, int decoder)
 					   erofs_strerror(-errno));
 #endif
 		}
-		ios->bufsize = 16384;
+		ios->bufsize = 32768;
 	}
 
 	do {
@@ -586,6 +586,38 @@ void tarerofs_remove_inode(struct erofs_inode *inode)
 	--inode->i_parent->i_nlink;
 }
 
+static int tarerofs_write_uncompressed_file(struct erofs_inode *inode,
+					    struct erofs_tarfile *tar)
+{
+	struct erofs_sb_info *sbi = inode->sbi;
+	erofs_blk_t nblocks;
+	erofs_off_t pos;
+	void *buf;
+	int ret;
+
+	inode->datalayout = EROFS_INODE_FLAT_PLAIN;
+	nblocks = DIV_ROUND_UP(inode->i_size, 1U << sbi->blkszbits);
+
+	ret = erofs_allocate_inode_bh_data(inode, nblocks);
+	if (ret)
+		return ret;
+
+	for (pos = 0; pos < inode->i_size; pos += ret) {
+		ret = erofs_iostream_read(&tar->ios, &buf, inode->i_size - pos);
+		if (ret < 0)
+			break;
+		if (erofs_dev_write(sbi, buf,
+				    erofs_pos(sbi, inode->u.i_blkaddr) + pos,
+				    ret)) {
+			ret = -EIO;
+			break;
+		}
+	}
+	inode->idata_size = 0;
+	inode->datasource = EROFS_INODE_DATA_SOURCE_NONE;
+	return 0;
+}
+
 static int tarerofs_write_file_data(struct erofs_inode *inode,
 				    struct erofs_tarfile *tar)
 {
@@ -1012,6 +1044,10 @@ new_inode:
 				if (!ret && erofs_iostream_lskip(&tar->ios,
 								 inode->i_size))
 					ret = -EIO;
+			} else if (tar->try_no_reorder &&
+				   !cfg.c_compr_opts[0].alg &&
+				   !cfg.c_inline_data) {
+				ret = tarerofs_write_uncompressed_file(inode, tar);
 			} else {
 				ret = tarerofs_write_file_data(inode, tar);
 			}
