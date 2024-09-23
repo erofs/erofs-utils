@@ -1926,7 +1926,9 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_sb_info *sbi,
 
 		DBG_BUGON(!ictx);
 		ret = erofs_write_compressed_file(ictx);
-		if (ret && ret != -ENOSPC)
+		if (!ret)
+			goto out;
+		if (ret != -ENOSPC)
 			 return ERR_PTR(ret);
 
 		ret = lseek(fd, 0, SEEK_SET);
@@ -1936,6 +1938,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_sb_info *sbi,
 	ret = write_uncompressed_file_from_fd(inode, fd);
 	if (ret)
 		return ERR_PTR(ret);
+out:
 	erofs_prepare_inode_buffer(inode);
 	erofs_write_tail_end(inode);
 	return inode;
