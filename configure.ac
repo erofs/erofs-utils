@@ -171,6 +171,15 @@ AC_ARG_WITH(selinux,
       ;;
     esac], [with_selinux=no])
 
+AC_ARG_WITH(rust,
+   [AS_HELP_STRING([--with-rust],
+      [enable and build with rust implementation @<:@default=no@:>@])],
+   [case "$with_rust" in
+      yes|no) ;;
+      *) AC_MSG_ERROR([invalid argument to --with-rust])
+      ;;
+    esac], [with_rust=no])
+
 # Checks for libraries.
 # Use customized LZ4 library path when specified.
 AC_ARG_WITH(lz4-incdir,
@@ -363,6 +372,37 @@ AS_IF([test "x$with_selinux" != "xno"], [
     AC_MSG_ERROR([libselinux doesn't work properly])])
   LIBS="${saved_LIBS}"
   CPPFLAGS="${saved_CPPFLAGS}"], [have_selinux="no"])
+
+# Configure Rust
+AS_IF([test "x$with_rust" != "xno"], [
+   RUSTC_TARGET=""
+   RUSTC_MODE=""
+   case "$build" in
+      *linux*)
+         arch="${build%%-*}"
+         RUSTC_TARGET="${arch}-unknown-linux-gnu" 
+         ;;
+      *apple*)
+         AC_MSG_ERROR(["Apple Rust Build isn't supported currently."])
+         ;;
+   esac
+   AC_PATH_PROG([RUSTUP], [rustup], [notfound])
+   AS_IF([test "x$RUSTUP" = "xnotfound"], [AC_MSG_ERROR([rustup is required for rust build.])])
+   AC_PATH_PROG([CARGO], [cargo], [notfound])
+   AS_IF([test "x$CARGO" = "xnotfound"], [AC_MSG_ERROR([cargo is required for rust build.])])
+   AC_PATH_PROG([RUSTC], [rustc], [notfound])
+   AS_IF([test "x$RUSTC" = "xnotfound"], [AC_MSG_ERROR([rustc is required for rust build.])])
+   AC_MSG_CHECKING([whether rustc has target $RUSTC_TARGET installed])
+   AS_IF([test "xCFLAGS" = *-g*], [RUSTC_MODE="debug"], [RUSTC_MODE="release"])
+   if $RUSTUP target list | grep -q $RUSTC_TARGET; then
+      AC_MSG_RESULT([yes])
+   else
+      AC_MSG_RESULT([no])
+      AC_MSG_ERROR([Rust tatget $RUSTC_TARGET is not installed. Please run 'rustup target add $RUSTC_TARGET' to install it.])
+   fi
+   AC_SUBST(RUSTC_TARGET)
+   AC_SUBST(RUSTC_MODE)
+], [have_rust="no"])
 
 # Configure fuse
 AS_IF([test "x$enable_fuse" != "xno"], [
@@ -566,6 +606,7 @@ AM_CONDITIONAL([ENABLE_LIBDEFLATE], [test "x${have_libdeflate}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LIBZSTD], [test "x${have_libzstd}" = "xyes"])
 AM_CONDITIONAL([ENABLE_QPL], [test "x${have_qpl}" = "xyes"])
 AM_CONDITIONAL([ENABLE_STATIC_FUSE], [test "x${enable_static_fuse}" = "xyes"])
+AM_CONDITIONAL([ENABLE_RUST], [test "x${with_rust}" = "xyes"])
 
 if test "x$have_uuid" = "xyes"; then
   AC_DEFINE([HAVE_LIBUUID], 1, [Define to 1 if libuuid is found])
@@ -573,6 +614,10 @@ fi
 
 if test "x$have_selinux" = "xyes"; then
   AC_DEFINE([HAVE_LIBSELINUX], 1, [Define to 1 if libselinux is found])
+fi
+
+if test "x${with_rust}" = "xyes"; then
+  AC_DEFINE([HAVE_RUST], 1, [Define to 1 if rust is enabled.])
 fi
 
 if test "x${have_lz4}" = "xyes"; then
@@ -634,5 +679,6 @@ AC_CONFIG_FILES([Makefile
 		 mkfs/Makefile
 		 dump/Makefile
 		 fuse/Makefile
-		 fsck/Makefile])
+		 fsck/Makefile
+                 rust/fuse/Makefile])
 AC_OUTPUT

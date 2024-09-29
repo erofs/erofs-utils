@@ -1,0 +1,9 @@
+[package]
+name = "erofsfuse"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fuser = "0.11"
+erofs-sys = { git = "https://github.com/ToolmanP/erofs-rs.git" }
+clap = { version = "4", features = ["derive", "cargo"] }
