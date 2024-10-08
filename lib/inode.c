@@ -6,6 +6,9 @@
  * with heavy changes by Gao Xiang <xiang@kernel.org>
  */
 #define _GNU_SOURCE
+#ifdef EROFS_MT_ENABLED
+#include <pthread.h>
+#endif
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>

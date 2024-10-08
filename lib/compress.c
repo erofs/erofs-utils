@@ -8,6 +8,9 @@
 #ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
 #endif
+#ifdef EROFS_MT_ENABLED
+#include <pthread.h>
+#endif
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
