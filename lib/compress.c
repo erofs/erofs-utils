@@ -1456,12 +1456,8 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 	inode->idata_size = 0;
 	inode->fragment_size = 0;
 
-	if (z_erofs_mt_enabled) {
-		ictx = malloc(sizeof(*ictx));
-		if (!ictx)
-			return ERR_PTR(-ENOMEM);
-		ictx->fd = dup(fd);
-	} else {
+	if (!z_erofs_mt_enabled ||
+	    (cfg.c_all_fragments && !erofs_is_packed_inode(inode))) {
 #ifdef EROFS_MT_ENABLED
 		pthread_mutex_lock(&g_ictx.mutex);
 		if (g_ictx.seg_num)
@@ -1471,6 +1467,11 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 #endif
 		ictx = &g_ictx;
 		ictx->fd = fd;
+	} else {
+		ictx = malloc(sizeof(*ictx));
+		if (!ictx)
+			return ERR_PTR(-ENOMEM);
+		ictx->fd = dup(fd);
 	}
 
 	ictx->ccfg = &erofs_ccfg[inode->z_algorithmtype[0]];
