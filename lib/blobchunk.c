@@ -480,9 +480,8 @@ int tarerofs_write_chunkes(struct erofs_inode *inode, erofs_off_t data_offset)
 int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 {
 	struct erofs_buffer_head *bh;
-	ssize_t length;
+	ssize_t length, ret;
 	u64 pos_in, pos_out;
-	ssize_t ret;
 
 	if (blobfile) {
 		fflush(blobfile);
@@ -532,9 +531,21 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 	pos_out += sbi->bdev.offset;
 	if (blobfile) {
 		pos_in = 0;
-		ret = erofs_copy_file_range(fileno(blobfile), &pos_in,
-				sbi->bdev.fd, &pos_out, datablob_size);
-		ret = ret < datablob_size ? -EIO : 0;
+		do {
+			length = min_t(erofs_off_t, datablob_size,  SSIZE_MAX);
+			ret = erofs_copy_file_range(fileno(blobfile), &pos_in,
+					sbi->bdev.fd, &pos_out, length);
+		} while (ret > 0 && (datablob_size -= ret));
+
+		if (ret >= 0) {
+			if (datablob_size) {
+				erofs_err("failed to append the remaining %llu-byte chunk data",
+					  datablob_size);
+				ret = -EIO;
+			} else {
+				ret = 0;
+			}
+		}
 	} else {
 		ret = erofs_io_ftruncate(&sbi->bdev, pos_out + datablob_size);
 	}
