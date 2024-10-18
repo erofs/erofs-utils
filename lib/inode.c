@@ -1198,7 +1198,8 @@ static int erofs_inode_reserve_data_blocks(struct erofs_inode *inode)
 	erofs_bdrop(bh, false);
 
 	inode->datalayout = EROFS_INODE_FLAT_PLAIN;
-	tarerofs_blocklist_write(inode->u.i_blkaddr, nblocks, inode->i_ino[1]);
+	tarerofs_blocklist_write(inode->u.i_blkaddr, nblocks, inode->i_ino[1],
+				 alignedsz - inode->i_size);
 	return 0;
 }
 

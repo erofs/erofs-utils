@@ -32,13 +32,17 @@ FILE *erofs_blocklist_close(void)
 
 /* XXX: really need to be cleaned up */
 void tarerofs_blocklist_write(erofs_blk_t blkaddr, erofs_blk_t nblocks,
-			      erofs_off_t srcoff)
+			      erofs_off_t srcoff, unsigned int zeroedlen)
 {
 	if (!block_list_fp || !nblocks || !srcmap_enabled)
 		return;
 
-	fprintf(block_list_fp, "%08x %8x %08" PRIx64 "\n",
-		blkaddr, nblocks, srcoff);
+	if (zeroedlen)
+		fprintf(block_list_fp, "%08x %8x %08" PRIx64 " %08u\n",
+			blkaddr, nblocks, srcoff, zeroedlen);
+	else
+		fprintf(block_list_fp, "%08x %8x %08" PRIx64 "\n",
+			blkaddr, nblocks, srcoff);
 }
 
 #ifdef WITH_ANDROID

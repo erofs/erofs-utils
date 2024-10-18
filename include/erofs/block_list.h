@@ -17,7 +17,7 @@ int erofs_blocklist_open(FILE *fp, bool srcmap);
 FILE *erofs_blocklist_close(void);
 
 void tarerofs_blocklist_write(erofs_blk_t blkaddr, erofs_blk_t nblocks,
-			      erofs_off_t srcoff);
+			      erofs_off_t srcoff, unsigned int zeroedlen);
 #ifdef WITH_ANDROID
 void erofs_droid_blocklist_write(struct erofs_inode *inode,
 				 erofs_blk_t blk_start, erofs_blk_t nblocks);
