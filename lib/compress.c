@@ -451,31 +451,39 @@ static int z_erofs_fill_inline_data(struct erofs_inode *inode, void *data,
 	return len;
 }
 
-static void tryrecompress_trailing(struct z_erofs_compress_sctx *ctx,
-				   struct erofs_compress *ec,
-				   void *in, unsigned int *insize,
-				   void *out, unsigned int *compressedsize)
+static int tryrecompress_trailing(struct z_erofs_compress_sctx *ctx,
+				  struct erofs_compress *ec,
+				  void *in, unsigned int *insize,
+				  void *out, unsigned int *compressedsize)
 {
 	struct erofs_sb_info *sbi = ctx->ictx->inode->sbi;
-	char tmp[Z_EROFS_PCLUSTER_MAX_SIZE];
+	char *tmp;
 	unsigned int count;
 	int ret = *compressedsize;
 
 	/* no need to recompress */
 	if (!(ret & (erofs_blksiz(sbi) - 1)))
-		return;
+		return 0;
+
+	tmp = malloc(Z_EROFS_PCLUSTER_MAX_SIZE);
+	if (!tmp)
+		return -ENOMEM;
 
 	count = *insize;
 	ret = erofs_compress_destsize(ec, in, &count, (void *)tmp,
 				      rounddown(ret, erofs_blksiz(sbi)));
 	if (ret <= 0 || ret + (*insize - count) >=
 			roundup(*compressedsize, erofs_blksiz(sbi)))
-		return;
+		goto out;
 
 	/* replace the original compressed data if any gain */
 	memcpy(out, tmp, ret);
 	*insize = count;
 	*compressedsize = ret;
+
+out:
+	free(tmp);
+	return 0;
 }
 
 static bool z_erofs_fixup_deduped_fragment(struct z_erofs_compress_sctx *ctx,
@@ -631,9 +639,14 @@ frag_packing:
 			goto fix_dedupedfrag;
 		}
 
-		if (may_inline && len == e->length)
-			tryrecompress_trailing(ctx, h, ctx->queue + ctx->head,
-					&e->length, dst, &compressedsize);
+		if (may_inline && len == e->length) {
+			ret = tryrecompress_trailing(ctx, h,
+						     ctx->queue + ctx->head,
+						     &e->length, dst,
+						     &compressedsize);
+			if (ret)
+				return ret;
+		}
 
 		e->compressedblks = BLK_ROUND_UP(sbi, compressedsize);
 		DBG_BUGON(e->compressedblks * blksz >= e->length);
