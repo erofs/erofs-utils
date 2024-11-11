@@ -46,10 +46,6 @@ struct erofs_configure {
 	int c_dbg_lvl;
 	bool c_dry_run;
 	bool c_legacy_compress;
-#ifndef NDEBUG
-	bool c_random_pclusterblks;
-	bool c_random_algorithms;
-#endif
 	char c_timeinherit;
 	char c_chunkbits;
 	bool c_inline_data;
@@ -93,6 +89,10 @@ struct erofs_configure {
 	char *target_out_path;
 	char *fs_config_file;
 	char *block_list_file;
+#endif
+#ifndef NDEBUG
+	bool c_random_pclusterblks;
+	bool c_random_algorithms;
 #endif
 };
 
