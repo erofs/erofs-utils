@@ -129,7 +129,7 @@ static void z_erofs_write_indexes_final(struct z_erofs_compress_ictx *ctx)
 
 	di.di_clusterofs = cpu_to_le16(ctx->clusterofs);
 	di.di_u.blkaddr = 0;
-	di.di_advise = cpu_to_le16(type << Z_EROFS_LI_LCLUSTER_TYPE_BIT);
+	di.di_advise = cpu_to_le16(type);
 
 	memcpy(ctx->metacur, &di, sizeof(di));
 	ctx->metacur += sizeof(di);
@@ -159,8 +159,7 @@ static void z_erofs_write_extent(struct z_erofs_compress_ictx *ctx,
 		DBG_BUGON(e->partial);
 		type = e->raw ? Z_EROFS_LCLUSTER_TYPE_PLAIN :
 			Z_EROFS_LCLUSTER_TYPE_HEAD1;
-		advise = type << Z_EROFS_LI_LCLUSTER_TYPE_BIT;
-		di.di_advise = cpu_to_le16(advise);
+		di.di_advise = cpu_to_le16(type);
 
 		if (inode->datalayout == EROFS_INODE_COMPRESSED_FULL &&
 		    !e->compressedblks)
@@ -218,8 +217,7 @@ static void z_erofs_write_extent(struct z_erofs_compress_ictx *ctx,
 				advise |= Z_EROFS_LI_PARTIAL_REF;
 			}
 		}
-		advise |= type << Z_EROFS_LI_LCLUSTER_TYPE_BIT;
-		di.di_advise = cpu_to_le16(advise);
+		di.di_advise = cpu_to_le16(advise | type);
 
 		memcpy(ctx->metacur, &di, sizeof(di));
 		ctx->metacur += sizeof(di);
@@ -758,8 +756,7 @@ static void *parse_legacy_indexes(struct z_erofs_compressindex_vec *cv,
 		struct z_erofs_lcluster_index *const di = db + i;
 		const unsigned int advise = le16_to_cpu(di->di_advise);
 
-		cv->clustertype = (advise >> Z_EROFS_LI_LCLUSTER_TYPE_BIT) &
-			((1 << Z_EROFS_LI_LCLUSTER_TYPE_BITS) - 1);
+		cv->clustertype = advise & Z_EROFS_LI_LCLUSTER_TYPE_MASK;
 		cv->clusterofs = le16_to_cpu(di->di_clusterofs);
 
 		if (cv->clustertype == Z_EROFS_LCLUSTER_TYPE_NONHEAD) {
@@ -987,10 +984,8 @@ void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 		struct z_erofs_lcluster_index *di =
 			(inode->compressmeta + inode->extent_isize) -
 			sizeof(struct z_erofs_lcluster_index);
-		__le16 advise =
-			cpu_to_le16(type << Z_EROFS_LI_LCLUSTER_TYPE_BIT);
 
-		di->di_advise = advise;
+		di->di_advise = cpu_to_le16(type);
 	} else if (inode->datalayout == EROFS_INODE_COMPRESSED_COMPACT) {
 		/* handle the last compacted 4B pack */
 		unsigned int eofs, base, pos, v, lo;
