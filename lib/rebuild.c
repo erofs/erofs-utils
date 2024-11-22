@@ -465,7 +465,9 @@ static int erofs_rebuild_basedir_dirent_iter(struct erofs_dir_context *ctx)
 		struct erofs_inode *inode = d->inode;
 
 		/* update sub-directories only for recursively loading */
-		if (S_ISDIR(inode->i_mode)) {
+		if (S_ISDIR(inode->i_mode) &&
+		    (ctx->de_ftype == EROFS_FT_DIR ||
+		     ctx->de_ftype == EROFS_FT_UNKNOWN)) {
 			list_del(&inode->i_hash);
 			inode->dev = dir->sbi->dev;
 			inode->i_ino[1] = ctx->de_nid;
@@ -496,6 +498,15 @@ int erofs_rebuild_load_basedir(struct erofs_inode *dir)
 	/* Inherit the maximum xattr size for the root directory */
 	if (__erofs_unlikely(IS_ROOT(dir)))
 		dir->xattr_isize = fakeinode.xattr_isize;
+
+	/*
+	 * May be triggered if ftype == EROFS_FT_UNKNOWN, which is impossible
+	 * with the current mkfs.
+	 */
+	if (__erofs_unlikely(!S_ISDIR(fakeinode.i_mode))) {
+		DBG_BUGON(1);
+		return 0;
+	}
 
 	ctx = (struct erofs_rebuild_dir_context) {
 		.ctx.dir = &fakeinode,
