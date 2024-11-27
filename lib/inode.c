@@ -1717,6 +1717,12 @@ static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild,
 		list_del(&root->i_hash);
 		erofs_insert_ihash(root);
 	} else if (cfg.c_root_xattr_isize) {
+		if (cfg.c_root_xattr_isize > EROFS_XATTR_ALIGN(
+				UINT16_MAX - sizeof(struct erofs_xattr_entry))) {
+			erofs_err("Invalid configuration for c_root_xattr_isize: %u (too large)",
+				  cfg.c_root_xattr_isize);
+			return -EINVAL;
+		}
 		root->xattr_isize = cfg.c_root_xattr_isize;
 	}
 
