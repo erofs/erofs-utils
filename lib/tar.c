@@ -667,6 +667,7 @@ int tarerofs_parse_tar(struct erofs_inode *root, struct erofs_tarfile *tar)
 	unsigned int j, csum, cksum;
 	int ckksum, ret, rem;
 
+	root->dev = tar->dev;
 	if (eh.path)
 		eh.path = strdup(eh.path);
 	if (eh.link)

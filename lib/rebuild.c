@@ -46,6 +46,7 @@ static struct erofs_dentry *erofs_rebuild_mkdir(struct erofs_inode *dir,
 	inode->i_gid = getgid();
 	inode->i_mtime = inode->sbi->build_time;
 	inode->i_mtime_nsec = inode->sbi->build_time_nsec;
+	inode->dev = dir->dev;
 	erofs_init_empty_dir(inode);
 
 	d = erofs_d_alloc(dir, s);
