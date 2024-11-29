@@ -34,6 +34,9 @@ if ENABLE_LIBLZMA
 TESTS_ENVIRONMENT += export lzma_on=1;
 endif
 TESTS_ENVIRONMENT += export deflate_on=1;
+if ENABLE_LIBZSTD
+TESTS_ENVIRONMENT += export zstd_on=1;
+endif
 
 # 001 - test if unknown algorithm is specificed
 TESTS += erofs/001
@@ -109,6 +112,9 @@ TESTS += erofs/024
 
 # 025 - regression test for corrupted directories with hardlinks
 TESTS += erofs/025
+
+# 026 - verify Zstandard compressed image
+TESTS += erofs/026
 
 EXTRA_DIST = common/rc erofs
 
