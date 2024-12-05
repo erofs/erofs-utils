@@ -38,7 +38,7 @@ liberofs_la_SOURCES = config.c io.c cache.c super.c inode.c xattr.c exclude.c \
 
 liberofs_la_CFLAGS = -Wall ${libuuid_CFLAGS} -I$(top_srcdir)/include
 if ENABLE_LZ4
-liberofs_la_CFLAGS += ${LZ4_CFLAGS}
+liberofs_la_CFLAGS += ${liblz4_CFLAGS}
 liberofs_la_SOURCES += compressor_lz4.c
 if ENABLE_LZ4HC
 liberofs_la_SOURCES += compressor_lz4hc.c

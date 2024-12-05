@@ -123,8 +123,8 @@ AC_ARG_ENABLE([fuzzing],
     [enable_fuzzing="no"])
 
 AC_ARG_ENABLE(lz4,
-   [AS_HELP_STRING([--disable-lz4], [disable LZ4 compression support @<:@default=enabled@:>@])],
-   [enable_lz4="$enableval"], [enable_lz4="yes"])
+   [AS_HELP_STRING([--disable-lz4], [disable LZ4 compression support @<:@default=auto@:>@])],
+   [enable_lz4="$enableval"])
 
 AC_ARG_ENABLE(lzma,
    [AS_HELP_STRING([--disable-lzma], [disable LZMA compression support @<:@default=auto@:>@])],
@@ -172,17 +172,6 @@ AC_ARG_WITH(selinux,
     esac], [with_selinux=no])
 
 # Checks for libraries.
-# Use customized LZ4 library path when specified.
-AC_ARG_WITH(lz4-incdir,
-   [AS_HELP_STRING([--with-lz4-incdir=DIR], [LZ4 include directory])], [
-   EROFS_UTILS_PARSE_DIRECTORY(["$withval"],[withval])])
-
-AC_ARG_WITH(lz4-libdir,
-   [AS_HELP_STRING([--with-lz4-libdir=DIR], [LZ4 lib directory])], [
-   EROFS_UTILS_PARSE_DIRECTORY(["$withval"],[withval])])
-
-AC_ARG_VAR([LZ4_CFLAGS], [C compiler flags for lz4])
-AC_ARG_VAR([LZ4_LIBS], [linker flags for lz4])
 
 # Checks for header files.
 AC_CHECK_HEADERS(m4_flatten([
@@ -396,36 +385,35 @@ AS_IF([test "x$enable_fuse" != "xno"], [
   CPPFLAGS="${saved_CPPFLAGS}"], [have_fuse="no"])
 
 # Configure lz4
-test -z $LZ4_LIBS && LZ4_LIBS='-llz4'
-
-if test "x$enable_lz4" = "xyes"; then
-  test -z "${with_lz4_incdir}" || LZ4_CFLAGS="-I$with_lz4_incdir $LZ4_CFLAGS"
-
+AS_IF([test "x$enable_lz4" != "xno"], [
   saved_CPPFLAGS=${CPPFLAGS}
-  CPPFLAGS="${LZ4_CFLAGS} ${CPPFLAGS}"
-
-  AC_CHECK_HEADERS([lz4.h],[have_lz4h="yes"], [])
-
-  if test "x${have_lz4h}" = "xyes" ; then
+  PKG_CHECK_MODULES([liblz4], [liblz4], [
+    # Paranoia: don't trust the result reported by pkgconfig before trying out
     saved_LIBS="$LIBS"
-    saved_LDFLAGS=${LDFLAGS}
-    test -z "${with_lz4_libdir}" || LDFLAGS="-L$with_lz4_libdir ${LDFLAGS}"
-    AC_CHECK_LIB(lz4, LZ4_compress_destSize, [
-      have_lz4="yes"
-      have_lz4hc="yes"
-      AC_CHECK_LIB(lz4, LZ4_compress_HC_destSize, [], [
-        AC_CHECK_DECL(LZ4_compress_HC_destSize, [lz4_force_static="yes"],
-          [have_lz4hc="no"], [[
-#define LZ4_HC_STATIC_LINKING_ONLY (1)
+    saved_CPPFLAGS=${CPPFLAGS}
+    CPPFLAGS="${liblz4_CFLAGS} ${CPPFLAGS}"
+    LIBS="${liblz4_LIBS} $LIBS"
+    AC_CHECK_HEADERS([lz4.h],[
+      AC_CHECK_LIB(lz4, LZ4_compress_destSize, [
+        AC_CHECK_DECL(LZ4_compress_destSize, [have_lz4="yes"],
+          [], [[
+#include <lz4.h>
+        ]])
+      ])
+      AC_CHECK_LIB(lz4, LZ4_compress_HC_destSize, [
+        AC_CHECK_DECL(LZ4_compress_HC_destSize, [have_lz4hc="yes"],
+          [], [[
 #include <lz4hc.h>
         ]])
       ])
-    ], [AC_MSG_ERROR([Cannot find proper lz4 version (>= 1.8.0)])])
-    LDFLAGS=${saved_LDFLAGS}
+    ])
     LIBS="${saved_LIBS}"
-  fi
-  CPPFLAGS=${saved_CPPFLAGS}
-fi
+    CPPFLAGS="${saved_CPPFLAGS}"
+  ], [[]])
+  AS_IF([test "x$enable_lz4" = "xyes" -a "x$have_lz4" != "xyes"], [
+    AC_MSG_ERROR([Cannot find a proper liblz4 version])
+  ])
+])
 
 # Configure liblzma
 have_liblzma="no"
@@ -581,16 +569,7 @@ if test "x${have_lz4}" = "xyes"; then
   if test "x${have_lz4hc}" = "xyes"; then
     AC_DEFINE([LZ4HC_ENABLED], [1], [Define to 1 if lz4hc is enabled.])
   fi
-
-  if test "x${lz4_force_static}" = "xyes"; then
-    LZ4_LIBS="-Wl,-Bstatic -Wl,-whole-archive -Xlinker ${LZ4_LIBS} -Wl,-no-whole-archive -Wl,-Bdynamic"
-    test -z "${with_lz4_libdir}" || LZ4_LIBS="-L${with_lz4_libdir} $LZ4_LIBS"
-  else
-    test -z "${with_lz4_libdir}" || LZ4_LIBS="-L${with_lz4_libdir} -R${with_lz4_libdir} $LZ4_LIBS"
-  fi
-  liblz4_LIBS="${LZ4_LIBS}"
 fi
-AC_SUBST([liblz4_LIBS])
 
 if test "x${have_liblzma}" = "xyes"; then
   AC_DEFINE([HAVE_LIBLZMA], [1], [Define to 1 if liblzma is enabled.])

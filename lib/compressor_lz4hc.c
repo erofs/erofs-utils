@@ -4,7 +4,6 @@
  *             http://www.huawei.com/
  * Created by Gao Xiang <xiang@kernel.org>
  */
-#define LZ4_HC_STATIC_LINKING_ONLY (1)
 #include <lz4hc.h>
 #include "erofs/internal.h"
 #include "erofs/print.h"
