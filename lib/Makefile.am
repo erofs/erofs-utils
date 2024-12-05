@@ -51,9 +51,11 @@ endif
 
 liberofs_la_SOURCES += kite_deflate.c compressor_deflate.c
 if ENABLE_LIBDEFLATE
+liberofs_la_CFLAGS += ${libdeflate_CFLAGS}
 liberofs_la_SOURCES += compressor_libdeflate.c
 endif
 if ENABLE_LIBZSTD
+liberofs_la_CFLAGS += ${libzstd_CFLAGS}
 liberofs_la_SOURCES += compressor_libzstd.c
 endif
 if ENABLE_EROFS_MT
