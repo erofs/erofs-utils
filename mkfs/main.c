@@ -617,7 +617,12 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			has_timestamp = true;
 			break;
 		case 'U':
-			if (erofs_uuid_parse(optarg, fixeduuid)) {
+			if (!strcmp(optarg, "clear")) {
+				memset(fixeduuid, 0, 16);
+			} else if (!strcmp(optarg, "random")) {
+				valid_fixeduuid = false;
+				break;
+			} else if (erofs_uuid_parse(optarg, fixeduuid)) {
 				erofs_err("invalid UUID %s", optarg);
 				return -EINVAL;
 			}
