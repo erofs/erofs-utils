@@ -1790,7 +1790,9 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 					    cfg.c_mt_workers << 2,
 					    z_erofs_mt_wq_tls_alloc,
 					    z_erofs_mt_wq_tls_free);
-		z_erofs_mt_enabled = !ret;
+		if (ret)
+			return ret;
+		z_erofs_mt_enabled = true;
 	}
 	pthread_mutex_init(&g_ictx.mutex, NULL);
 	pthread_cond_init(&g_ictx.cond, NULL);

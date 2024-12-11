@@ -15,9 +15,9 @@ static void *worker_thread(void *arg)
 	while (true) {
 		pthread_mutex_lock(&wq->lock);
 
-		while (wq->job_count == 0 && !wq->shutdown)
+		while (!wq->job_count && !wq->shutdown)
 			pthread_cond_wait(&wq->cond_empty, &wq->lock);
-		if (wq->job_count == 0 && wq->shutdown) {
+		if (!wq->job_count && wq->shutdown) {
 			pthread_mutex_unlock(&wq->lock);
 			break;
 		}
@@ -40,6 +40,30 @@ static void *worker_thread(void *arg)
 	return NULL;
 }
 
+int erofs_destroy_workqueue(struct erofs_workqueue *wq)
+{
+	if (!wq)
+		return -EINVAL;
+
+	pthread_mutex_lock(&wq->lock);
+	wq->shutdown = true;
+	pthread_cond_broadcast(&wq->cond_empty);
+	pthread_mutex_unlock(&wq->lock);
+
+	while (wq->nworker) {
+		int ret = -pthread_join(wq->workers[wq->nworker - 1], NULL);
+
+		if (ret)
+			return ret;
+		--wq->nworker;
+	}
+	free(wq->workers);
+	pthread_mutex_destroy(&wq->lock);
+	pthread_cond_destroy(&wq->cond_empty);
+	pthread_cond_destroy(&wq->cond_full);
+	return 0;
+}
+
 int erofs_alloc_workqueue(struct erofs_workqueue *wq, unsigned int nworker,
 			  unsigned int max_jobs, erofs_wq_func_t on_start,
 			  erofs_wq_func_t on_exit)
@@ -51,7 +75,6 @@ int erofs_alloc_workqueue(struct erofs_workqueue *wq, unsigned int nworker,
 		return -EINVAL;
 
 	wq->head = wq->tail = NULL;
-	wq->nworker = nworker;
 	wq->max_jobs = max_jobs;
 	wq->job_count = 0;
 	wq->shutdown = false;
@@ -66,15 +89,14 @@ int erofs_alloc_workqueue(struct erofs_workqueue *wq, unsigned int nworker,
 		return -ENOMEM;
 
 	for (i = 0; i < nworker; i++) {
-		ret = pthread_create(&wq->workers[i], NULL, worker_thread, wq);
-		if (ret) {
-			while (i)
-				pthread_cancel(wq->workers[--i]);
-			free(wq->workers);
-			return ret;
-		}
+		ret = -pthread_create(&wq->workers[i], NULL, worker_thread, wq);
+		if (ret)
+			break;
 	}
-	return 0;
+	wq->nworker = i;
+	if (ret)
+		erofs_destroy_workqueue(wq);
+	return ret;
 }
 
 int erofs_queue_work(struct erofs_workqueue *wq, struct erofs_work *work)
@@ -97,27 +119,5 @@ int erofs_queue_work(struct erofs_workqueue *wq, struct erofs_work *work)
 
 	pthread_cond_signal(&wq->cond_empty);
 	pthread_mutex_unlock(&wq->lock);
-	return 0;
-}
-
-int erofs_destroy_workqueue(struct erofs_workqueue *wq)
-{
-	unsigned int i;
-
-	if (!wq)
-		return -EINVAL;
-
-	pthread_mutex_lock(&wq->lock);
-	wq->shutdown = true;
-	pthread_cond_broadcast(&wq->cond_empty);
-	pthread_mutex_unlock(&wq->lock);
-
-	for (i = 0; i < wq->nworker; i++)
-		pthread_join(wq->workers[i], NULL);
-
-	free(wq->workers);
-	pthread_mutex_destroy(&wq->lock);
-	pthread_cond_destroy(&wq->cond_empty);
-	pthread_cond_destroy(&wq->cond_full);
 	return 0;
 }
