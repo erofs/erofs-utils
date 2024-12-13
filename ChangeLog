@@ -1,3 +1,20 @@
+erofs-utils 1.8.3
+
+ * Another maintenance release includes the following fixes:
+   - (mkfs.erofs) Fix multi-threaded compression with `-Eall-fragments`;
+   - (mkfs.erofs) Fix large chunk-based image generation;
+   - (mkfs.erofs) Avoid large arrays on the stack (Jianan Huang);
+   - (mkfs.erofs) Fix PAX format parsing in headerball mode (Mike Baynton);
+   - (mkfs.erofs) Several fixes for incremental builds (Hongzhen Luo);
+   - (mkfs.erofs) Fix reproducible builds due to `i_ino` (Jooyung Han);
+   - Use pkg-config for liblz4 configuration;
+   - Get rid of pthread_cancel() dependencies;
+   - (mkfs.erofs) Add `-U <clear|random>` support;
+   - (mkfs.erofs) Add `--hard-dereference` for NixOS reproducibility (Paul Meyer);
+   - Several minor random fixes.
+
+ -- Gao Xiang <xiang@kernel.org>  Sat, 14 Dec 2024 00:00:00 +0800
+
 erofs-utils 1.8.2
 
  * Another maintenance release includes the following fixes:
