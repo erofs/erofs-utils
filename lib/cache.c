@@ -69,7 +69,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 			   struct erofs_buffer_head *bh,
 			   erofs_off_t incr,
 			   unsigned int alignsize,
-			   unsigned int extrasize,
+			   unsigned int inline_ext,
 			   bool dryrun)
 {
 	struct erofs_bufmgr *bmgr = bb->buffers.fsprivate;
@@ -78,11 +78,16 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 	const unsigned int blkmask = blksiz - 1;
 	erofs_off_t boff = bb->buffers.off;
 	const erofs_off_t alignedoffset = roundup(boff, alignsize);
-	const int oob = cmpsgn(roundup(((boff - 1) & blkmask) + 1, alignsize) +
-					incr + extrasize, blksiz);
 	bool tailupdate = false;
 	erofs_blk_t blkaddr;
+	int oob;
 
+	/* inline data must never span block boundaries */
+	if (erofs_blkoff(sbi, alignedoffset + incr + blkmask)
+			+ inline_ext > blkmask)
+		return -ENOSPC;
+
+	oob = cmpsgn((alignedoffset & blkmask) + incr + inline_ext, blksiz);
 	if (oob >= 0) {
 		/* the next buffer block should be NULL_ADDR all the time */
 		if (oob && list_next_entry(bb, list)->blkaddr != NULL_ADDR)
@@ -111,7 +116,7 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 						BLK_ROUND_UP(sbi, boff);
 		erofs_bupdate_mapped(bb);
 	}
-	return ((alignedoffset + incr - 1) & blkmask) + 1;
+	return ((alignedoffset + incr + blkmask) & blkmask) + 1;
 }
 
 int erofs_bh_balloon(struct erofs_buffer_head *bh, erofs_off_t incr)
@@ -179,12 +184,10 @@ static int erofs_bfind_for_attach(struct erofs_bufmgr *bmgr,
 			continue;
 		}
 
+		usedmax = ret + inline_ext;
 		/* should contain all data in the current block */
-		used = ret + inline_ext;
-		DBG_BUGON(used > blksiz);
-
+		DBG_BUGON(usedmax > blksiz);
 		bb = cur;
-		usedmax = used;
 		break;
 	}
 
@@ -209,11 +212,8 @@ skip_mapped:
 		if (ret < 0)
 			continue;
 
-		used = (ret & (blksiz - 1)) + inline_ext;
-
-		/* should contain inline data in current block */
-		if (used > blksiz)
-			continue;
+		used = ret + inline_ext;
+		DBG_BUGON(used > blksiz);
 
 		/*
 		 * remaining should be smaller than before or
