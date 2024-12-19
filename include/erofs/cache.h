@@ -35,11 +35,14 @@ struct erofs_bhops {
 
 struct erofs_buffer_head {
 	struct list_head list;
-	struct erofs_buffer_block *block;
-
+	union {
+		struct {
+			struct erofs_buffer_block *block;
+			const struct erofs_bhops *op;
+		};
+		erofs_blk_t nblocks;
+	};
 	erofs_off_t off;
-	const struct erofs_bhops *op;
-
 	void *fsprivate;
 };
 
