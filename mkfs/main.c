@@ -86,6 +86,7 @@ static struct option long_options[] = {
 	{"all-time", no_argument, NULL, 526},
 	{"sort", required_argument, NULL, 527},
 	{"hard-dereference", no_argument, NULL, 528},
+	{"dsunit", required_argument, NULL, 529},
 	{0, 0, 0, 0},
 };
 
@@ -166,6 +167,7 @@ static void usage(int argc, char **argv)
 		"                       (X = data|rvsp; data=full data, rvsp=space is allocated\n"
 		"                                       and filled with zeroes)\n"
 		" --compress-hints=X    specify a file to configure per-file compression strategy\n"
+		" --dsunit=#            align all data block addresses to multiples of #\n"
 		" --exclude-path=X      avoid including file X (X = exact literal path)\n"
 		" --exclude-regex=X     avoid including files that match X (X = regular expression)\n"
 #ifdef HAVE_LIBSELINUX
@@ -243,6 +245,7 @@ static unsigned int rebuild_src_count;
 static LIST_HEAD(rebuild_src_list);
 static u8 fixeduuid[16];
 static bool valid_fixeduuid;
+static unsigned int dsunit;
 
 static int erofs_mkfs_feat_set_legacy_compress(bool en, const char *val,
 					       unsigned int vallen)
@@ -876,6 +879,13 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		case 528:
 			cfg.c_hard_dereference = true;
 			break;
+		case 529:
+			dsunit = strtoul(optarg, &endptr, 0);
+			if (*endptr != '\0') {
+				erofs_err("invalid dsunit %s", optarg);
+				return -EINVAL;
+			}
+			break;
 		case 'V':
 			version();
 			exit(0);
@@ -1330,6 +1340,7 @@ int main(int argc, char **argv)
 		}
 		sb_bh = NULL;
 	}
+	g_sbi.bmgr->dsunit = dsunit;
 
 	/* Use the user-defined UUID or generate one for clean builds */
 	if (valid_fixeduuid)
