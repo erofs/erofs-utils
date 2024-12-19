@@ -211,7 +211,7 @@ struct erofs_buffer_head *erofs_reserve_sb(struct erofs_bufmgr *bmgr)
 	struct erofs_buffer_head *bh;
 	int err;
 
-	bh = erofs_balloc(bmgr, META, 0, 0, 0);
+	bh = erofs_balloc(bmgr, META, 0, 0);
 	if (IS_ERR(bh)) {
 		erofs_err("failed to allocate super: %s",
 			  erofs_strerror(PTR_ERR(bh)));

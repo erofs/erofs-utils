@@ -195,7 +195,7 @@ int erofs_allocate_inode_bh_data(struct erofs_inode *inode, erofs_blk_t nblocks)
 
 	/* allocate main data buffer */
 	type = S_ISDIR(inode->i_mode) ? DIRA : DATA;
-	bh = erofs_balloc(bmgr, type, erofs_pos(inode->sbi, nblocks), 0, 0);
+	bh = erofs_balloc(bmgr, type, erofs_pos(inode->sbi, nblocks), 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 
@@ -757,7 +757,7 @@ static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 			inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 	}
 
-	bh = erofs_balloc(bmgr, INODE, inodesize, 0, inode->idata_size);
+	bh = erofs_balloc(bmgr, INODE, inodesize, inode->idata_size);
 	if (bh == ERR_PTR(-ENOSPC)) {
 		int ret;
 
@@ -770,7 +770,7 @@ noinline:
 		ret = erofs_prepare_tail_block(inode);
 		if (ret)
 			return ret;
-		bh = erofs_balloc(bmgr, INODE, inodesize, 0, 0);
+		bh = erofs_balloc(bmgr, INODE, inodesize, 0);
 		if (IS_ERR(bh))
 			return PTR_ERR(bh);
 		DBG_BUGON(inode->bh_inline);
@@ -852,7 +852,7 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		if (!bh) {
 			bh = erofs_balloc(sbi->bmgr,
 					  S_ISDIR(inode->i_mode) ? DIRA: DATA,
-					  erofs_blksiz(sbi), 0, 0);
+					  erofs_blksiz(sbi), 0);
 			if (IS_ERR(bh))
 				return PTR_ERR(bh);
 			bh->op = &erofs_skip_write_bhops;
@@ -1167,7 +1167,7 @@ static int erofs_inode_reserve_data_blocks(struct erofs_inode *inode)
 	struct erofs_buffer_head *bh;
 
 	/* allocate data blocks */
-	bh = erofs_balloc(sbi->bmgr, DATA, alignedsz, 0, 0);
+	bh = erofs_balloc(sbi->bmgr, DATA, alignedsz, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 
