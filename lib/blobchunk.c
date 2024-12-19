@@ -529,7 +529,7 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 		return 0;
 	}
 
-	bh = erofs_balloc(sbi->bmgr, DATA, datablob_size, 0, 0);
+	bh = erofs_balloc(sbi->bmgr, DATA, datablob_size, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 
@@ -647,7 +647,7 @@ int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices)
 		return -ENOMEM;
 
 	bh_devt = erofs_balloc(sbi->bmgr, DEVT,
-		sizeof(struct erofs_deviceslot) * devices, 0, 0);
+		sizeof(struct erofs_deviceslot) * devices, 0);
 	if (IS_ERR(bh_devt)) {
 		free(sbi->devs);
 		return PTR_ERR(bh_devt);
