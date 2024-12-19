@@ -127,7 +127,6 @@ int erofs_bh_balloon(struct erofs_buffer_head *bh, erofs_off_t incr)
 
 static int erofs_bfind_for_attach(struct erofs_bufmgr *bmgr,
 				  int type, erofs_off_t size,
-				  unsigned int required_ext,
 				  unsigned int inline_ext,
 				  unsigned int alignsize,
 				  struct erofs_buffer_block **bbp)
@@ -137,7 +136,7 @@ static int erofs_bfind_for_attach(struct erofs_bufmgr *bmgr,
 	unsigned int used0, used_before, usedmax, used;
 	int ret;
 
-	used0 = ((size + required_ext) & (blksiz - 1)) + inline_ext;
+	used0 = (size & (blksiz - 1)) + inline_ext;
 	/* inline data should be in the same fs block */
 	if (used0 > blksiz)
 		return -ENOSPC;
@@ -151,11 +150,10 @@ static int erofs_bfind_for_attach(struct erofs_bufmgr *bmgr,
 	bb = NULL;
 
 	/* try to find a most-fit mapped buffer block first */
-	if (size + required_ext + inline_ext >= blksiz)
+	if (size + inline_ext >= blksiz)
 		goto skip_mapped;
 
-	used_before = rounddown(blksiz -
-				(size + required_ext + inline_ext), alignsize);
+	used_before = rounddown(blksiz - (size + inline_ext), alignsize);
 	for (; used_before; --used_before) {
 		struct list_head *bt = bmgr->mapped_buckets[type] + used_before;
 
@@ -175,14 +173,14 @@ static int erofs_bfind_for_attach(struct erofs_bufmgr *bmgr,
 		DBG_BUGON(used_before != (cur->buffers.off & (blksiz - 1)));
 
 		ret = __erofs_battach(cur, NULL, size, alignsize,
-				      required_ext + inline_ext, true);
+				      inline_ext, true);
 		if (ret < 0) {
 			DBG_BUGON(1);
 			continue;
 		}
 
 		/* should contain all data in the current block */
-		used = ret + required_ext + inline_ext;
+		used = ret + inline_ext;
 		DBG_BUGON(used > blksiz);
 
 		bb = cur;
@@ -207,11 +205,11 @@ skip_mapped:
 			continue;
 
 		ret = __erofs_battach(cur, NULL, size, alignsize,
-				      required_ext + inline_ext, true);
+				      inline_ext, true);
 		if (ret < 0)
 			continue;
 
-		used = ((ret + required_ext) & (blksiz - 1)) + inline_ext;
+		used = (ret & (blksiz - 1)) + inline_ext;
 
 		/* should contain inline data in current block */
 		if (used > blksiz)
@@ -235,7 +233,6 @@ skip_mapped:
 
 struct erofs_buffer_head *erofs_balloc(struct erofs_bufmgr *bmgr,
 				       int type, erofs_off_t size,
-				       unsigned int required_ext,
 				       unsigned int inline_ext)
 {
 	struct erofs_buffer_block *bb;
@@ -251,7 +248,7 @@ struct erofs_buffer_head *erofs_balloc(struct erofs_bufmgr *bmgr,
 	alignsize = ret;
 
 	/* try to find if we could reuse an allocated buffer block */
-	ret = erofs_bfind_for_attach(bmgr, type, size, required_ext, inline_ext,
+	ret = erofs_bfind_for_attach(bmgr, type, size, inline_ext,
 				     alignsize, &bb);
 	if (ret)
 		return ERR_PTR(ret);
@@ -285,8 +282,7 @@ struct erofs_buffer_head *erofs_balloc(struct erofs_bufmgr *bmgr,
 		}
 	}
 
-	ret = __erofs_battach(bb, bh, size, alignsize,
-			      required_ext + inline_ext, false);
+	ret = __erofs_battach(bb, bh, size, alignsize, inline_ext, false);
 	if (ret < 0) {
 		free(bh);
 		return ERR_PTR(ret);
