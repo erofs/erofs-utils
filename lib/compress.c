@@ -376,8 +376,8 @@ out:
 	return 0;
 }
 
-static int write_uncompressed_extent(struct z_erofs_compress_sctx *ctx,
-				     unsigned int len, char *dst)
+static int write_uncompressed_block(struct z_erofs_compress_sctx *ctx,
+				    unsigned int len, char *dst)
 {
 	struct erofs_inode *inode = ctx->ictx->inode;
 	struct erofs_sb_info *sbi = inode->sbi;
@@ -408,6 +408,44 @@ static int write_uncompressed_extent(struct z_erofs_compress_sctx *ctx,
 		ret = erofs_blk_write(sbi, dst, ctx->blkaddr, 1);
 		if (ret)
 			return ret;
+	}
+	return count;
+}
+
+static int write_uncompressed_extents(struct z_erofs_compress_sctx *ctx,
+				      unsigned int size, unsigned int processed,
+				      char *dst)
+{
+	struct erofs_inode *inode = ctx->ictx->inode;
+	unsigned int lclustersize = 1 << inode->z_logical_clusterbits;
+	struct z_erofs_extent_item *ei;
+	int count;
+
+	while (1) {
+		count = write_uncompressed_block(ctx, size, dst);
+		if (count < 0)
+			return count;
+
+		size -= count;
+		if (processed < lclustersize + count)
+			break;
+		processed -= count;
+
+		ei = malloc(sizeof(*ei));
+		if (!ei)
+			return -ENOMEM;
+		init_list_head(&ei->list);
+
+		ei->e = (struct z_erofs_inmem_extent) {
+			.length = count,
+			.compressedblks = BLK_ROUND_UP(inode->sbi, count),
+			.raw = true,
+			.blkaddr = ctx->blkaddr,
+		};
+		if (ctx->blkaddr != EROFS_NULL_ADDR)
+			ctx->blkaddr += ei->e.compressedblks;
+		z_erofs_commit_extent(ctx, ei);
+		ctx->head += count;
 	}
 	return count;
 }
@@ -533,6 +571,7 @@ static int __z_erofs_compress_one(struct z_erofs_compress_sctx *ctx,
 	unsigned int compressedsize;
 	int ret;
 
+	DBG_BUGON(ctx->pivot);
 	*e = (struct z_erofs_inmem_extent){};
 	if (len <= ctx->pclustersize) {
 		if (!final || !len)
@@ -545,8 +584,10 @@ static int __z_erofs_compress_one(struct z_erofs_compress_sctx *ctx,
 			e->length = len;
 			goto frag_packing;
 		}
-		if (!may_inline && len <= blksz)
+		if (!may_inline && len <= blksz) {
+			e->length = len;
 			goto nocompression;
+		}
 	}
 
 	e->length = min(len, cfg.c_max_decompressed_extent_bytes);
@@ -574,9 +615,11 @@ static int __z_erofs_compress_one(struct z_erofs_compress_sctx *ctx,
 		} else {
 			may_inline = false;
 			may_packing = false;
+			e->length = min_t(u32, e->length, ret);
 nocompression:
 			/* TODO: reset clusterofs to 0 if permitted */
-			ret = write_uncompressed_extent(ctx, len, dst);
+			ret = write_uncompressed_extents(ctx, len,
+							 e->length, dst);
 			if (ret < 0)
 				return ret;
 		}
@@ -702,17 +745,16 @@ static int z_erofs_compress_one(struct z_erofs_compress_sctx *ctx)
 	while (ctx->tail > ctx->head) {
 		int ret = z_erofs_compress_dedupe(ctx);
 
+		if (ret < 0)
+			return ret;
 		if (ret > 0)
 			break;
-		else if (ret < 0)
-			return ret;
 
-		DBG_BUGON(ctx->pivot);
 		ei = malloc(sizeof(*ei));
 		if (!ei)
 			return -ENOMEM;
-
 		init_list_head(&ei->list);
+
 		ret = __z_erofs_compress_one(ctx, &ei->e);
 		if (ret) {
 			free(ei);
