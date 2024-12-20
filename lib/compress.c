@@ -278,8 +278,7 @@ static void z_erofs_commit_extent(struct z_erofs_compress_sctx *ctx,
 			  (erofs_blksiz(ctx->ictx->inode->sbi) - 1);
 }
 
-static int z_erofs_compress_dedupe(struct z_erofs_compress_sctx *ctx,
-				   unsigned int *len)
+static int z_erofs_compress_dedupe(struct z_erofs_compress_sctx *ctx)
 {
 	struct erofs_inode *inode = ctx->ictx->inode;
 	const unsigned int lclustermask = (1 << inode->z_logical_clusterbits) - 1;
@@ -306,7 +305,7 @@ static int z_erofs_compress_dedupe(struct z_erofs_compress_sctx *ctx,
 				else
 					rc = ei->e.length - erofs_blksiz(sbi);
 				rc; }),
-			.end = ctx->queue + ctx->head + *len,
+			.end = ctx->queue + ctx->tail,
 			.cur = ctx->queue + ctx->head,
 		};
 		int delta;
@@ -366,12 +365,11 @@ static int z_erofs_compress_dedupe(struct z_erofs_compress_sctx *ctx,
 		ei->e = dctx.e;
 
 		ctx->head += dctx.e.length - delta;
-		DBG_BUGON(*len < dctx.e.length - delta);
-		*len -= dctx.e.length - delta;
+		DBG_BUGON(ctx->head > ctx->tail);
 
 		if (z_erofs_need_refill(ctx))
 			return 1;
-	} while (*len);
+	} while (ctx->tail > ctx->head);
 out:
 	z_erofs_commit_extent(ctx, ei);
 	ctx->pivot = NULL;
@@ -484,13 +482,12 @@ out:
 	return 0;
 }
 
-static bool z_erofs_fixup_deduped_fragment(struct z_erofs_compress_sctx *ctx,
-					   unsigned int len)
+static bool z_erofs_fixup_deduped_fragment(struct z_erofs_compress_sctx *ctx)
 {
 	struct z_erofs_compress_ictx *ictx = ctx->ictx;
 	struct erofs_inode *inode = ictx->inode;
 	struct erofs_sb_info *sbi = inode->sbi;
-	const unsigned int newsize = ctx->remaining + len;
+	const unsigned int newsize = ctx->remaining + ctx->tail - ctx->head;
 
 	DBG_BUGON(!inode->fragment_size);
 
@@ -700,11 +697,10 @@ fix_dedupedfrag:
 static int z_erofs_compress_one(struct z_erofs_compress_sctx *ctx)
 {
 	struct z_erofs_compress_ictx *ictx = ctx->ictx;
-	unsigned int len = ctx->tail - ctx->head;
 	struct z_erofs_extent_item *ei;
 
-	while (len) {
-		int ret = z_erofs_compress_dedupe(ctx, &len);
+	while (ctx->tail > ctx->head) {
+		int ret = z_erofs_compress_dedupe(ctx);
 
 		if (ret > 0)
 			break;
@@ -725,10 +721,9 @@ static int z_erofs_compress_one(struct z_erofs_compress_sctx *ctx)
 			return ret;
 		}
 
-		len -= ei->e.length;
 		ctx->pivot = ei;
 		if (ictx->fix_dedupedfrag && !ictx->fragemitted &&
-		    z_erofs_fixup_deduped_fragment(ctx, len))
+		    z_erofs_fixup_deduped_fragment(ctx))
 			break;
 
 		if (z_erofs_need_refill(ctx))
