@@ -148,6 +148,10 @@ AC_ARG_WITH(qpl,
       [Enable and build with Intel QPL support @<:@default=disabled@:>@])], [],
       [with_qpl="no"])
 
+AC_ARG_WITH(xxhash,
+   [AS_HELP_STRING([--with-xxhash],
+      [Enable and build with libxxhash support @<:@default=auto@:>@])])
+
 AC_ARG_ENABLE(fuse,
    [AS_HELP_STRING([--enable-fuse], [enable erofsfuse @<:@default=no@:>@])],
    [enable_fuse="$enableval"], [enable_fuse="no"])
@@ -531,6 +535,31 @@ AS_IF([test "x$with_qpl" != "xno"], [
   ])
 ])
 
+# Configure libxxhash
+have_xxhash="no"
+AS_IF([test "x$with_xxhash" != "xno"], [
+  PKG_CHECK_MODULES([libxxhash], [libxxhash], [
+    # Paranoia: don't trust the result reported by pkgconfig before trying out
+    saved_LIBS="$LIBS"
+    saved_CPPFLAGS=${CPPFLAGS}
+    CPPFLAGS="${libxxhash_CFLAGS} ${CPPFLAGS}"
+    LIBS="${libxxhash_LIBS} $LIBS"
+    AC_CHECK_HEADERS([xxhash.h],[
+      AC_CHECK_LIB(xxhash, XXH32, [], [
+        AC_MSG_ERROR([libxxhash doesn't work properly])])
+      AC_CHECK_DECL(XXH32, [have_xxhash="yes"],
+        [AC_MSG_ERROR([libxxhash doesn't work properly])], [[
+#include <xxhash.h>
+      ]])
+    ])
+    LIBS="${saved_LIBS}"
+    CPPFLAGS="${saved_CPPFLAGS}"], [
+    AS_IF([test "x$with_xxhash" = "xyes"], [
+      AC_MSG_ERROR([Cannot find proper libxxhash])
+    ])
+  ])
+])
+
 # Enable 64-bit off_t
 CFLAGS+=" -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
 
@@ -553,6 +582,7 @@ AM_CONDITIONAL([ENABLE_LIBLZMA], [test "x${have_liblzma}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LIBDEFLATE], [test "x${have_libdeflate}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LIBZSTD], [test "x${have_libzstd}" = "xyes"])
 AM_CONDITIONAL([ENABLE_QPL], [test "x${have_qpl}" = "xyes"])
+AM_CONDITIONAL([ENABLE_XXHASH], [test "x${have_xxhash}" = "xyes"])
 AM_CONDITIONAL([ENABLE_STATIC_FUSE], [test "x${enable_static_fuse}" = "xyes"])
 
 if test "x$have_uuid" = "xyes"; then
@@ -598,6 +628,10 @@ if test "x$have_qpl" = "xyes"; then
   AC_DEFINE([HAVE_QPL], 1, [Define to 1 if qpl is found])
   AC_SUBST([libqpl_LIBS])
   AC_SUBST([libqpl_CFLAGS])
+fi
+
+if test "x$have_xxhash" = "xyes"; then
+  AC_DEFINE([HAVE_XXHASH], 1, [Define to 1 if xxhash is found])
 fi
 
 # Dump maximum block size

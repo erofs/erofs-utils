@@ -44,7 +44,7 @@
  * - xxHash source repository: https://github.com/Cyan4973/xxHash
  */
 #include "erofs/defs.h"
-#include "xxhash.h"
+#include "liberofs_xxhash.h"
 
 /*-*************************************
  * Macros

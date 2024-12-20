@@ -6,7 +6,7 @@
 #include "erofs/dedupe.h"
 #include "erofs/print.h"
 #include "rolling_hash.h"
-#include "xxhash.h"
+#include "liberofs_xxhash.h"
 #include "sha256.h"
 
 unsigned long erofs_memcmp2(const u8 *s1, const u8 *s2,

@@ -17,7 +17,7 @@
 #include "erofs/xattr.h"
 #include "erofs/cache.h"
 #include "erofs/fragments.h"
-#include "xxhash.h"
+#include "liberofs_xxhash.h"
 #include "liberofs_private.h"
 
 #ifndef XATTR_SYSTEM_PREFIX
