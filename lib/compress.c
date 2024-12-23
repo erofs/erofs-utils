@@ -1527,7 +1527,8 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 	 * Handle tails in advance to avoid writing duplicated
 	 * parts into the packed inode.
 	 */
-	if (cfg.c_fragments && !erofs_is_packed_inode(inode)) {
+	if (cfg.c_fragments && !erofs_is_packed_inode(inode) &&
+	    !cfg.c_nofragdedupe) {
 		ret = z_erofs_fragments_dedupe(inode, fd, &ictx->tof_chksum);
 		if (ret < 0)
 			goto err_free_ictx;

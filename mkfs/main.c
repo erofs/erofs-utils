@@ -303,6 +303,15 @@ static int erofs_mkfs_feat_set_dedupe(bool en, const char *val,
 	return 0;
 }
 
+static int erofs_mkfs_feat_set_fragdedupe(bool en, const char *val,
+					  unsigned int vallen)
+{
+	if (vallen)
+		return -EINVAL;
+	cfg.c_nofragdedupe = !en;
+	return 0;
+}
+
 static struct {
 	char *feat;
 	int (*set)(bool en, const char *val, unsigned int len);
@@ -312,6 +321,7 @@ static struct {
 	{"fragments", erofs_mkfs_feat_set_fragments},
 	{"all-fragments", erofs_mkfs_feat_set_all_fragments},
 	{"dedupe", erofs_mkfs_feat_set_dedupe},
+	{"fragdedupe", erofs_mkfs_feat_set_fragdedupe},
 	{NULL, NULL},
 };
 
