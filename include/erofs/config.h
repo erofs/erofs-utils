@@ -53,6 +53,7 @@ struct erofs_configure {
 	bool c_fragments;
 	bool c_all_fragments;
 	bool c_dedupe;
+	bool c_nofragdedupe;
 	bool c_ignore_mtime;
 	bool c_showprogress;
 	bool c_extra_ea_name_prefixes;
