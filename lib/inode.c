@@ -850,7 +850,8 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		erofs_off_t pos, zero_pos;
 
 		if (!bh) {
-			bh = erofs_balloc(sbi->bmgr, DATA,
+			bh = erofs_balloc(sbi->bmgr,
+					  S_ISDIR(inode->i_mode) ? DIRA: DATA,
 					  erofs_blksiz(sbi), 0, 0);
 			if (IS_ERR(bh))
 				return PTR_ERR(bh);
