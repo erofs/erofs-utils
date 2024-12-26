@@ -438,6 +438,47 @@ static int base64_decode(const char *src, int len, u8 *dst)
 	return cp - dst;
 }
 
+static int tohex(int c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	else if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	else if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	return -1;
+}
+
+static unsigned int url_decode(char *str, unsigned int len)
+{
+	const char *s = str;
+	char *d = str;
+	int d1, d2;
+
+	for (; len && *s != '\0' && *s != '%'; ++d, ++s, --len);
+	if (!len || *s == '\0')
+		return d - str;
+
+	while (len && *s != '\0') {
+		if (*s == '%' && len > 2) {
+			/* Try to convert % escape */
+			d1 = tohex(s[1]), d2 = tohex(s[2]);
+
+			/* Look good, consume three chars */
+			if (d1 >= 0 && d2 >= 0) {
+				s += 3;
+				len -= 3;
+				*d++ = (d1 << 4) | d2;
+				continue;
+			}
+			/* Otherwise, treat '%' as normal char */
+		}
+		*d++ = *s++;
+		--len;
+	}
+	return d - str;
+}
+
 int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 			      struct erofs_pax_header *eh, u32 size)
 {
@@ -454,7 +495,7 @@ int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 		goto out;
 
 	while (p < buf + size) {
-		char *kv, *value;
+		char *kv, *key, *value;
 		int len, n;
 		/* extended records are of the format: "LEN NAME=VALUE\n" */
 		ret = sscanf(p, "%d %n", &len, &n);
@@ -537,8 +578,7 @@ int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 				eh->use_gid = true;
 			} else if (!strncmp(kv, "SCHILY.xattr.",
 				   sizeof("SCHILY.xattr.") - 1)) {
-				char *key = kv + sizeof("SCHILY.xattr.") - 1;
-
+				key = kv + sizeof("SCHILY.xattr.") - 1;
 				--len; /* p[-1] == '\0' */
 				ret = tarerofs_insert_xattr(&eh->xattrs, key,
 						value - key - 1,
@@ -547,9 +587,10 @@ int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 					goto out;
 			} else if (!strncmp(kv, "LIBARCHIVE.xattr.",
 				   sizeof("LIBARCHIVE.xattr.") - 1)) {
-				char *key;
-				key = kv + sizeof("LIBARCHIVE.xattr.") - 1;
+				int namelen;
 
+				key = kv + sizeof("LIBARCHIVE.xattr.") - 1;
+				namelen = url_decode(key, value - key - 1);
 				--len; /* p[-1] == '\0' */
 				ret = base64_decode(value, len - (value - kv),
 						    (u8 *)value);
@@ -558,9 +599,13 @@ int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 					goto out;
 				}
 
+				if (namelen != value - key - 1) {
+					key[namelen] = '=';
+					memmove(key + namelen + 1, value, ret);
+					value = key + namelen + 1;
+				}
 				ret = tarerofs_insert_xattr(&eh->xattrs, key,
-						value - key - 1,
-						value - key + ret, false);
+						namelen, namelen + 1 + ret, false);
 				if (ret)
 					goto out;
 			} else {
