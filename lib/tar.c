@@ -659,6 +659,7 @@ int tarerofs_parse_tar(struct erofs_inode *root, struct erofs_tarfile *tar)
 	struct erofs_sb_info *sbi = root->sbi;
 	bool whout, opq, e = false;
 	struct stat st;
+	mode_t mode;
 	erofs_off_t tar_offset, dataoff;
 
 	struct tar_header *th;
@@ -751,42 +752,12 @@ out_eot:
 		goto out;
 	}
 
-	st.st_mode = tarerofs_otoi(th->mode, sizeof(th->mode));
-	if (errno)
-		goto invalid_tar;
-
-	if (eh.use_uid) {
-		st.st_uid = eh.st.st_uid;
-	} else {
-		st.st_uid = tarerofs_parsenum(th->uid, sizeof(th->uid));
-		if (errno)
-			goto invalid_tar;
-	}
-
-	if (eh.use_gid) {
-		st.st_gid = eh.st.st_gid;
-	} else {
-		st.st_gid = tarerofs_parsenum(th->gid, sizeof(th->gid));
-		if (errno)
-			goto invalid_tar;
-	}
-
 	if (eh.use_size) {
 		st.st_size = eh.st.st_size;
 	} else {
 		st.st_size = tarerofs_parsenum(th->size, sizeof(th->size));
 		if (errno)
 			goto invalid_tar;
-	}
-
-	if (eh.use_mtime) {
-		st.st_mtime = eh.st.st_mtime;
-		ST_MTIM_NSEC_SET(&st, ST_MTIM_NSEC(&eh.st));
-	} else {
-		st.st_mtime = tarerofs_parsenum(th->mtime, sizeof(th->mtime));
-		if (errno)
-			goto invalid_tar;
-		ST_MTIM_NSEC_SET(&st, 0);
 	}
 
 	if (th->typeflag <= '7' && !eh.path) {
@@ -810,28 +781,29 @@ out_eot:
 
 	dataoff = tar->offset;
 	tar->offset += st.st_size;
+	st.st_mode = 0;
 	switch(th->typeflag) {
 	case '0':
 	case '7':
 	case '1':
-		st.st_mode |= S_IFREG;
+		st.st_mode = S_IFREG;
 		if (tar->headeronly_mode || tar->ddtaridx_mode)
 			tar->offset -= st.st_size;
 		break;
 	case '2':
-		st.st_mode |= S_IFLNK;
+		st.st_mode = S_IFLNK;
 		break;
 	case '3':
-		st.st_mode |= S_IFCHR;
+		st.st_mode = S_IFCHR;
 		break;
 	case '4':
-		st.st_mode |= S_IFBLK;
+		st.st_mode = S_IFBLK;
 		break;
 	case '5':
-		st.st_mode |= S_IFDIR;
+		st.st_mode = S_IFDIR;
 		break;
 	case '6':
-		st.st_mode |= S_IFIFO;
+		st.st_mode = S_IFIFO;
 		break;
 	case 'g':
 		ret = tarerofs_parse_pax_header(&tar->ios, &tar->global,
@@ -874,6 +846,40 @@ out_eot:
 		(void)erofs_iostream_lskip(&tar->ios, st.st_size);
 		ret = 0;
 		goto out;
+	}
+
+	mode = tarerofs_otoi(th->mode, sizeof(th->mode));
+	if (errno)
+		goto invalid_tar;
+	if (__erofs_unlikely(mode & S_IFMT) &&
+	    (mode & S_IFMT) != (st.st_mode & S_IFMT))
+		erofs_warn("invalid ustar mode %05o @ %llu", mode, tar_offset);
+	st.st_mode |= mode & ~S_IFMT;
+
+	if (eh.use_uid) {
+		st.st_uid = eh.st.st_uid;
+	} else {
+		st.st_uid = tarerofs_parsenum(th->uid, sizeof(th->uid));
+		if (errno)
+			goto invalid_tar;
+	}
+
+	if (eh.use_gid) {
+		st.st_gid = eh.st.st_gid;
+	} else {
+		st.st_gid = tarerofs_parsenum(th->gid, sizeof(th->gid));
+		if (errno)
+			goto invalid_tar;
+	}
+
+	if (eh.use_mtime) {
+		st.st_mtime = eh.st.st_mtime;
+		ST_MTIM_NSEC_SET(&st, ST_MTIM_NSEC(&eh.st));
+	} else {
+		st.st_mtime = tarerofs_parsenum(th->mtime, sizeof(th->mtime));
+		if (errno)
+			goto invalid_tar;
+		ST_MTIM_NSEC_SET(&st, 0);
 	}
 
 	st.st_rdev = 0;
