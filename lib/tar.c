@@ -399,25 +399,27 @@ int tarerofs_apply_xattrs(struct erofs_inode *inode, struct list_head *xattrs)
 }
 
 static const char lookup_table[65] =
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+,";
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 static int base64_decode(const char *src, int len, u8 *dst)
 {
 	int i, bits = 0, ac = 0;
 	const char *p;
 	u8 *cp = dst;
+	bool padding = false;
 
-	if(!(len % 4)) {
+	if(len && !(len % 4)) {
 		/* Check for and ignore any end padding */
 		if (src[len - 2] == '=' && src[len - 1] == '=')
 			len -= 2;
 		else if (src[len - 1] == '=')
 			--len;
+		padding = true;
 	}
 
 	for (i = 0; i < len; i++) {
 		p = strchr(lookup_table, src[i]);
-		if (p == NULL || src[i] == 0)
+		if (!p || !src[i])
 			return -2;
 		ac += (p - lookup_table) << bits;
 		bits += 6;
@@ -427,8 +429,12 @@ static int base64_decode(const char *src, int len, u8 *dst)
 			bits -= 8;
 		}
 	}
-	if (ac)
-		return -1;
+	if (ac) {
+		if (padding || ac > 0xff)
+			return -1;
+		else
+			*cp++ = ac & 0xff;
+	}
 	return cp - dst;
 }
 
