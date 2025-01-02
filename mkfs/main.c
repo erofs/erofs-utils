@@ -1439,7 +1439,8 @@ int main(int argc, char **argv)
 	if (erofstar.index_mode && g_sbi.extra_devices && !erofstar.mapfile)
 		g_sbi.devs[0].blocks = BLK_ROUND_UP(&g_sbi, erofstar.offset);
 
-	if (erofs_sb_has_fragments(&g_sbi)) {
+	if ((cfg.c_fragments || cfg.c_extra_ea_name_prefixes) &&
+	    erofs_sb_has_fragments(&g_sbi)) {
 		erofs_update_progressinfo("Handling packed data ...");
 		err = erofs_flush_packed_inode(&g_sbi);
 		if (err)
