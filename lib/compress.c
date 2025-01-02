@@ -565,8 +565,7 @@ static int __z_erofs_compress_one(struct z_erofs_compress_sctx *ctx,
 	unsigned int len = ctx->tail - ctx->head;
 	bool is_packed_inode = erofs_is_packed_inode(inode);
 	bool tsg = (ctx->seg_idx + 1 >= ictx->seg_num), final = !ctx->remaining;
-	bool may_packing = (cfg.c_fragments && tsg && final &&
-			    !is_packed_inode && !z_erofs_mt_enabled);
+	bool may_packing = (cfg.c_fragments && tsg && final && !is_packed_inode);
 	bool may_inline = (cfg.c_ztailpacking && tsg && final && !may_packing);
 	unsigned int compressedsize;
 	int ret;
