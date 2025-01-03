@@ -306,9 +306,16 @@ static int erofs_mkfs_feat_set_dedupe(bool en, const char *val,
 static int erofs_mkfs_feat_set_fragdedupe(bool en, const char *val,
 					  unsigned int vallen)
 {
-	if (vallen)
-		return -EINVAL;
-	cfg.c_nofragdedupe = !en;
+	if (!en) {
+		if (vallen)
+			return -EINVAL;
+		cfg.c_fragdedupe = FRAGDEDUPE_OFF;
+	} else if (vallen == sizeof("inode") - 1 &&
+		   !memcmp(val, "inode", vallen)) {
+		cfg.c_fragdedupe = FRAGDEDUPE_INODE;
+	} else {
+		cfg.c_fragdedupe = FRAGDEDUPE_FULL;
+	}
 	return 0;
 }
 

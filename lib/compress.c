@@ -1527,12 +1527,17 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 	 * parts into the packed inode.
 	 */
 	if (cfg.c_fragments && !erofs_is_packed_inode(inode) &&
-	    !cfg.c_nofragdedupe) {
+	    cfg.c_fragdedupe != FRAGDEDUPE_OFF) {
 		ret = z_erofs_fragments_dedupe(inode, fd, &ictx->tof_chksum);
 		if (ret < 0)
 			goto err_free_ictx;
-	}
 
+		if (cfg.c_fragdedupe == FRAGDEDUPE_INODE &&
+		    inode->fragment_size < inode->i_size) {
+			erofs_dbg("Discard the sub-inode tail fragment @ nid %llu", inode->nid);
+			inode->fragment_size = 0;
+		}
+	}
 	ictx->inode = inode;
 	ictx->fpos = fpos;
 	init_list_head(&ictx->extents);
