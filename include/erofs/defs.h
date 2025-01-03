@@ -286,6 +286,11 @@ static inline u32 get_unaligned_le64(const void *p)
 	(n) & (1ULL <<  1) ?  1 : 0	\
 )
 
+static inline unsigned int ffs_long(unsigned long s)
+{
+	return __builtin_ctzl(s);
+}
+
 static inline unsigned int fls_long(unsigned long x)
 {
 	return x ? sizeof(x) * 8 - __builtin_clzl(x) : 0;
