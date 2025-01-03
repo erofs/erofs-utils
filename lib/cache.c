@@ -31,7 +31,7 @@ struct erofs_bufmgr *erofs_buffer_init(struct erofs_sb_info *sbi,
 				       erofs_blk_t startblk)
 {
 	struct erofs_bufmgr *bufmgr;
-	int i, j;
+	int i, j, k;
 
 	bufmgr = malloc(sizeof(struct erofs_bufmgr));
 	if (!bufmgr)
@@ -42,8 +42,9 @@ struct erofs_bufmgr *erofs_buffer_init(struct erofs_sb_info *sbi,
 	bufmgr->last_mapped_block = &bufmgr->blkh;
 
 	for (i = 0; i < ARRAY_SIZE(bufmgr->watermeter); i++)
-		for (j = 0; j < (1 << sbi->blkszbits); j++)
-			init_list_head(&bufmgr->watermeter[i][j]);
+		for (j = 0; j < ARRAY_SIZE(bufmgr->watermeter[0]); j++)
+			for (k = 0; k < (1 << sbi->blkszbits); k++)
+				init_list_head(&bufmgr->watermeter[i][j][k]);
 	bufmgr->tail_blkaddr = startblk;
 	bufmgr->sbi = sbi;
 	return bufmgr;
@@ -55,10 +56,7 @@ static void erofs_update_bwatermeter(struct erofs_buffer_block *bb)
 	struct erofs_sb_info *sbi = bmgr->sbi;
 	struct list_head *bkt;
 
-	if (bb->blkaddr == NULL_ADDR)
-		return;
-
-	bkt = bmgr->watermeter[bb->type] +
+	bkt = bmgr->watermeter[bb->type][bb->blkaddr != NULL_ADDR] +
 		(bb->buffers.off & (erofs_blksiz(sbi) - 1));
 	list_del(&bb->sibling);
 	list_add_tail(&bb->sibling, bkt);
@@ -139,96 +137,88 @@ static int erofs_bfind_for_attach(struct erofs_bufmgr *bmgr,
 				  struct erofs_buffer_block **bbp)
 {
 	const unsigned int blksiz = erofs_blksiz(bmgr->sbi);
+	const unsigned int blkmask = blksiz - 1;
 	struct erofs_buffer_block *cur, *bb;
-	unsigned int used0, used_before, usedmax, used;
+	unsigned int index, used0, end, mapped;
+	unsigned int usedmax, used;
 	int ret;
 
-	used0 = (size & (blksiz - 1)) + inline_ext;
-	/* inline data should be in the same fs block */
-	if (used0 > blksiz)
-		return -ENOSPC;
-
-	if (!used0 || alignsize == blksiz) {
+	if (alignsize == blksiz) {
 		*bbp = NULL;
 		return 0;
 	}
-
 	usedmax = 0;
 	bb = NULL;
 
-	/* try to find a most-fit mapped buffer block first */
-	if (__erofs_unlikely(bmgr->dsunit > 1))
-		used_before = blksiz - alignsize;
-	else if (size + inline_ext >= blksiz)
-		goto skip_mapped;
-	else
-		used_before = rounddown(blksiz - (size + inline_ext), alignsize);
-
-	for (; used_before; --used_before) {
-		struct list_head *bt = bmgr->watermeter[type] + used_before;
-
-		if (list_empty(bt))
-			continue;
-		cur = list_first_entry(bt, struct erofs_buffer_block, sibling);
-
-		/* last mapped block can be expended, don't handle it here */
-		if (list_next_entry(cur, list)->blkaddr == NULL_ADDR) {
-			DBG_BUGON(cur != bmgr->last_mapped_block);
-			continue;
-		}
-
-		DBG_BUGON(cur->type != type);
-		DBG_BUGON(cur->blkaddr == NULL_ADDR);
-		DBG_BUGON(used_before != (cur->buffers.off & (blksiz - 1)));
-
-		ret = __erofs_battach(cur, NULL, size, alignsize,
-				      inline_ext, true);
-		if (ret < 0) {
-			DBG_BUGON(!(bmgr->dsunit > 1));
-			continue;
-		}
-
-		usedmax = ret + inline_ext;
-		/* should contain all data in the current block */
-		DBG_BUGON(usedmax > blksiz);
-		bb = cur;
-		break;
+	mapped = ARRAY_SIZE(bmgr->watermeter);
+	used0 = rounddown(blksiz - ((size + inline_ext) & blkmask), alignsize);
+	if (__erofs_unlikely(bmgr->dsunit > 1)) {
+		end = used0 + alignsize - 1;
+	} else {
+		end = blksiz;
+		if (size + inline_ext >= blksiz)
+			--mapped;
 	}
+	index = used0 + blksiz;
 
-skip_mapped:
-	/* try to start from the last mapped one, which can be expended */
-	cur = bmgr->last_mapped_block;
-	if (cur == &bmgr->blkh)
-		cur = list_next_entry(cur, list);
-	for (; cur != &bmgr->blkh; cur = list_next_entry(cur, list)) {
-		used_before = cur->buffers.off & (blksiz - 1);
+	while (mapped) {
+		--mapped;
+		for (; index > end; --index) {
+			struct list_head *bt;
 
-		/* skip if buffer block is just full */
-		if (!used_before)
-			continue;
+			used = index & blkmask;
+			bt = bmgr->watermeter[type][mapped] + used;
+			if (list_empty(bt))
+				continue;
+			cur = list_first_entry(bt, struct erofs_buffer_block,
+					       sibling);
 
-		/* skip if the entry which has different type */
-		if (cur->type != type)
-			continue;
+			/* skip the last mapped block */
+			if (mapped &&
+			    list_next_entry(cur, list)->blkaddr == NULL_ADDR) {
+				DBG_BUGON(cur != bmgr->last_mapped_block);
+				cur = list_next_entry(cur, sibling);
+				if (&cur->sibling == bt)
+					continue;
+			}
 
-		ret = __erofs_battach(cur, NULL, size, alignsize,
-				      inline_ext, true);
-		if (ret < 0)
-			continue;
+			DBG_BUGON(cur->type != type);
+			DBG_BUGON((cur->blkaddr != NULL_ADDR) ^ mapped);
+			DBG_BUGON(used != (cur->buffers.off & blkmask));
 
-		used = ret + inline_ext;
-		DBG_BUGON(used > blksiz);
+			ret = __erofs_battach(cur, NULL, size, alignsize,
+					      inline_ext, true);
+			if (ret < 0) {
+				DBG_BUGON(mapped && !(bmgr->dsunit > 1));
+				continue;
+			}
 
-		/*
-		 * remaining should be smaller than before or
-		 * larger than allocating a new buffer block
-		 */
-		if (used < used_before && used < used0)
-			continue;
+			used = ret + inline_ext;
 
-		if (usedmax < used) {
-			bb = cur;
-			usedmax = used;
+			/* should contain all data in the current block */
+			DBG_BUGON(used > blksiz);
+			if (used > usedmax) {
+				usedmax = used;
+				bb = cur;
+			}
+			break;
+		}
+		end = used0 + alignsize - 1;
+		index = used0 + blksiz;
+
+		/* try the last mapped block independently */
+		cur = bmgr->last_mapped_block;
+		if (mapped && cur != &bmgr->blkh && cur->type == type) {
+			ret = __erofs_battach(cur, NULL, size,
+					      alignsize, inline_ext, true);
+			if (ret >= 0) {
+				used = ret + inline_ext;
+				DBG_BUGON(used > blksiz);
+				if (used > usedmax) {
+					usedmax = used;
+					bb = cur;
+				}
+			}
 		}
 	}
 	*bbp = bb;
