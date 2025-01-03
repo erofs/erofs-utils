@@ -76,11 +76,12 @@ static int __erofs_battach(struct erofs_buffer_block *bb,
 	struct erofs_sb_info *sbi = bmgr->sbi;
 	const unsigned int blkmask = erofs_blksiz(sbi) - 1;
 	erofs_off_t boff = bb->buffers.off;
-	const erofs_off_t alignedoffset = roundup(boff, alignsize);
+	const erofs_off_t alignedoffset = round_up(boff, alignsize);
 	bool tailupdate = false;
 	erofs_blk_t blkaddr;
 	int oob;
 
+	DBG_BUGON(alignsize & (alignsize - 1));
 	/* inline data must never span block boundaries */
 	if (erofs_blkoff(sbi, alignedoffset + incr + blkmask)
 			+ inline_ext > blkmask)
