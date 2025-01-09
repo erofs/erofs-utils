@@ -1439,6 +1439,7 @@ int main(int argc, char **argv)
 		root = erofs_mkfs_build_tree_from_path(&g_sbi, cfg.c_src_path);
 		if (IS_ERR(root)) {
 			err = PTR_ERR(root);
+			root = NULL;
 			goto exit;
 		}
 	}
