@@ -8,7 +8,7 @@ or overall disk statistics information from an EROFS-formatted image.
 \fBdump.erofs\fR [\fIOPTIONS\fR] \fIIMAGE\fR
 .SH DESCRIPTION
 .B dump.erofs
-is used to retrieve erofs metadata from \fIIMAGE\fP and demonstrate
+is used to retrieve erofs metadata and data from \fIIMAGE\fP and demonstrate
 .br
 1) overall disk statistics,
 .br
@@ -16,7 +16,9 @@ is used to retrieve erofs metadata from \fIIMAGE\fP and demonstrate
 .br
 3) file information of the given inode NID,
 .br
-4) file extent information of the given inode NID.
+4) file extent information of the given inode NID,
+.br
+5) file content for the given inode NID.
 .SH OPTIONS
 .TP
 .BI "\-\-device=" path
@@ -27,6 +29,13 @@ options in the correct order.
 .TP
 .BI "\-\-ls"
 List directory contents.
+.I NID
+or
+.I path
+required.
+.TP
+.BI "\-\-cat"
+Write file content to standard output.
 .I NID
 or
 .I path
