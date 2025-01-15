@@ -160,14 +160,22 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 struct erofs_dentry *erofs_d_alloc(struct erofs_inode *parent,
 				   const char *name)
 {
-	struct erofs_dentry *d = malloc(sizeof(*d));
+	unsigned int namelen = strlen(name);
+	unsigned int fsz = round_up(namelen + 1, EROFS_DENTRY_NAME_ALIGNMENT);
+	struct erofs_dentry *d;
 
+	if (namelen > EROFS_NAME_LEN) {
+		DBG_BUGON(1);
+		return ERR_PTR(-ENAMETOOLONG);
+	}
+	d = malloc(sizeof(*d) + fsz);
 	if (!d)
 		return ERR_PTR(-ENOMEM);
 
-	strncpy(d->name, name, EROFS_NAME_LEN - 1);
-	d->name[EROFS_NAME_LEN - 1] = '\0';
+	memcpy(d->name, name, namelen);
+	memset(d->name + namelen, 0, fsz - namelen);
 	d->inode = NULL;
+	d->namelen = namelen;
 	d->type = EROFS_FT_UNKNOWN;
 	d->validnid = false;
 	list_add_tail(&d->d_child, &parent->i_subdirs);
@@ -208,10 +216,16 @@ int erofs_allocate_inode_bh_data(struct erofs_inode *inode, erofs_blk_t nblocks)
 static int comp_subdir(const void *a, const void *b)
 {
 	const struct erofs_dentry *da, *db;
+	int commonlen, sign;
 
 	da = *((const struct erofs_dentry **)a);
 	db = *((const struct erofs_dentry **)b);
-	return strcmp(da->name, db->name);
+	commonlen = min(round_up(da->namelen, EROFS_DENTRY_NAME_ALIGNMENT),
+			round_up(db->namelen, EROFS_DENTRY_NAME_ALIGNMENT));
+	sign = memcmp(da->name, db->name, commonlen);
+	if (sign)
+		return sign;
+	return cmpsgn(da->namelen, db->namelen);
 }
 
 int erofs_init_empty_dir(struct erofs_inode *dir)
@@ -260,7 +274,7 @@ static int erofs_prepare_dir_file(struct erofs_inode *dir,
 
 	/* let's calculate dir size */
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
-		int len = strlen(d->name) + sizeof(struct erofs_dirent);
+		int len = d->namelen + sizeof(struct erofs_dirent);
 
 		if (erofs_blkoff(sbi, d_size) + len > erofs_blksiz(sbi))
 			d_size = round_up(d_size, erofs_blksiz(sbi));
@@ -283,7 +297,7 @@ static void fill_dirblock(char *buf, unsigned int size, unsigned int q,
 
 	/* write out all erofs_dirents + filenames */
 	while (head != end) {
-		const unsigned int namelen = strlen(head->name);
+		const unsigned int namelen = head->namelen;
 		struct erofs_dirent d = {
 			.nid = cpu_to_le64(head->nid),
 			.nameoff = cpu_to_le16(q),
@@ -438,8 +452,7 @@ static int erofs_write_dir_file(struct erofs_inode *dir)
 		return ret;
 
 	list_for_each_entry(d, &dir->i_subdirs, d_child) {
-		const unsigned int len = strlen(d->name) +
-			sizeof(struct erofs_dirent);
+		unsigned int len = d->namelen + sizeof(struct erofs_dirent);
 
 		/* XXX: a bit hacky, but to avoid another traversal */
 		if (d->validnid && d->type == EROFS_FT_DIR) {

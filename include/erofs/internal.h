@@ -314,15 +314,17 @@ static inline struct erofs_inode *erofs_parent_inode(struct erofs_inode *inode)
 
 #define IS_ROOT(x)	((x) == erofs_parent_inode(x))
 
+#define EROFS_DENTRY_NAME_ALIGNMENT	4
 struct erofs_dentry {
 	struct list_head d_child;	/* child of parent list */
 	union {
 		struct erofs_inode *inode;
 		erofs_nid_t nid;
 	};
-	char name[EROFS_NAME_LEN];
+	u8 namelen;
 	u8 type;
 	bool validnid;
+	char name[];
 };
 
 static inline bool is_dot_dotdot_len(const char *name, unsigned int len)
