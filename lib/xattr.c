@@ -809,8 +809,9 @@ static int comp_shared_xattr_item(const void *a, const void *b)
 	return la > lb;
 }
 
-int erofs_xattr_write_name_prefixes(struct erofs_sb_info *sbi, FILE *f)
+int erofs_xattr_flush_name_prefixes(struct erofs_sb_info *sbi)
 {
+	FILE *f = erofs_packedfile(sbi);
 	struct ea_type_node *tnode;
 	off_t offset;
 

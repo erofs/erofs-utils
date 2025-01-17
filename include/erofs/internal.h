@@ -81,6 +81,8 @@ struct erofs_xattr_prefix_item {
 #define EROFS_PACKED_NID_UNALLOCATED	-1
 
 struct erofs_mkfs_dfops;
+struct erofs_packed_inode;
+
 struct erofs_sb_info {
 	struct erofs_sb_lz4_info lz4;
 	struct erofs_device_info *devs;
@@ -139,6 +141,7 @@ struct erofs_sb_info {
 	struct erofs_mkfs_dfops *mkfs_dfops;
 #endif
 	struct erofs_bufmgr *bmgr;
+	struct erofs_packed_inode *packedinode;
 	bool useqpl;
 };
 

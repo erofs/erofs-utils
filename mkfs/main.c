@@ -1187,7 +1187,6 @@ int main(int argc, char **argv)
 	struct erofs_inode *root = NULL;
 	erofs_blk_t nblocks = 0;
 	struct timeval t;
-	FILE *packedfile = NULL;
 	FILE *blklst = NULL;
 	u32 crc;
 
@@ -1243,17 +1242,10 @@ int main(int argc, char **argv)
 		if (!cfg.c_mkfs_pclustersize_packed)
 			cfg.c_mkfs_pclustersize_packed = cfg.c_mkfs_pclustersize_def;
 
-		packedfile = erofs_packedfile_init();
-		if (IS_ERR(packedfile)) {
-			erofs_err("failed to initialize packedfile");
-			return 1;
-		}
-	}
-
-	if (cfg.c_fragments) {
-		err = z_erofs_fragments_init();
+		err = erofs_packedfile_init(&g_sbi, cfg.c_fragments);
 		if (err) {
-			erofs_err("failed to initialize fragments");
+			erofs_err("failed to initialize packedfile: %s",
+				  strerror(-err));
 			return 1;
 		}
 	}
@@ -1434,7 +1426,7 @@ int main(int argc, char **argv)
 		}
 
 		if (cfg.c_extra_ea_name_prefixes)
-			erofs_xattr_write_name_prefixes(&g_sbi, packedfile);
+			erofs_xattr_flush_name_prefixes(&g_sbi);
 
 		root = erofs_mkfs_build_tree_from_path(&g_sbi, cfg.c_src_path);
 		if (IS_ERR(root)) {
@@ -1499,9 +1491,7 @@ exit:
 	erofs_cleanup_exclude_rules();
 	if (cfg.c_chunkbits)
 		erofs_blob_exit();
-	if (cfg.c_fragments)
-		z_erofs_fragments_exit();
-	erofs_packedfile_exit();
+	erofs_packedfile_exit(&g_sbi);
 	erofs_xattr_cleanup_name_prefixes();
 	erofs_rebuild_cleanup();
 	erofs_diskbuf_exit();
