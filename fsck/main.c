@@ -527,31 +527,12 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	erofs_dbg("verify data chunk of nid(%llu): type(%d)",
 		  inode->nid | 0ULL, inode->datalayout);
 
-	switch (inode->datalayout) {
-	case EROFS_INODE_FLAT_PLAIN:
-	case EROFS_INODE_FLAT_INLINE:
-	case EROFS_INODE_CHUNK_BASED:
-		compressed = false;
-		break;
-	case EROFS_INODE_COMPRESSED_FULL:
-	case EROFS_INODE_COMPRESSED_COMPACT:
-		compressed = true;
-		break;
-	default:
-		erofs_err("unknown datalayout");
-		return -EINVAL;
-	}
-
+	compressed = erofs_inode_is_data_compressed(inode->datalayout);
 	while (pos < inode->i_size) {
 		unsigned int alloc_rawsize;
 
 		map.m_la = pos;
-		if (compressed)
-			ret = z_erofs_map_blocks_iter(inode, &map,
-					EROFS_GET_BLOCKS_FIEMAP);
-		else
-			ret = erofs_map_blocks(inode, &map,
-					EROFS_GET_BLOCKS_FIEMAP);
+		ret = erofs_map_blocks(inode, &map, EROFS_GET_BLOCKS_FIEMAP);
 		if (ret)
 			goto out;
 

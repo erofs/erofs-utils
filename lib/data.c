@@ -62,8 +62,8 @@ err_out:
 	return err;
 }
 
-int erofs_map_blocks(struct erofs_inode *inode,
-		struct erofs_map_blocks *map, int flags)
+int __erofs_map_blocks(struct erofs_inode *inode,
+		       struct erofs_map_blocks *map, int flags)
 {
 	struct erofs_inode *vi = inode;
 	struct erofs_sb_info *sbi = inode->sbi;
@@ -130,6 +130,14 @@ int erofs_map_blocks(struct erofs_inode *inode,
 out:
 	map->m_llen = map->m_plen;
 	return err;
+}
+
+int erofs_map_blocks(struct erofs_inode *inode,
+		     struct erofs_map_blocks *map, int flags)
+{
+	if (erofs_inode_is_data_compressed(inode->datalayout))
+		return z_erofs_map_blocks_iter(inode, map, flags);
+	return __erofs_map_blocks(inode, map, flags);
 }
 
 int erofs_map_dev(struct erofs_sb_info *sbi, struct erofs_map_dev *map)

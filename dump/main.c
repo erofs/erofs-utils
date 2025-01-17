@@ -359,14 +359,6 @@ static int erofsdump_readdir(struct erofs_dir_context *ctx)
 	return 0;
 }
 
-static int erofsdump_map_blocks(struct erofs_inode *inode,
-		struct erofs_map_blocks *map, int flags)
-{
-	if (erofs_inode_is_data_compressed(inode->datalayout))
-		return z_erofs_map_blocks_iter(inode, map, flags);
-	return erofs_map_blocks(inode, map, flags);
-}
-
 static void erofsdump_show_fileinfo(bool show_extent)
 {
 	const char *ext_fmt[] = {
@@ -461,8 +453,7 @@ static void erofsdump_show_fileinfo(bool show_extent)
 	while (map.m_la < inode.i_size) {
 		struct erofs_map_dev mdev;
 
-		err = erofsdump_map_blocks(&inode, &map,
-				EROFS_GET_BLOCKS_FIEMAP);
+		err = erofs_map_blocks(&inode, &map, EROFS_GET_BLOCKS_FIEMAP);
 		if (err) {
 			erofs_err("failed to get file blocks range");
 			return;
