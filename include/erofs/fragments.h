@@ -27,6 +27,9 @@ FILE *erofs_packedfile(struct erofs_sb_info *sbi);
 int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs);
 void erofs_packedfile_exit(struct erofs_sb_info *sbi);
 
+int erofs_packedfile_read(struct erofs_sb_info *sbi,
+			  void *buf, erofs_off_t len, erofs_off_t pos);
+
 #ifdef __cplusplus
 }
 #endif

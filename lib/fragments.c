@@ -24,6 +24,7 @@
 #include "erofs/print.h"
 #include "erofs/internal.h"
 #include "erofs/fragments.h"
+#include "erofs/bitops.h"
 
 struct erofs_fragment_dedupe_item {
 	struct list_head	list;
@@ -41,6 +42,11 @@ struct erofs_fragment_dedupe_item {
 struct erofs_packed_inode {
 	struct list_head *hash;
 	FILE *file;
+	unsigned long *uptodate;
+#if EROFS_MT_ENABLED
+	pthread_mutex_t mutex;
+#endif
+	unsigned int uptodate_size;
 };
 
 const char *erofs_frags_packedname = "packed_file";
@@ -327,6 +333,9 @@ void erofs_packedfile_exit(struct erofs_sb_info *sbi)
 	if (!epi)
 		return;
 
+	if (epi->uptodate)
+		free(epi->uptodate);
+
 	if (epi->hash) {
 		for (i = 0; i < FRAGMENT_HASHSIZE; ++i)
 			list_for_each_entry_safe(di, n, &epi->hash[i], list)
@@ -373,9 +382,195 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 		err = -errno;
 		goto err_out;
 	}
+
+	if (erofs_sb_has_fragments(sbi) && sbi->packed_nid > 0) {
+		struct erofs_inode ei = {
+			.sbi = sbi,
+			.nid = sbi->packed_nid,
+		};
+
+		err = erofs_read_inode_from_disk(&ei);
+		if (err) {
+			erofs_err("failed to read packed inode from disk: %s",
+				  erofs_strerror(-errno));
+			goto err_out;
+		}
+
+		err = fseek(epi->file, ei.i_size, SEEK_SET);
+		if (err) {
+			err = -errno;
+			goto err_out;
+		}
+		epi->uptodate_size = BLK_ROUND_UP(sbi, ei.i_size) / 8;
+		epi->uptodate = calloc(1, epi->uptodate_size);
+		if (!epi->uptodate) {
+			err = -ENOMEM;
+			goto err_out;
+		}
+	}
 	return 0;
 
 err_out:
 	erofs_packedfile_exit(sbi);
+	return err;
+}
+
+static int erofs_load_packedinode_from_disk(struct erofs_inode *pi)
+{
+	struct erofs_sb_info *sbi = pi->sbi;
+	int err;
+
+	if (pi->nid)
+		return 0;
+
+	pi->nid = sbi->packed_nid;
+	err = erofs_read_inode_from_disk(pi);
+	if (err) {
+		erofs_err("failed to read packed inode from disk: %s",
+			  erofs_strerror(err));
+		return err;
+	}
+	return 0;
+}
+
+static void *erofs_packedfile_preload(struct erofs_inode *pi,
+				      struct erofs_map_blocks *map)
+{
+	struct erofs_sb_info *sbi = pi->sbi;
+	struct erofs_packed_inode *epi = sbi->packedinode;
+	unsigned int bsz = erofs_blksiz(sbi);
+	char *buffer;
+	erofs_off_t pos, end;
+	ssize_t err;
+
+	err = erofs_load_packedinode_from_disk(pi);
+	if (err)
+		return ERR_PTR(err);
+
+	pos = map->m_la;
+	err = erofs_map_blocks(pi, map, EROFS_GET_BLOCKS_FIEMAP);
+	if (err)
+		return ERR_PTR(err);
+
+	end = round_up(map->m_la + map->m_llen, bsz);
+	if (map->m_la < pos)
+		map->m_la = round_up(map->m_la, bsz);
+	else
+		DBG_BUGON(map->m_la > pos);
+
+	map->m_llen = end - map->m_la;
+	DBG_BUGON(!map->m_llen);
+	buffer = malloc(map->m_llen);
+	if (!buffer)
+		return ERR_PTR(-ENOMEM);
+
+	err = erofs_pread(pi, buffer, map->m_llen, map->m_la);
+	if (err)
+		goto err_out;
+
+	fflush(epi->file);
+	err = pwrite(fileno(epi->file), buffer, map->m_llen, map->m_la);
+	if (err < 0) {
+		err = -errno;
+		if (err == -ENOSPC) {
+			memset(epi->uptodate, 0, epi->uptodate_size);
+			(void)!ftruncate(fileno(epi->file), 0);
+		}
+		goto err_out;
+	}
+	if (err != map->m_llen) {
+		err = -EIO;
+		goto err_out;
+	}
+	for (pos = map->m_la; pos < end; pos += bsz)
+		__erofs_set_bit(erofs_blknr(sbi, pos), epi->uptodate);
+	return buffer;
+
+err_out:
+	free(buffer);
+	map->m_llen = 0;
+	return ERR_PTR(err);
+}
+
+int erofs_packedfile_read(struct erofs_sb_info *sbi,
+			  void *buf, erofs_off_t len, erofs_off_t pos)
+{
+	struct erofs_packed_inode *epi = sbi->packedinode;
+	struct erofs_inode pi = {
+		.sbi = sbi,
+	};
+	struct erofs_map_blocks map = {
+		.index = UINT_MAX,
+	};
+	unsigned int bsz = erofs_blksiz(sbi);
+	erofs_off_t end = pos + len;
+	char *buffer = NULL;
+	int err;
+
+	if (!epi) {
+		err = erofs_load_packedinode_from_disk(&pi);
+		if (!err)
+			err = erofs_pread(&pi, buf, len, pos);
+		return err;
+	}
+
+	err = 0;
+	while (pos < end) {
+		if (pos >= map.m_la && pos < map.m_la + map.m_llen) {
+			len = min_t(erofs_off_t, end - pos,
+				    map.m_la + map.m_llen - pos);
+			memcpy(buf, buffer + pos - map.m_la, len);
+		} else {
+			erofs_blk_t bnr = erofs_blknr(sbi, pos);
+			bool uptodate;
+
+			map.m_la = round_down(pos, bsz);
+			len = min_t(erofs_off_t, bsz - (pos & (bsz - 1)),
+				    end - pos);
+			uptodate = __erofs_test_bit(bnr, epi->uptodate);
+			if (!uptodate) {
+#if EROFS_MT_ENABLED
+				pthread_mutex_lock(&epi->mutex);
+				uptodate = __erofs_test_bit(bnr, epi->uptodate);
+				if (!uptodate) {
+#endif
+					free(buffer);
+					buffer = erofs_packedfile_preload(&pi, &map);
+					if (IS_ERR(buffer)) {
+#if EROFS_MT_ENABLED
+						pthread_mutex_unlock(&epi->mutex);
+#endif
+						buffer = NULL;
+						goto fallback;
+					}
+
+#if EROFS_MT_ENABLED
+				}
+				pthread_mutex_unlock(&epi->mutex);
+#endif
+			}
+
+			if (!uptodate)
+				continue;
+
+			err = pread(fileno(epi->file), buf, len, pos);
+			if (err < 0)
+				break;
+			if (err == len) {
+				err = 0;
+			} else {
+fallback:
+				err = erofs_load_packedinode_from_disk(&pi);
+				if (!err)
+					err = erofs_pread(&pi, buf, len, pos);
+				if (err)
+					break;
+			}
+			map.m_llen = 0;
+		}
+		buf += len;
+		pos += len;
+	}
+	free(buffer);
 	return err;
 }

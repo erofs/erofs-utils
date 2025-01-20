@@ -16,6 +16,7 @@
 #include "erofs/dir.h"
 #include "erofs/xattr.h"
 #include "../lib/compressor.h"
+#include "erofs/fragments.h"
 
 static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid);
 
@@ -1079,10 +1080,17 @@ int main(int argc, char *argv[])
 		erofsfsck_hardlink_init();
 
 	if (erofs_sb_has_fragments(&g_sbi) && g_sbi.packed_nid > 0) {
+		err = erofs_packedfile_init(&g_sbi, false);
+		if (err) {
+			erofs_err("failed to initialize packedfile: %s",
+				  erofs_strerror(err));
+			goto exit_hardlink;
+		}
+
 		err = erofsfsck_check_inode(g_sbi.packed_nid, g_sbi.packed_nid);
 		if (err) {
 			erofs_err("failed to verify packed file");
-			goto exit_hardlink;
+			goto exit_packedinode;
 		}
 	}
 
@@ -1108,6 +1116,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
+exit_packedinode:
+	erofs_packedfile_exit(&g_sbi);
 exit_hardlink:
 	if (fsckcfg.extract_path)
 		erofsfsck_hardlink_exit();

@@ -8,6 +8,7 @@
 #include "erofs/internal.h"
 #include "erofs/trace.h"
 #include "erofs/decompress.h"
+#include "erofs/fragments.h"
 
 static int erofs_map_blocks_flatmode(struct erofs_inode *inode,
 				     struct erofs_map_blocks *map,
@@ -248,18 +249,7 @@ int z_erofs_read_one_data(struct erofs_inode *inode,
 	int ret = 0;
 
 	if (map->m_flags & EROFS_MAP_FRAGMENT) {
-		struct erofs_inode packed_inode = {
-			.sbi = sbi,
-			.nid = sbi->packed_nid,
-		};
-
-		ret = erofs_read_inode_from_disk(&packed_inode);
-		if (ret) {
-			erofs_err("failed to read packed inode from disk");
-			return ret;
-		}
-
-		return erofs_pread(&packed_inode, buffer, length - skip,
+		return erofs_packedfile_read(sbi, buffer, length - skip,
 				   inode->fragmentoff + skip);
 	}
 
