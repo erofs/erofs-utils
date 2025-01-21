@@ -1534,7 +1534,8 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 
 		if (cfg.c_fragdedupe == FRAGDEDUPE_INODE &&
 		    inode->fragment_size < inode->i_size) {
-			erofs_dbg("Discard the sub-inode tail fragment @ nid %llu", inode->nid);
+			erofs_dbg("Discard the sub-inode tail fragment of %s",
+				  inode->i_srcpath);
 			inode->fragment_size = 0;
 		}
 	}

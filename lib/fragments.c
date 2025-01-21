@@ -32,6 +32,7 @@ struct erofs_fragment_dedupe_item {
 	u8			data[];
 };
 
+#define EROFS_FRAGMENT_INMEM_SZ_MAX	EROFS_CONFIG_COMPR_MAX_SZ
 #define EROFS_TOF_HASHLEN		16
 
 #define FRAGMENT_HASHSIZE		65536
@@ -56,96 +57,82 @@ static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
 	struct erofs_fragment_dedupe_item *cur, *di = NULL;
 	struct list_head *head = &epi->hash[FRAGMENT_HASH(crc)];
+	unsigned int s1, e1;
+	erofs_off_t deduped;
 	u8 *data;
-	unsigned int length, e2, deduped;
-	erofs_off_t pos;
 	int ret;
 
 	if (list_empty(head))
 		return 0;
 
-	/* XXX: no need to read so much for smaller? */
-	if (inode->i_size < EROFS_CONFIG_COMPR_MAX_SZ)
-		length = inode->i_size;
-	else
-		length = EROFS_CONFIG_COMPR_MAX_SZ;
-
-	data = malloc(length);
+	s1 = min_t(u64, EROFS_FRAGMENT_INMEM_SZ_MAX, inode->i_size);
+	data = malloc(s1);
 	if (!data)
 		return -ENOMEM;
 
-	if (erofs_lseek64(fd, inode->i_size - length, SEEK_SET) < 0) {
-		ret = -errno;
-		goto out;
+	ret = pread(fd, data, s1, inode->i_size - s1);
+	if (ret != s1) {
+		free(data);
+		return -errno;
 	}
-
-	ret = read(fd, data, length);
-	if (ret != length) {
-		ret = -errno;
-		goto out;
-	}
-
-	DBG_BUGON(length <= EROFS_TOF_HASHLEN);
-	e2 = length - EROFS_TOF_HASHLEN;
+	e1 = s1 - EROFS_TOF_HASHLEN;
 	deduped = 0;
-
 	list_for_each_entry(cur, head, list) {
-		unsigned int e1, mn, i = 0;
+		unsigned int e2, mn;
+		erofs_off_t i, pos;
 
 		DBG_BUGON(cur->length <= EROFS_TOF_HASHLEN);
-		e1 = cur->length - EROFS_TOF_HASHLEN;
+		e2 = cur->length - EROFS_TOF_HASHLEN;
 
-		if (memcmp(cur->data + e1, data + e2, EROFS_TOF_HASHLEN))
+		if (memcmp(data + e1, cur->data + e2, EROFS_TOF_HASHLEN))
 			continue;
 
+		i = 0;
 		mn = min(e1, e2);
-		while (i < mn && cur->data[e1 - i - 1] == data[e2 - i - 1])
+		while (i < mn && cur->data[e2 - i - 1] == data[e1 - i - 1])
 			++i;
 
-		if (!di || i + EROFS_TOF_HASHLEN > deduped) {
-			deduped = i + EROFS_TOF_HASHLEN;
-			di = cur;
+		i += EROFS_TOF_HASHLEN;
+		if (i >= s1) {		/* full short match */
+			DBG_BUGON(i > s1);
+			pos = cur->pos + cur->length - s1;
+			while (i < inode->i_size && pos) {
+				char buf[2][16384];
+				unsigned int sz;
 
-			/* full match */
-			if (i == e2)
-				break;
+				sz = min_t(u64, pos, sizeof(buf[0]));
+				sz = min_t(u64, sz, inode->i_size - i);
+				if (pread(fileno(epi->file), buf[0], sz,
+					  pos - sz) != sz)
+					break;
+				if (pread(fd, buf[1], sz,
+					  inode->i_size - i - sz) != sz)
+					break;
+
+				if (memcmp(buf[0], buf[1], sz))
+					break;
+				pos -= sz;
+				i += sz;
+			}
 		}
+
+		if (i <= deduped)
+			continue;
+		di = cur;
+		deduped = i;
+		if (deduped == inode->i_size)
+			break;
 	}
-	if (!di)
-		goto out;
 
-	DBG_BUGON(di->length < deduped);
-	pos = di->pos + di->length - deduped;
-	/* let's read more to dedupe as long as we can */
-	if (deduped == di->length) {
-		fflush(epi->file);
-
-		while(deduped < inode->i_size && pos) {
-			char buf[2][16384];
-			unsigned int sz = min_t(unsigned int, pos,
-						sizeof(buf[0]));
-
-			if (pread(fileno(epi->file), buf[0], sz,
-				  pos - sz) != sz)
-				break;
-			if (pread(fd, buf[1], sz,
-				  inode->i_size - deduped - sz) != sz)
-				break;
-
-			if (memcmp(buf[0], buf[1], sz))
-				break;
-			pos -= sz;
-			deduped += sz;
-		}
-	}
-	inode->fragment_size = deduped;
-	inode->fragmentoff = pos;
-
-	erofs_dbg("Dedupe %llu tail data at %llu", inode->fragment_size | 0ULL,
-		  inode->fragmentoff | 0ULL);
-out:
 	free(data);
-	return ret;
+	if (deduped) {
+		DBG_BUGON(!di);
+		inode->fragment_size = deduped;
+		inode->fragmentoff = di->pos + di->length - deduped;
+		erofs_dbg("Dedupe %llu tail data at %llu",
+			  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL);
+	}
+	return 0;
 }
 
 int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 *tofcrc)
@@ -180,10 +167,10 @@ static int z_erofs_fragments_dedupe_insert(struct list_head *hash, void *data,
 
 	if (len <= EROFS_TOF_HASHLEN)
 		return 0;
-	if (len > EROFS_CONFIG_COMPR_MAX_SZ) {
-		data += len - EROFS_CONFIG_COMPR_MAX_SZ;
-		pos += len - EROFS_CONFIG_COMPR_MAX_SZ;
-		len = EROFS_CONFIG_COMPR_MAX_SZ;
+	if (len > EROFS_FRAGMENT_INMEM_SZ_MAX) {
+		data += len - EROFS_FRAGMENT_INMEM_SZ_MAX;
+		pos += len - EROFS_FRAGMENT_INMEM_SZ_MAX;
+		len = EROFS_FRAGMENT_INMEM_SZ_MAX;
 	}
 	di = malloc(sizeof(*di) + len);
 	if (!di)
