@@ -376,6 +376,7 @@ out:
 	return 0;
 }
 
+/* TODO: reset clusterofs to 0 if permitted */
 static int write_uncompressed_block(struct z_erofs_compress_sctx *ctx,
 				    unsigned int len, char *dst)
 {
@@ -616,9 +617,11 @@ static int __z_erofs_compress_one(struct z_erofs_compress_sctx *ctx,
 			may_packing = false;
 			e->length = min_t(u32, e->length, ret);
 nocompression:
-			/* TODO: reset clusterofs to 0 if permitted */
-			ret = write_uncompressed_extents(ctx, len,
-							 e->length, dst);
+			if (cfg.c_dedupe)
+				ret = write_uncompressed_block(ctx, len, dst);
+			else
+				ret = write_uncompressed_extents(ctx, len,
+							e->length, dst);
 			if (ret < 0)
 				return ret;
 		}
