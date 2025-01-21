@@ -839,7 +839,7 @@ static void *write_compacted_indexes(u8 *out,
 				*dummy_head = false;
 			} else if (i + 1 == vcnt) {
 				offset = min_t(u16, cv[i].u.delta[1],
-						(1 << lobits) - 1);
+					       Z_EROFS_LI_D0_CBLKCNT - 1);
 			} else {
 				offset = cv[i].u.delta[0];
 			}
