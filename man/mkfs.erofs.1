@@ -45,9 +45,10 @@ warning messages.
 Limit how many xattrs will be inlined. The default is 2.
 Disables storing xattrs if < 0.
 .TP
-.BI "\-E " extended-option \fR[\fP, ... \fR]\fP
+.BI "\-E " [^]extended-option \fR[\fP, ... \fR]\fP
 Set extended options for the filesystem. Extended options are comma separated,
-and may take an extra argument using the equals ('=') sign.
+and may take an extra argument using the equals ('=') sign.  To disable a
+feature, usually prefix the extended option name with a caret ('^') character.
 The following extended options are supported:
 .RS 1.2i
 .TP
@@ -74,20 +75,36 @@ Force generation of inode chunk format as a 4-byte block address array.
 .BI force-chunk-indexes
 Forcely generate inode chunk format as an 8-byte chunk index (with device ID).
 .TP
+.BI [^]fragdedupe\fR[\fP= <inode|full> \fR]\fP
+Set the mode for fragment data deduplication.  It's effective only when
+\fI-E(all)-fragments\fP is used together.  If a caret ('^') character is set,
+fragment data deduplication is disabled.
+.RS 1.2i
+.TP
+.I inode
+Deduplicate fragment data only when the inode data is identical.  This option
+will result in faster image generation with the current codebase
+.TP
+.I full
+Always deduplicate fragment data if possible
+.RE
+.TP
 .BI fragments\fR[\fP= size \fR]\fP
 Pack the tail part (pcluster) of compressed files, or entire files, into a
 special inode for smaller image sizes, and it may take an argument as the
 pcluster size of the packed inode in bytes. (Linux v6.1+)
 .TP
+.BI ^inline_data
+Don't inline regular files.  It's typically useful to enable FSDAX (Linux 5.15+)
+for those images, however, there could be other use cases too.
+.TP
 .BI legacy-compress
 Disable "inplace decompression" and "compacted indexes",
 for compatibility with Linux pre-v5.4.
 .TP
-.BI noinline_data
-Don't inline regular files to enable FSDAX for these files (Linux v5.15+).
-.TP
-.B ^xattr-name-filter
-Turn off/on xattr name filter to optimize negative xattr lookups (Linux v6.6+).
+.B xattr-name-filter
+Enable a name filter for extended attributes to optimize negative lookups.
+(Linux v6.6+).
 .TP
 .BI ztailpacking
 Pack the tail part (pcluster) of compressed files into its metadata to save
@@ -97,7 +114,7 @@ more space and the tail part I/O. (Linux v5.17+)
 .BI "\-L " volume-label
 Set the volume label for the filesystem to
 .IR volume-label .
-The maximum length of the volume label is 16 bytes.
+The maximum length of the volume label is 15 bytes.
 .TP
 .BI "\-T " #
 Specify a UNIX timestamp for image creation time for reproducible builds.
