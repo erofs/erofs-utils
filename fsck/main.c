@@ -518,6 +518,7 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	struct erofs_map_blocks map = {
 		.index = UINT_MAX,
 	};
+	bool needdecode = fsckcfg.check_decomp && !erofs_is_packed_inode(inode);
 	int ret = 0;
 	bool compressed;
 	erofs_off_t pos = 0;
@@ -552,7 +553,7 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 		pos += map.m_llen;
 
 		/* should skip decomp? */
-		if (map.m_la >= inode->i_size || !fsckcfg.check_decomp)
+		if (map.m_la >= inode->i_size || !needdecode)
 			continue;
 
 		if (outfd >= 0 && !(map.m_flags & EROFS_MAP_MAPPED)) {
@@ -918,7 +919,7 @@ static int erofsfsck_extract_inode(struct erofs_inode *inode)
 	int ret;
 	char *oldpath;
 
-	if (!fsckcfg.extract_path) {
+	if (!fsckcfg.extract_path || erofs_is_packed_inode(inode)) {
 verify:
 		/* verify data chunk layout */
 		return erofs_verify_inode_data(inode, -1);
@@ -939,8 +940,6 @@ verify:
 		ret = erofs_extract_dir(inode);
 		break;
 	case S_IFREG:
-		if (erofs_is_packed_inode(inode))
-			goto verify;
 		ret = erofs_extract_file(inode);
 		break;
 	case S_IFLNK:
