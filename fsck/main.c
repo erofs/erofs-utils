@@ -300,6 +300,12 @@ static void erofsfsck_set_attributes(struct erofs_inode *inode, char *path)
 #endif
 		erofs_warn("failed to set times: %s", path);
 
+	if (fsckcfg.preserve_owner) {
+		ret = lchown(path, inode->i_uid, inode->i_gid);
+		if (ret < 0)
+			erofs_warn("failed to change ownership: %s", path);
+	}
+
 	if (!S_ISLNK(inode->i_mode)) {
 		if (fsckcfg.preserve_perms)
 			ret = chmod(path, inode->i_mode);
@@ -307,12 +313,6 @@ static void erofsfsck_set_attributes(struct erofs_inode *inode, char *path)
 			ret = chmod(path, inode->i_mode & ~fsckcfg.umask);
 		if (ret < 0)
 			erofs_warn("failed to set permissions: %s", path);
-	}
-
-	if (fsckcfg.preserve_owner) {
-		ret = lchown(path, inode->i_uid, inode->i_gid);
-		if (ret < 0)
-			erofs_warn("failed to change ownership: %s", path);
 	}
 }
 
