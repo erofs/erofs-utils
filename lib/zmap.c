@@ -25,45 +25,28 @@ struct z_erofs_maprecorder {
 	bool partialref;
 };
 
-static int z_erofs_reload_indexes(struct z_erofs_maprecorder *m,
-				  erofs_blk_t eblk)
-{
-	int ret;
-	struct erofs_map_blocks *const map = m->map;
-	char *mpage = map->mpage;
-
-	if (map->index == eblk)
-		return 0;
-
-	ret = erofs_blk_read(m->inode->sbi, 0, mpage, eblk, 1);
-	if (ret < 0)
-		return -EIO;
-
-	map->index = eblk;
-
-	return 0;
-}
-
 static int z_erofs_load_full_lcluster(struct z_erofs_maprecorder *m,
 				      unsigned long lcn)
 {
 	struct erofs_inode *const vi = m->inode;
 	struct erofs_sb_info *sbi = vi->sbi;
-	const erofs_off_t ibase = erofs_iloc(vi);
-	const erofs_off_t pos = Z_EROFS_FULL_INDEX_ALIGN(ibase +
+	const erofs_off_t pos = Z_EROFS_FULL_INDEX_ALIGN(erofs_iloc(vi) +
 			vi->inode_isize + vi->xattr_isize) +
-		lcn * sizeof(struct z_erofs_lcluster_index);
+			lcn * sizeof(struct z_erofs_lcluster_index);
+	erofs_blk_t eblk = erofs_blknr(sbi, pos);
 	struct z_erofs_lcluster_index *di;
 	unsigned int advise;
 	int err;
 
-	err = z_erofs_reload_indexes(m, erofs_blknr(sbi, pos));
-	if (err)
-		return err;
-
-	m->nextpackoff = pos + sizeof(struct z_erofs_lcluster_index);
-	m->lcn = lcn;
+	if (m->map->index != eblk) {
+		err = erofs_blk_read(sbi, 0, m->kaddr, eblk, 1);
+		if (err < 0)
+			return err;
+		m->map->index = eblk;
+	}
 	di = m->kaddr + erofs_blkoff(sbi, pos);
+	m->lcn = lcn;
+	m->nextpackoff = pos + sizeof(struct z_erofs_lcluster_index);
 
 	advise = le16_to_cpu(di->di_advise);
 	m->type = advise & Z_EROFS_LI_LCLUSTER_TYPE_MASK;
@@ -72,18 +55,21 @@ static int z_erofs_load_full_lcluster(struct z_erofs_maprecorder *m,
 		m->delta[0] = le16_to_cpu(di->di_u.delta[0]);
 		if (m->delta[0] & Z_EROFS_LI_D0_CBLKCNT) {
 			if (!(vi->z_advise & (Z_EROFS_ADVISE_BIG_PCLUSTER_1 |
-					      Z_EROFS_ADVISE_BIG_PCLUSTER_2))) {
+					Z_EROFS_ADVISE_BIG_PCLUSTER_2))) {
 				DBG_BUGON(1);
 				return -EFSCORRUPTED;
 			}
-			m->compressedblks = m->delta[0] &
-				~Z_EROFS_LI_D0_CBLKCNT;
+			m->compressedblks = m->delta[0] & ~Z_EROFS_LI_D0_CBLKCNT;
 			m->delta[0] = 1;
 		}
 		m->delta[1] = le16_to_cpu(di->di_u.delta[1]);
 	} else {
 		m->partialref = !!(advise & Z_EROFS_LI_PARTIAL_REF);
 		m->clusterofs = le16_to_cpu(di->di_clusterofs);
+		if (m->clusterofs >= 1 << vi->z_logical_clusterbits) {
+			DBG_BUGON(1);
+			return -EFSCORRUPTED;
+		}
 		m->pblk = le32_to_cpu(di->di_u.blkaddr);
 	}
 	return 0;
@@ -129,9 +115,9 @@ static int unpack_compacted_index(struct z_erofs_maprecorder *m,
 	struct erofs_inode *const vi = m->inode;
 	const unsigned int lclusterbits = vi->z_logical_clusterbits;
 	unsigned int vcnt, base, lo, lobits, encodebits, nblk, eofs;
-	int i;
-	u8 *in, type;
 	bool big_pcluster;
+	u8 *in, type;
+	int i;
 
 	if (1 << amortizedshift == 4 && lclusterbits <= 14)
 		vcnt = 2;
@@ -242,6 +228,7 @@ static int z_erofs_load_compact_lcluster(struct z_erofs_maprecorder *m,
 	unsigned int compacted_4b_initial, compacted_2b;
 	unsigned int amortizedshift;
 	erofs_off_t pos;
+	erofs_blk_t eblk;
 	int err;
 
 	if (lcn >= totalidx)
@@ -276,9 +263,13 @@ static int z_erofs_load_compact_lcluster(struct z_erofs_maprecorder *m,
 	amortizedshift = 2;
 out:
 	pos += lcn * (1 << amortizedshift);
-	err = z_erofs_reload_indexes(m, erofs_blknr(sbi, pos));
-	if (err)
-		return err;
+	eblk = erofs_blknr(sbi, pos);
+	if (m->map->index != eblk) {
+		err = erofs_blk_read(sbi, 0, m->kaddr, eblk, 1);
+		if (err < 0)
+			return err;
+		m->map->index = eblk;
+	}
 	return unpack_compacted_index(m, amortizedshift, pos, lookahead);
 }
 
@@ -472,7 +463,7 @@ static int z_erofs_do_map_blocks(struct erofs_inode *vi,
 		.kaddr = map->mpage,
 	};
 	int err = 0;
-	unsigned int lclusterbits, endoff;
+	unsigned int lclusterbits, endoff, afmt;
 	unsigned long initial_lcn;
 	unsigned long long ofs, end;
 
@@ -490,6 +481,7 @@ static int z_erofs_do_map_blocks(struct erofs_inode *vi,
 
 	map->m_flags = EROFS_MAP_MAPPED | EROFS_MAP_ENCODED;
 	end = (m.lcn + 1ULL) << lclusterbits;
+
 	switch (m.type) {
 	case Z_EROFS_LCLUSTER_TYPE_PLAIN:
 	case Z_EROFS_LCLUSTER_TYPE_HEAD1:
@@ -518,7 +510,7 @@ static int z_erofs_do_map_blocks(struct erofs_inode *vi,
 		m.delta[0] = 1;
 		/* fallthrough */
 	case Z_EROFS_LCLUSTER_TYPE_NONHEAD:
-		/* get the correspoinding first chunk */
+		/* get the corresponding first chunk */
 		err = z_erofs_extent_lookback(&m, m.delta[0]);
 		if (err)
 			goto out;
@@ -532,6 +524,7 @@ static int z_erofs_do_map_blocks(struct erofs_inode *vi,
 	if (m.partialref)
 		map->m_flags |= EROFS_MAP_PARTIAL_REF;
 	map->m_llen = end - map->m_la;
+
 	if (flags & EROFS_GET_BLOCKS_FINDTAIL) {
 		vi->z_tailextent_headlcn = m.lcn;
 		/* for non-compact indexes, fragmentoff is 64 bits */
@@ -557,17 +550,20 @@ static int z_erofs_do_map_blocks(struct erofs_inode *vi,
 			err = -EFSCORRUPTED;
 			goto out;
 		}
-		if (vi->z_advise & Z_EROFS_ADVISE_INTERLACED_PCLUSTER)
-			map->m_algorithmformat =
-				Z_EROFS_COMPRESSION_INTERLACED;
-		else
-			map->m_algorithmformat =
-				Z_EROFS_COMPRESSION_SHIFTED;
-	} else if (m.headtype == Z_EROFS_LCLUSTER_TYPE_HEAD2) {
-		map->m_algorithmformat = vi->z_algorithmtype[1];
+		afmt = vi->z_advise & Z_EROFS_ADVISE_INTERLACED_PCLUSTER ?
+			Z_EROFS_COMPRESSION_INTERLACED :
+			Z_EROFS_COMPRESSION_SHIFTED;
 	} else {
-		map->m_algorithmformat = vi->z_algorithmtype[0];
+		afmt = m.headtype == Z_EROFS_LCLUSTER_TYPE_HEAD2 ?
+			vi->z_algorithmtype[1] : vi->z_algorithmtype[0];
+		if (!(sbi->available_compr_algs & (1 << afmt))) {
+			erofs_err("inconsistent algorithmtype %u for nid %llu",
+				  afmt, vi->nid);
+			err = -EFSCORRUPTED;
+			goto out;
+		}
 	}
+	map->m_algorithmformat = afmt;
 
 	if (flags & EROFS_GET_BLOCKS_FIEMAP) {
 		err = z_erofs_get_extent_decompressedlen(&m);
@@ -662,8 +658,7 @@ out:
 }
 
 int z_erofs_map_blocks_iter(struct erofs_inode *vi,
-			    struct erofs_map_blocks *map,
-			    int flags)
+			    struct erofs_map_blocks *map, int flags)
 {
 	int err = 0;
 
@@ -690,6 +685,7 @@ int z_erofs_map_blocks_iter(struct erofs_inode *vi,
 
 	err = z_erofs_do_map_blocks(vi, map, flags);
 out:
-	DBG_BUGON(err < 0 && err != -ENOMEM);
+	if (err)
+		map->m_llen = 0;
 	return err;
 }
