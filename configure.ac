@@ -11,6 +11,19 @@ AC_CONFIG_SRCDIR([config.h.in])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR(config)
+
+AC_CANONICAL_TARGET
+
+build_linux=no
+case "${target_os}" in
+  linux*)
+    build_linux=yes
+    ;;
+esac
+
+# OS-specific treatment
+AM_CONDITIONAL([OS_LINUX], [test "$build_linux" = "yes"])
+
 AM_INIT_AUTOMAKE([foreign -Wall])
 
 # Checks for programs.
@@ -646,5 +659,6 @@ AC_CONFIG_FILES([Makefile
 		 mkfs/Makefile
 		 dump/Makefile
 		 fuse/Makefile
-		 fsck/Makefile])
+		 fsck/Makefile
+		 contrib/Makefile])
 AC_OUTPUT
