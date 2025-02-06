@@ -10,6 +10,7 @@
 #define __EROFS_FS_H
 
 #define EROFS_SUPER_MAGIC_V1    0xE0F5E1E2
+/* to allow for x86 boot sectors and other oddities. */
 #define EROFS_SUPER_OFFSET      1024
 
 #define EROFS_FEATURE_COMPAT_SB_CHKSUM          0x00000001
@@ -55,7 +56,7 @@ struct erofs_deviceslot {
 /* erofs on-disk super block (currently 128 bytes) */
 struct erofs_super_block {
 	__le32 magic;           /* file system magic number */
-	__le32 checksum;        /* crc32c(super_block) */
+	__le32 checksum;        /* crc32c to avoid unexpected on-disk overlap */
 	__le32 feature_compat;
 	__u8 blkszbits;         /* filesystem block size in bit shift */
 	__u8 sb_extslots;	/* superblock size = 128 + sb_extslots * 16 */
@@ -112,14 +113,14 @@ static inline bool erofs_inode_is_data_compressed(unsigned int datamode)
 }
 
 /* bit definitions of inode i_format */
-#define EROFS_I_VERSION_BITS            1
-#define EROFS_I_DATALAYOUT_BITS         3
+#define EROFS_I_VERSION_MASK            0x01
+#define EROFS_I_DATALAYOUT_MASK         0x07
 
 #define EROFS_I_VERSION_BIT             0
 #define EROFS_I_DATALAYOUT_BIT          1
+#define EROFS_I_ALL_BIT			4
 
-#define EROFS_I_ALL	\
-	((1 << (EROFS_I_DATALAYOUT_BIT + EROFS_I_DATALAYOUT_BITS)) - 1)
+#define EROFS_I_ALL	((1 << EROFS_I_ALL_BIT) - 1)
 
 /* indicate chunk blkbits, thus 'chunksize = blocksize << chunk blkbits' */
 #define EROFS_CHUNK_FORMAT_BLKBITS_MASK		0x001F
@@ -334,11 +335,11 @@ struct z_erofs_deflate_cfgs {
 /* 6 bytes (+ length field = 8 bytes) */
 struct z_erofs_zstd_cfgs {
 	u8 format;
-	u8 windowlog;		/* windowLog - ZSTD_WINDOWLOG_ABSOLUTEMIN(10) */
+	u8 windowlog;           /* windowLog - ZSTD_WINDOWLOG_ABSOLUTEMIN(10) */
 	u8 reserved[4];
 } __packed;
 
-#define Z_EROFS_ZSTD_MAX_DICT_SIZE	Z_EROFS_PCLUSTER_MAX_SIZE
+#define Z_EROFS_ZSTD_MAX_DICT_SIZE      Z_EROFS_PCLUSTER_MAX_SIZE
 
 /*
  * bit 0 : COMPACTED_2B indexes (0 - off; 1 - on)
