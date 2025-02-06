@@ -455,7 +455,6 @@ int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
 int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size);
 
 /* zmap.c */
-int z_erofs_fill_inode(struct erofs_inode *vi);
 int z_erofs_map_blocks_iter(struct erofs_inode *vi,
 			    struct erofs_map_blocks *map, int flags);
 

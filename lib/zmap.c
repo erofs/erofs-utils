@@ -10,23 +10,6 @@
 #include "erofs/internal.h"
 #include "erofs/print.h"
 
-int z_erofs_fill_inode(struct erofs_inode *vi)
-{
-	struct erofs_sb_info *sbi = vi->sbi;
-
-	if (!erofs_sb_has_big_pcluster(sbi) &&
-	    !erofs_sb_has_ztailpacking(sbi) && !erofs_sb_has_fragments(sbi) &&
-	    vi->datalayout == EROFS_INODE_COMPRESSED_FULL) {
-		vi->z_advise = 0;
-		vi->z_algorithmtype[0] = 0;
-		vi->z_algorithmtype[1] = 0;
-		vi->z_logical_clusterbits = sbi->blkszbits;
-
-		vi->flags |= EROFS_I_Z_INITED;
-	}
-	return 0;
-}
-
 struct z_erofs_maprecorder {
 	struct erofs_inode *inode;
 	struct erofs_map_blocks *map;
