@@ -108,17 +108,49 @@ static int get_compacted_la_distance(unsigned int lobits,
 	return d1;
 }
 
-static int unpack_compacted_index(struct z_erofs_maprecorder *m,
-				  unsigned int amortizedshift,
-				  erofs_off_t pos, bool lookahead)
+static int z_erofs_load_compact_lcluster(struct z_erofs_maprecorder *m,
+					 unsigned long lcn, bool lookahead)
 {
 	struct erofs_inode *const vi = m->inode;
+	struct erofs_sb_info *sbi = vi->sbi;
+	const erofs_off_t ebase = sizeof(struct z_erofs_map_header) +
+		round_up(erofs_iloc(vi) + vi->inode_isize + vi->xattr_isize, 8);
 	const unsigned int lclusterbits = vi->z_logical_clusterbits;
+	const unsigned int totalidx = BLK_ROUND_UP(sbi, vi->i_size);
+	unsigned int compacted_4b_initial, compacted_2b, amortizedshift;
 	unsigned int vcnt, base, lo, lobits, encodebits, nblk, eofs;
-	bool big_pcluster;
+	bool big_pcluster = vi->z_advise & Z_EROFS_ADVISE_BIG_PCLUSTER_1;
+	erofs_blk_t eblk;
+	erofs_off_t pos;
 	u8 *in, type;
-	int i;
+	int i, err;
 
+	if (lcn >= totalidx || lclusterbits > 14)
+		return -EINVAL;
+
+	m->lcn = lcn;
+	/* used to align to 32-byte (compacted_2b) alignment */
+	compacted_4b_initial = ((32 - ebase % 32) / 4) & 7;
+	compacted_2b = 0;
+	if ((vi->z_advise & Z_EROFS_ADVISE_COMPACTED_2B) &&
+	    compacted_4b_initial < totalidx)
+		compacted_2b = rounddown(totalidx - compacted_4b_initial, 16);
+
+	pos = ebase;
+	amortizedshift = 2;	/* compact_4b */
+	if (lcn >= compacted_4b_initial) {
+		pos += compacted_4b_initial * 4;
+		lcn -= compacted_4b_initial;
+		if (lcn < compacted_2b) {
+			amortizedshift = 1;
+		} else {
+			pos += compacted_2b * 2;
+			lcn -= compacted_2b;
+		}
+	}
+	pos += lcn * (1 << amortizedshift);
+
+	/* figure out the lcluster count in this pack */
 	if (1 << amortizedshift == 4 && lclusterbits <= 14)
 		vcnt = 2;
 	else if (1 << amortizedshift == 2 && lclusterbits <= 12)
@@ -126,13 +158,20 @@ static int unpack_compacted_index(struct z_erofs_maprecorder *m,
 	else
 		return -EOPNOTSUPP;
 
+	eblk = erofs_blknr(sbi, pos);
+	if (m->map->index != eblk) {
+		err = erofs_blk_read(sbi, 0, m->kaddr, eblk, 1);
+		if (err < 0)
+			return err;
+		m->map->index = eblk;
+	}
+
 	/* it doesn't equal to round_up(..) */
 	m->nextpackoff = round_down(pos, vcnt << amortizedshift) +
 			 (vcnt << amortizedshift);
-	big_pcluster = vi->z_advise & Z_EROFS_ADVISE_BIG_PCLUSTER_1;
 	lobits = max(lclusterbits, ilog2(Z_EROFS_LI_D0_CBLKCNT) + 1U);
 	encodebits = ((vcnt << amortizedshift) - sizeof(__le32)) * 8 / vcnt;
-	eofs = erofs_blkoff(vi->sbi, pos);
+	eofs = erofs_blkoff(sbi, pos);
 	base = round_down(eofs, vcnt << amortizedshift);
 	in = m->kaddr + base;
 
@@ -200,9 +239,9 @@ static int unpack_compacted_index(struct z_erofs_maprecorder *m,
 					nblk += lo & ~Z_EROFS_LI_D0_CBLKCNT;
 					continue;
 				}
+				/* bigpcluster shouldn't have plain d0 == 1 */
 				if (lo <= 1) {
 					DBG_BUGON(1);
-					/* --i; ++nblk;	continue; */
 					return -EFSCORRUPTED;
 				}
 				i -= lo - 2;
@@ -214,63 +253,6 @@ static int unpack_compacted_index(struct z_erofs_maprecorder *m,
 	in += (vcnt << amortizedshift) - sizeof(__le32);
 	m->pblk = le32_to_cpu(*(__le32 *)in) + nblk;
 	return 0;
-}
-
-static int z_erofs_load_compact_lcluster(struct z_erofs_maprecorder *m,
-					 unsigned long lcn, bool lookahead)
-{
-	struct erofs_inode *const vi = m->inode;
-	struct erofs_sb_info *sbi = vi->sbi;
-	const erofs_off_t ebase = round_up(erofs_iloc(vi) + vi->inode_isize +
-					   vi->xattr_isize, 8) +
-		sizeof(struct z_erofs_map_header);
-	const unsigned int totalidx = BLK_ROUND_UP(sbi, vi->i_size);
-	unsigned int compacted_4b_initial, compacted_2b;
-	unsigned int amortizedshift;
-	erofs_off_t pos;
-	erofs_blk_t eblk;
-	int err;
-
-	if (lcn >= totalidx || vi->z_logical_clusterbits > 14)
-		return -EINVAL;
-
-	m->lcn = lcn;
-	/* used to align to 32-byte (compacted_2b) alignment */
-	compacted_4b_initial = (32 - ebase % 32) / 4;
-	if (compacted_4b_initial == 32 / 4)
-		compacted_4b_initial = 0;
-
-	if ((vi->z_advise & Z_EROFS_ADVISE_COMPACTED_2B) &&
-	    compacted_4b_initial < totalidx)
-		compacted_2b = rounddown(totalidx - compacted_4b_initial, 16);
-	else
-		compacted_2b = 0;
-
-	pos = ebase;
-	if (lcn < compacted_4b_initial) {
-		amortizedshift = 2;
-		goto out;
-	}
-	pos += compacted_4b_initial * 4;
-	lcn -= compacted_4b_initial;
-
-	if (lcn < compacted_2b) {
-		amortizedshift = 1;
-		goto out;
-	}
-	pos += compacted_2b * 2;
-	lcn -= compacted_2b;
-	amortizedshift = 2;
-out:
-	pos += lcn * (1 << amortizedshift);
-	eblk = erofs_blknr(sbi, pos);
-	if (m->map->index != eblk) {
-		err = erofs_blk_read(sbi, 0, m->kaddr, eblk, 1);
-		if (err < 0)
-			return err;
-		m->map->index = eblk;
-	}
-	return unpack_compacted_index(m, amortizedshift, pos, lookahead);
 }
 
 static int z_erofs_load_lcluster_from_disk(struct z_erofs_maprecorder *m,
