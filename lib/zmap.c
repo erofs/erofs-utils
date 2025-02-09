@@ -633,30 +633,29 @@ int z_erofs_map_blocks_iter(struct erofs_inode *vi,
 {
 	int err = 0;
 
-	/* when trying to read beyond EOF, leave it unmapped */
-	if (map->m_la >= vi->i_size) {
+	if (map->m_la >= vi->i_size) {	/* post-EOF unmapped extent */
 		map->m_llen = map->m_la + 1 - vi->i_size;
 		map->m_la = vi->i_size;
 		map->m_flags = 0;
-		goto out;
+	} else {
+		err = z_erofs_fill_inode_lazy(vi);
+		if (!err) {
+			if ((vi->z_advise & Z_EROFS_ADVISE_FRAGMENT_PCLUSTER) &&
+			    !vi->z_tailextent_headlcn) {
+				map->m_la = 0;
+				map->m_llen = vi->i_size;
+				map->m_flags = EROFS_MAP_MAPPED |
+					EROFS_MAP_FULL_MAPPED | EROFS_MAP_FRAGMENT;
+			} else {
+				err = z_erofs_do_map_blocks(vi, map, flags);
+			}
+		}
+		if (!err && (map->m_flags & EROFS_MAP_ENCODED) &&
+		    __erofs_unlikely(map->m_plen > Z_EROFS_PCLUSTER_MAX_SIZE ||
+				     map->m_llen > Z_EROFS_PCLUSTER_MAX_DSIZE))
+			err = -EOPNOTSUPP;
+		if (err)
+			map->m_llen = 0;
 	}
-
-	err = z_erofs_fill_inode_lazy(vi);
-	if (err)
-		goto out;
-
-	if ((vi->z_advise & Z_EROFS_ADVISE_FRAGMENT_PCLUSTER) &&
-	    !vi->z_tailextent_headlcn) {
-		map->m_la = 0;
-		map->m_llen = vi->i_size;
-		map->m_flags = EROFS_MAP_MAPPED | EROFS_MAP_FULL_MAPPED |
-				EROFS_MAP_FRAGMENT;
-		goto out;
-	}
-
-	err = z_erofs_do_map_blocks(vi, map, flags);
-out:
-	if (err)
-		map->m_llen = 0;
 	return err;
 }
