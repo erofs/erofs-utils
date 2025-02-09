@@ -1,3 +1,16 @@
+erofs-utils 1.8.5
+
+ * Another maintenance release includes the following fixes:
+   - (mkfs.erofs) Support `-Efragdedupe=inode` for multithreading;
+   - (dump.erofs) Add `--cat` to show file contents (Juan Hernandez);
+   - (mkfs.erofs) Fix inefficient fragment deduplication;
+   - (fsck.erofs/erofsfuse) Introduce fragment cache;
+   - (fsck.erofs) Preserve S{U,G}ID bits properly on extraction;
+   - (mkfs.erofs, tarerofs) Align non-existent directories with their parents;
+   - Several minor bugfixes.
+
+ -- Gao Xiang <xiang@kernel.org>  Mon, 10 Feb 2025 00:00:00 +0800
+
 erofs-utils 1.8.4
 
  * Another maintenance release includes the following fixes:
