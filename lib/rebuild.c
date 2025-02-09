@@ -25,6 +25,14 @@
 #define AUFS_WH_DIROPQ		AUFS_WH_PFX AUFS_DIROPQ_NAME
 #endif
 
+/*
+ * These non-existent parent directories are created with the same permissions
+ * as their parent directories.  It is expected that a call to create these
+ * parent directories with the correct permissions will be made later, at which
+ * point the permissions will be updated.  We handle mtime in the same way.
+ * Also see: https://github.com/containerd/containerd/issues/3017
+ *           https://github.com/containerd/containerd/pull/3528
+ */
 static struct erofs_dentry *erofs_rebuild_mkdir(struct erofs_inode *dir,
 						const char *s)
 {
@@ -41,11 +49,15 @@ static struct erofs_dentry *erofs_rebuild_mkdir(struct erofs_inode *dir,
 		return ERR_PTR(-ENOMEM);
 	}
 	inode->i_mode = S_IFDIR | 0755;
+	if (dir->i_mode & S_IWGRP)
+		inode->i_mode |= S_IWGRP;
+	if (dir->i_mode & S_IWOTH)
+		inode->i_mode |= S_IWOTH;
 	inode->i_parent = dir;
-	inode->i_uid = getuid();
-	inode->i_gid = getgid();
-	inode->i_mtime = inode->sbi->build_time;
-	inode->i_mtime_nsec = inode->sbi->build_time_nsec;
+	inode->i_uid = dir->i_uid;
+	inode->i_gid = dir->i_gid;
+	inode->i_mtime = dir->i_mtime;
+	inode->i_mtime_nsec = dir->i_mtime_nsec;
 	inode->dev = dir->dev;
 	erofs_init_empty_dir(inode);
 
