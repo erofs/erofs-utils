@@ -256,7 +256,6 @@ struct erofs_inode {
 	unsigned int eof_tailrawsize;
 
 	union {
-		void *compressmeta;
 		void *chunkindexes;
 		struct {
 			uint16_t z_advise;
@@ -274,6 +273,8 @@ struct erofs_inode {
 #define z_idata_size	idata_size
 		};
 	};
+	void *compressmeta;
+
 #ifdef WITH_ANDROID
 	uint64_t capabilities;
 #endif

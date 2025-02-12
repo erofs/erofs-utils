@@ -141,16 +141,14 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 		free(d);
 
 	free(inode->compressmeta);
-	if (inode->eof_tailraw)
-		free(inode->eof_tailraw);
+	free(inode->eof_tailraw);
 	list_del(&inode->i_hash);
-	if (inode->i_srcpath)
-		free(inode->i_srcpath);
+	free(inode->i_srcpath);
 
 	if (inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF) {
 		erofs_diskbuf_close(inode->i_diskbuf);
 		free(inode->i_diskbuf);
-	} else if (inode->i_link) {
+	} else {
 		free(inode->i_link);
 	}
 	free(inode);

@@ -266,6 +266,10 @@ int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofcrc)
 	else
 		rc = 0;
 out:
+	if (rc)
+		erofs_err("Failed to record %llu-byte fragment data @ %llu for nid %llu: %d",
+			  inode->fragment_size | 0ULL,
+			  inode->fragmentoff | 0ULL, inode->nid | 0ULL, rc);
 	if (memblock)
 		munmap(memblock, inode->i_size);
 	return rc;
