@@ -75,7 +75,7 @@ static int erofs_compressor_liblzma_setdictsize(struct erofs_compress *c,
 			dict_size = erofs_compressor_lzma.default_dictsize;
 		} else {
 			dict_size = min_t(u32, Z_EROFS_LZMA_MAX_DICT_SIZE,
-					  cfg.c_mkfs_pclustersize_max << 3);
+					  cfg.c_mkfs_pclustersize_max << 2);
 			if (dict_size < 32768)
 				dict_size = 32768;
 		}
