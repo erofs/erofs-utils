@@ -268,7 +268,6 @@ AC_CHECK_FUNCS(m4_flatten([
 	strrchr
 	strtoull
 	sysconf
-	tmpfile64
 	utimensat]))
 
 # Detect maximum block size if necessary

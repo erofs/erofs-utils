@@ -9,6 +9,7 @@
 #include "erofs/blobchunk.h"
 #include "erofs/block_list.h"
 #include "erofs/cache.h"
+#include "liberofs_private.h"
 #include "sha256.h"
 #include <unistd.h>
 
@@ -27,7 +28,7 @@ struct erofs_blobchunk {
 };
 
 static struct hashmap blob_hashmap;
-static FILE *blobfile;
+static int blobfile = -1;
 static erofs_blk_t remapped_base;
 static erofs_off_t datablob_size;
 static bool multidev;
@@ -86,7 +87,7 @@ static struct erofs_blobchunk *erofs_blob_getchunk(struct erofs_sb_info *sbi,
 
 	chunk->chunksize = chunksize;
 	memcpy(chunk->sha256, sha256, sizeof(sha256));
-	blkpos = ftell(blobfile);
+	blkpos = lseek(blobfile, 0, SEEK_CUR);
 	DBG_BUGON(erofs_blkoff(sbi, blkpos));
 
 	if (sbi->extra_devices)
@@ -97,18 +98,22 @@ static struct erofs_blobchunk *erofs_blob_getchunk(struct erofs_sb_info *sbi,
 
 	erofs_dbg("Writing chunk (%llu bytes) to %u", chunksize | 0ULL,
 		  chunk->blkaddr);
-	ret = fwrite(buf, chunksize, 1, blobfile);
-	if (ret == 1) {
+	ret = __erofs_io_write(blobfile, buf, chunksize);
+	if (ret == chunksize) {
 		padding = erofs_blkoff(sbi, chunksize);
 		if (padding) {
 			padding = erofs_blksiz(sbi) - padding;
-			ret = fwrite(zeroed, padding, 1, blobfile);
+			ret = __erofs_io_write(blobfile, zeroed, padding);
+			if (ret > 0 && ret != padding)
+				ret = -EIO;
 		}
+	} else if (ret >= 0) {
+		ret = -EIO;
 	}
 
-	if (ret < 1) {
+	if (ret < 0) {
 		free(chunk);
-		return ERR_PTR(-ENOSPC);
+		return ERR_PTR(ret);
 	}
 
 	hashmap_entry_init(&chunk->ent, hash);
@@ -488,9 +493,8 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 	ssize_t length, ret;
 	u64 pos_in, pos_out;
 
-	if (blobfile) {
-		fflush(blobfile);
-		length = ftell(blobfile);
+	if (blobfile >= 0) {
+		length = lseek(blobfile, 0, SEEK_CUR);
 		if (length < 0)
 			return -errno;
 
@@ -534,11 +538,11 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 	pos_out = erofs_btell(bh, false);
 	remapped_base = erofs_blknr(sbi, pos_out);
 	pos_out += sbi->bdev.offset;
-	if (blobfile) {
+	if (blobfile >= 0) {
 		pos_in = 0;
 		do {
 			length = min_t(erofs_off_t, datablob_size,  SSIZE_MAX);
-			ret = erofs_copy_file_range(fileno(blobfile), &pos_in,
+			ret = erofs_copy_file_range(blobfile, &pos_in,
 					sbi->bdev.fd, &pos_out, length);
 		} while (ret > 0 && (datablob_size -= ret));
 
@@ -565,8 +569,8 @@ void erofs_blob_exit(void)
 	struct hashmap_entry *e;
 	struct erofs_blobchunk *bc, *n;
 
-	if (blobfile)
-		fclose(blobfile);
+	if (blobfile >= 0)
+		close(blobfile);
 
 	/* Disable hashmap shrink, effectively disabling rehash.
 	 * This way we can iterate over entire hashmap efficiently
@@ -620,18 +624,14 @@ static int erofs_insert_zerochunk(erofs_off_t chunksize)
 int erofs_blob_init(const char *blobfile_path, erofs_off_t chunksize)
 {
 	if (!blobfile_path) {
-#ifdef HAVE_TMPFILE64
-		blobfile = tmpfile64();
-#else
-		blobfile = tmpfile();
-#endif
+		blobfile = erofs_tmpfile();
 		multidev = false;
 	} else {
-		blobfile = fopen(blobfile_path, "wb");
+		blobfile = open(blobfile_path, O_WRONLY | O_BINARY);
 		multidev = true;
 	}
-	if (!blobfile)
-		return -EACCES;
+	if (blobfile < 0)
+		return -errno;
 
 	hashmap_init(&blob_hashmap, erofs_blob_hashmap_cmp, 0);
 	return erofs_insert_zerochunk(chunksize);
