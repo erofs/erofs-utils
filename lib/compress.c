@@ -26,6 +26,8 @@
 #include "erofs/workqueue.h"
 #endif
 
+#define Z_EROFS_DESTBUF_SZ	(Z_EROFS_PCLUSTER_MAX_SIZE + EROFS_MAX_BLOCK_SIZE * 2)
+
 /* compressing configuration specified by users */
 struct erofs_compress_cfg {
 	struct erofs_compress handle;
@@ -554,7 +556,7 @@ static bool z_erofs_fixup_deduped_fragment(struct z_erofs_compress_sctx *ctx)
 static int __z_erofs_compress_one(struct z_erofs_compress_sctx *ctx,
 				  struct z_erofs_inmem_extent *e)
 {
-	static char g_dstbuf[EROFS_CONFIG_COMPR_MAX_SZ + EROFS_MAX_BLOCK_SIZE];
+	static char g_dstbuf[Z_EROFS_DESTBUF_SZ];
 	char *dstbuf = ctx->destbuf ?: g_dstbuf;
 	struct z_erofs_compress_ictx *ictx = ctx->ictx;
 	struct erofs_inode *inode = ictx->inode;
@@ -1218,8 +1220,7 @@ void *z_erofs_mt_wq_tls_alloc(struct erofs_workqueue *wq, void *ptr)
 	if (!tls->queue)
 		goto err_free_priv;
 
-	tls->destbuf = calloc(1, EROFS_CONFIG_COMPR_MAX_SZ +
-			      EROFS_MAX_BLOCK_SIZE);
+	tls->destbuf = calloc(1, Z_EROFS_DESTBUF_SZ);
 	if (!tls->destbuf)
 		goto err_free_queue;
 
@@ -1291,6 +1292,7 @@ void z_erofs_mt_workfn(struct erofs_work *work, void *tlsp)
 		goto out;
 
 	sctx->pclustersize = z_erofs_get_max_pclustersize(inode);
+	DBG_BUGON(sctx->pclustersize > Z_EROFS_PCLUSTER_MAX_SIZE);
 	sctx->queue = tls->queue;
 	sctx->destbuf = tls->destbuf;
 	sctx->chandle = &tls->ccfg[cwork->alg_id].handle;
