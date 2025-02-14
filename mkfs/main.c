@@ -814,6 +814,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		case 520: {
 			unsigned int processors;
 
+			errno = 0;
 			cfg.c_mt_workers = strtoul(optarg, &endptr, 0);
 			if (errno || *endptr != '\0') {
 				erofs_err("invalid worker number %s", optarg);
@@ -828,6 +829,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		}
 #endif
 		case 521:
+			errno = 0;
 			i = strtol(optarg, &endptr, 0);
 			if (errno || *endptr != '\0') {
 				erofs_err("invalid zfeature bits %s", optarg);
@@ -844,6 +846,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			} else if (!strcmp(optarg, "rvsp")) {
 				dataimport_mode = EROFS_MKFS_DATA_IMPORT_RVSP;
 			} else {
+				errno = 0;
 				dataimport_mode = strtol(optarg, &endptr, 0);
 				if (errno || *endptr != '\0') {
 					erofs_err("invalid --%s=%s",
