@@ -3,9 +3,6 @@
  * Copyright (C), 2022, Coolpad Group Limited.
  * Created by Yue Hu <huyue2@coolpad.com>
  */
-#ifndef _LARGEFILE_SOURCE
-#define _LARGEFILE_SOURCE
-#endif
 #ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
 #endif
@@ -25,6 +22,7 @@
 #include "erofs/internal.h"
 #include "erofs/fragments.h"
 #include "erofs/bitops.h"
+#include "liberofs_private.h"
 
 struct erofs_fragment_dedupe_item {
 	struct list_head	list;
@@ -41,7 +39,7 @@ struct erofs_fragment_dedupe_item {
 
 struct erofs_packed_inode {
 	struct list_head *hash;
-	FILE *file;
+	int fd;
 	unsigned long *uptodate;
 #if EROFS_MT_ENABLED
 	pthread_mutex_t mutex;
@@ -108,8 +106,7 @@ static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 
 				sz = min_t(u64, pos, sizeof(buf[0]));
 				sz = min_t(u64, sz, inode->i_size - i);
-				if (pread(fileno(epi->file), buf[0], sz,
-					  pos - sz) != sz)
+				if (pread(epi->fd, buf[0], sz, pos - sz) != sz)
 					break;
 				if (pread(fd, buf[1], sz,
 					  inode->i_size - i - sz) != sz)
@@ -208,14 +205,10 @@ void z_erofs_fragments_commit(struct erofs_inode *inode)
 int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofcrc)
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
-#ifdef HAVE_FTELLO64
-	off64_t offset = ftello64(epi->file);
-#else
-	off_t offset = ftello(epi->file);
-#endif
+	s64 offset, rc;
 	char *memblock;
-	int rc;
 
+	offset = lseek(epi->fd, 0, SEEK_CUR);
 	if (offset < 0)
 		return -errno;
 
@@ -234,14 +227,21 @@ int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofcrc)
 
 			rc = read(fd, buf, sz);
 			if (rc != sz) {
+				if (rc <= 0) {
+					if (!rc)
+						rc = -EIO;
+					else
+						rc = -errno;
+					goto out;
+				}
+				sz = rc;
+			}
+			rc = __erofs_io_write(epi->fd, buf, sz);
+			if (rc != sz) {
 				if (rc < 0)
 					rc = -errno;
 				else
-					rc = -EAGAIN;
-				goto out;
-			}
-			if (fwrite(buf, sz, 1, epi->file) != 1) {
-				rc = -EIO;
+					rc = -EIO;
 				goto out;
 			}
 			remaining -= sz;
@@ -251,9 +251,15 @@ int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofcrc)
 			rc = -errno;
 			goto out;
 		}
-	} else if (fwrite(memblock, inode->fragment_size, 1, epi->file) != 1) {
-		rc = -EIO;
-		goto out;
+	} else {
+		rc = __erofs_io_write(epi->fd, memblock, inode->fragment_size);
+		if (rc != inode->fragment_size) {
+			if (rc < 0)
+				rc = -errno;
+			else
+				rc = -EIO;
+			goto out;
+		}
 	}
 
 	erofs_dbg("Recording %llu fragment data at %llu",
@@ -279,11 +285,7 @@ int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
 			   unsigned int len, u32 tofcrc)
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
-#ifdef HAVE_FTELLO64
-	off64_t offset = ftello64(epi->file);
-#else
-	off_t offset = ftello(epi->file);
-#endif
+	s64 offset = lseek(epi->fd, 0, SEEK_CUR);
 	int ret;
 
 	if (offset < 0)
@@ -292,8 +294,12 @@ int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
 	inode->fragmentoff = (erofs_off_t)offset;
 	inode->fragment_size = len;
 
-	if (fwrite(data, len, 1, epi->file) != 1)
+	ret = write(epi->fd, data, len);
+	if (ret != len) {
+		if (ret < 0)
+			return -errno;
 		return -EIO;
+	}
 
 	erofs_dbg("Recording %llu fragment data at %llu",
 		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL);
@@ -313,19 +319,18 @@ int erofs_flush_packed_inode(struct erofs_sb_info *sbi)
 	if (!epi || !erofs_sb_has_fragments(sbi))
 		return -EINVAL;
 
-	fflush(epi->file);
-	if (!ftello(epi->file))
+	if (lseek(epi->fd, 0, SEEK_CUR) <= 0)
 		return 0;
-	inode = erofs_mkfs_build_special_from_fd(sbi, fileno(epi->file),
+	inode = erofs_mkfs_build_special_from_fd(sbi, epi->fd,
 						 EROFS_PACKED_INODE);
 	sbi->packed_nid = erofs_lookupnid(inode);
 	erofs_iput(inode);
 	return 0;
 }
 
-FILE *erofs_packedfile(struct erofs_sb_info *sbi)
+int erofs_packedfile(struct erofs_sb_info *sbi)
 {
-	return sbi->packedinode->file;
+	return sbi->packedinode->fd;
 }
 
 void erofs_packedfile_exit(struct erofs_sb_info *sbi)
@@ -347,8 +352,8 @@ void erofs_packedfile_exit(struct erofs_sb_info *sbi)
 		free(epi->hash);
 	}
 
-	if (epi->file)
-		fclose(epi->file);
+	if (epi->fd >= 0)
+		close(epi->fd);
 	free(epi);
 	sbi->packedinode = NULL;
 }
@@ -376,14 +381,9 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 			init_list_head(&epi->hash[i]);
 	}
 
-	epi->file =
-#ifdef HAVE_TMPFILE64
-		tmpfile64();
-#else
-		tmpfile();
-#endif
-	if (!epi->file) {
-		err = -errno;
+	epi->fd = erofs_tmpfile();
+	if (epi->fd < 0) {
+		err = epi->fd;
 		goto err_out;
 	}
 
@@ -392,6 +392,7 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 			.sbi = sbi,
 			.nid = sbi->packed_nid,
 		};
+		s64 offset;
 
 		err = erofs_read_inode_from_disk(&ei);
 		if (err) {
@@ -400,8 +401,8 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 			goto err_out;
 		}
 
-		err = fseek(epi->file, ei.i_size, SEEK_SET);
-		if (err) {
+		offset = lseek(epi->fd, ei.i_size, SEEK_SET);
+		if (offset < 0) {
 			err = -errno;
 			goto err_out;
 		}
@@ -472,13 +473,12 @@ static void *erofs_packedfile_preload(struct erofs_inode *pi,
 	if (err)
 		goto err_out;
 
-	fflush(epi->file);
-	err = pwrite(fileno(epi->file), buffer, map->m_llen, map->m_la);
+	err = pwrite(epi->fd, buffer, map->m_llen, map->m_la);
 	if (err < 0) {
 		err = -errno;
 		if (err == -ENOSPC) {
 			memset(epi->uptodate, 0, epi->uptodate_size);
-			(void)!ftruncate(fileno(epi->file), 0);
+			(void)!ftruncate(epi->fd, 0);
 		}
 		goto err_out;
 	}
@@ -557,7 +557,7 @@ int erofs_packedfile_read(struct erofs_sb_info *sbi,
 			if (!uptodate)
 				continue;
 
-			err = pread(fileno(epi->file), buf, len, pos);
+			err = pread(epi->fd, buf, len, pos);
 			if (err < 0)
 				break;
 			if (err == len) {

@@ -22,7 +22,7 @@ int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofcrc);
 int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
 			   unsigned int len, u32 tofcrc);
 int erofs_flush_packed_inode(struct erofs_sb_info *sbi);
-FILE *erofs_packedfile(struct erofs_sb_info *sbi);
+int erofs_packedfile(struct erofs_sb_info *sbi);
 
 int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs);
 void erofs_packedfile_exit(struct erofs_sb_info *sbi);

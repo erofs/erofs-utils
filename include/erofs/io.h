@@ -49,6 +49,8 @@ struct erofs_vfile {
 	};
 };
 
+ssize_t __erofs_io_write(int fd, const void *buf, size_t len);
+
 int erofs_io_fstat(struct erofs_vfile *vf, struct stat *buf);
 ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf, u64 pos, size_t len);
 int erofs_io_fsync(struct erofs_vfile *vf);

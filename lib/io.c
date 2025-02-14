@@ -26,6 +26,28 @@
 #define EROFS_MODNAME	"erofs_io"
 #include "erofs/print.h"
 
+ssize_t __erofs_io_write(int fd, const void *buf, size_t len)
+{
+	ssize_t ret, written = 0;
+
+	do {
+		ret = write(fd, buf, len);
+		if (ret <= 0) {
+			if (!ret)
+				break;
+			if (errno != EINTR) {
+				erofs_err("failed to write: %s", strerror(errno));
+				return -errno;
+			}
+			ret = 0;
+		}
+		buf += ret;
+		written += ret;
+	} while (written < len);
+
+	return written;
+}
+
 int erofs_io_fstat(struct erofs_vfile *vf, struct stat *buf)
 {
 	if (__erofs_unlikely(cfg.c_dry_run)) {

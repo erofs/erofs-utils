@@ -811,21 +811,22 @@ static int comp_shared_xattr_item(const void *a, const void *b)
 
 int erofs_xattr_flush_name_prefixes(struct erofs_sb_info *sbi)
 {
-	FILE *f = erofs_packedfile(sbi);
+	int fd = erofs_packedfile(sbi);
 	struct ea_type_node *tnode;
-	off_t offset;
+	s64 offset;
+	int err;
 
 	if (!ea_prefix_count)
 		return 0;
-	offset = ftello(f);
+	offset = lseek(fd, 0, SEEK_CUR);
 	if (offset < 0)
 		return -errno;
-	if (offset > UINT32_MAX)
-		return -EOVERFLOW;
-
 	offset = round_up(offset, 4);
-	if (fseek(f, offset, SEEK_SET))
+	if (lseek(fd, offset, SEEK_SET) < 0)
 		return -errno;
+
+	if ((offset >> 2) > UINT32_MAX)
+		return -EOVERFLOW;
 	sbi->xattr_prefix_start = (u32)offset >> 2;
 	sbi->xattr_prefix_count = ea_prefix_count;
 
@@ -846,10 +847,14 @@ int erofs_xattr_flush_name_prefixes(struct erofs_sb_info *sbi)
 		       infix_len);
 		len = sizeof(struct erofs_xattr_long_prefix) + infix_len;
 		u.s.size = cpu_to_le16(len);
-		if (fwrite(&u.s, sizeof(__le16) + len, 1, f) != 1)
+		err = __erofs_io_write(fd, &u.s, sizeof(__le16) + len);
+		if (err != sizeof(__le16) + len) {
+			if (err < 0)
+				return -errno;
 			return -EIO;
+		}
 		offset = round_up(offset + sizeof(__le16) + len, 4);
-		if (fseek(f, offset, SEEK_SET))
+		if (lseek(fd, offset, SEEK_SET) < 0)
 			return -errno;
 	}
 	erofs_sb_set_fragments(sbi);
