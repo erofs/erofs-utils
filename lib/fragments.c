@@ -31,7 +31,7 @@ struct erofs_fragment_dedupe_item {
 	u8			data[];
 };
 
-#define EROFS_FRAGMENT_INMEM_SZ_MAX	EROFS_CONFIG_COMPR_MAX_SZ
+#define EROFS_FRAGMENT_INMEM_SZ_MAX	(128 * 1024)
 #define EROFS_TOF_HASHLEN		16
 
 #define FRAGMENT_HASHSIZE		65536
