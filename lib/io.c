@@ -31,7 +31,7 @@ ssize_t __erofs_io_write(int fd, const void *buf, size_t len)
 	ssize_t ret, written = 0;
 
 	do {
-		ret = write(fd, buf, len);
+		ret = write(fd, buf, len - written);
 		if (ret <= 0) {
 			if (!ret)
 				break;
