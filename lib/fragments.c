@@ -271,7 +271,7 @@ out:
 	if (rc)
 		erofs_err("Failed to record %llu-byte fragment data @ %llu for nid %llu: %d",
 			  inode->fragment_size | 0ULL,
-			  inode->fragmentoff | 0ULL, inode->nid | 0ULL, rc);
+			  inode->fragmentoff | 0ULL, inode->nid | 0ULL, (int)rc);
 	if (memblock)
 		munmap(memblock, inode->i_size);
 	return rc;
