@@ -160,17 +160,17 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 		chunk = *(void **)(inode->chunkindexes + src);
 
 		if (chunk->blkaddr == EROFS_NULL_ADDR) {
-			idx.blkaddr = EROFS_NULL_ADDR;
+			idx.startblk_lo = EROFS_NULL_ADDR;
 		} else if (chunk->device_id) {
 			DBG_BUGON(!(inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES));
-			idx.blkaddr = chunk->blkaddr;
+			idx.startblk_lo = chunk->blkaddr;
 			extent_start = EROFS_NULL_ADDR;
 		} else {
-			idx.blkaddr = remapped_base + chunk->blkaddr;
+			idx.startblk_lo = remapped_base + chunk->blkaddr;
 		}
 
 		if (extent_start == EROFS_NULL_ADDR ||
-		    idx.blkaddr != extent_end) {
+		    idx.startblk_lo != extent_end) {
 			if (extent_start != EROFS_NULL_ADDR) {
 				remaining_blks -= extent_end - extent_start;
 				tarerofs_blocklist_write(extent_start,
@@ -182,15 +182,15 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 					first_extent, false);
 				first_extent = false;
 			}
-			extent_start = idx.blkaddr;
+			extent_start = idx.startblk_lo;
 			source_offset = chunk->sourceoffset;
 		}
-		extent_end = idx.blkaddr + chunkblks;
+		extent_end = idx.startblk_lo + chunkblks;
 		idx.device_id = cpu_to_le16(chunk->device_id);
-		idx.blkaddr = cpu_to_le32(idx.blkaddr);
+		idx.startblk_lo = cpu_to_le32(idx.startblk_lo);
 
 		if (unit == EROFS_BLOCK_MAP_ENTRY_SIZE)
-			memcpy(inode->chunkindexes + dst, &idx.blkaddr, unit);
+			memcpy(inode->chunkindexes + dst, &idx.startblk_lo, unit);
 		else
 			memcpy(inode->chunkindexes + dst, &idx, sizeof(idx));
 	}
@@ -513,8 +513,8 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 		i = 0;
 		do {
 			struct erofs_deviceslot dis = {
-				.mapped_blkaddr = cpu_to_le32(nblocks),
-				.blocks = cpu_to_le32(sbi->devs[i].blocks),
+				.uniaddr_lo = cpu_to_le32(nblocks),
+				.blocks_lo = cpu_to_le32(sbi->devs[i].blocks),
 			};
 
 			memcpy(dis.tag, sbi->devs[i].tag, sizeof(dis.tag));
