@@ -525,12 +525,30 @@ static bool erofs_file_is_compressible(struct erofs_inode *inode)
 	return true;
 }
 
-static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
+static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd,
+					   erofs_off_t fpos)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
 	erofs_blk_t nblocks, i;
 	unsigned int len;
 	int ret;
+	bool noseek = inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF;
+
+	if (!noseek && erofs_sb_has_48bit(sbi)) {
+		if (lseek(fd, fpos, SEEK_DATA) < 0 && errno == ENXIO) {
+			ret = erofs_allocate_inode_bh_data(inode, 0);
+			if (ret)
+				return ret;
+			inode->datalayout = EROFS_INODE_FLAT_PLAIN;
+			return 0;
+		} else {
+			ret = lseek(fd, fpos, SEEK_SET);
+			if (ret < 0)
+				return ret;
+			else if (ret != fpos)
+				return -EIO;
+		}
+	}
 
 	inode->datalayout = EROFS_INODE_FLAT_INLINE;
 	nblocks = inode->i_size >> sbi->blkszbits;
@@ -545,7 +563,7 @@ static int write_uncompressed_file_from_fd(struct erofs_inode *inode, int fd)
 		ret = erofs_io_xcopy(&sbi->bdev,
 				     erofs_pos(sbi, inode->u.i_blkaddr + i),
 				     &((struct erofs_vfile){ .fd = fd }), len,
-			inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF);
+				     noseek);
 		if (ret)
 			return ret;
 	}
@@ -580,7 +598,7 @@ int erofs_write_unencoded_file(struct erofs_inode *inode, int fd, u64 fpos)
 	}
 
 	/* fallback to all data uncompressed */
-	return write_uncompressed_file_from_fd(inode, fd);
+	return write_uncompressed_file_from_fd(inode, fd, fpos);
 }
 
 int erofs_iflush(struct erofs_inode *inode)
@@ -593,7 +611,9 @@ int erofs_iflush(struct erofs_inode *inode)
 		struct erofs_inode_extended die;
 	} u = {};
 	union erofs_inode_i_u u1;
-	int ret;
+	union erofs_inode_i_nb nb;
+	bool nlink_1 = true;
+	int ret, fmt;
 
 	if (inode->bh)
 		off = erofs_btell(inode->bh, false);
@@ -610,9 +630,22 @@ int erofs_iflush(struct erofs_inode *inode)
 	else
 		u1.startblk_lo = cpu_to_le32(inode->u.i_blkaddr);
 
+	if (is_inode_layout_compression(inode) &&
+	    inode->u.i_blocks > UINT32_MAX) {
+		nb.blocks_hi = cpu_to_le16(inode->u.i_blocks >> 32);
+	} else if (inode->datalayout != EROFS_INODE_CHUNK_BASED &&
+		 inode->u.i_blkaddr > UINT32_MAX) {
+		if (inode->u.i_blkaddr == EROFS_NULL_ADDR)
+			nlink_1 = false;
+		nb.startblk_hi = cpu_to_le16(inode->u.i_blkaddr >> 32);
+	} else {
+		nlink_1 = false;
+		nb = (union erofs_inode_i_nb){};
+	}
+
 	switch (inode->inode_isize) {
 	case sizeof(struct erofs_inode_compact):
-		u.dic.i_format = cpu_to_le16(0 | (inode->datalayout << 1));
+		fmt = 0 | (inode->datalayout << 1);
 		u.dic.i_xattr_icount = cpu_to_le16(icount);
 		u.dic.i_mode = cpu_to_le16(inode->i_mode);
 		u.dic.i_nb.nlink = cpu_to_le16(inode->i_nlink);
@@ -622,7 +655,19 @@ int erofs_iflush(struct erofs_inode *inode)
 
 		u.dic.i_uid = cpu_to_le16((u16)inode->i_uid);
 		u.dic.i_gid = cpu_to_le16((u16)inode->i_gid);
+		if (!cfg.c_ignore_mtime)
+			u.dic.i_mtime = cpu_to_le64(inode->i_mtime - sbi->epoch);
 		u.dic.i_u = u1;
+
+		if (nlink_1) {
+			if (inode->i_nlink != 1)
+				return -EFSCORRUPTED;
+			u.dic.i_nb = nb;
+			fmt |= 1 << EROFS_I_NLINK_1_BIT;
+		} else {
+			u.dic.i_nb.nlink = cpu_to_le16(inode->i_nlink);
+		}
+		u.dic.i_format = cpu_to_le16(fmt);
 		break;
 	case sizeof(struct erofs_inode_extended):
 		u.die.i_format = cpu_to_le16(1 | (inode->datalayout << 1));
@@ -639,6 +684,7 @@ int erofs_iflush(struct erofs_inode *inode)
 		u.die.i_mtime = cpu_to_le64(inode->i_mtime);
 		u.die.i_mtime_nsec = cpu_to_le32(inode->i_mtime_nsec);
 		u.die.i_u = u1;
+		u.die.i_nb = nb;
 		break;
 	default:
 		erofs_err("unsupported on-disk inode version of nid %llu",
@@ -725,6 +771,19 @@ static int erofs_prepare_tail_block(struct erofs_inode *inode)
 	return 0;
 }
 
+static bool erofs_inode_need_48bit(struct erofs_inode *inode)
+{
+	if (inode->datalayout == EROFS_INODE_CHUNK_BASED) {
+		if (inode->u.chunkformat & EROFS_CHUNK_FORMAT_48BIT)
+			return true;
+	} else if (!is_inode_layout_compression(inode)) {
+		if (inode->u.i_blkaddr != EROFS_NULL_ADDR &&
+		    inode->u.i_blkaddr > UINT32_MAX)
+			return true;
+	}
+	return false;
+}
+
 static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 {
 	struct erofs_bufmgr *bmgr = inode->sbi->bmgr;
@@ -733,6 +792,14 @@ static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 
 	DBG_BUGON(inode->bh || inode->bh_inline);
 
+	if (erofs_inode_need_48bit(inode)) {
+		if (!erofs_sb_has_48bit(inode->sbi))
+			return -ENOSPC;
+		if (inode->inode_isize == sizeof(struct erofs_inode_compact) &&
+		    inode->i_nlink != 1)
+			inode->inode_isize =
+				sizeof(struct erofs_inode_extended);
+	}
 	inodesize = inode->inode_isize + inode->xattr_isize;
 	if (inode->extent_isize)
 		inodesize = roundup(inodesize, 8) + inode->extent_isize;
@@ -929,9 +996,9 @@ static bool erofs_should_use_inode_extended(struct erofs_inode *inode)
 		return true;
 	if (inode->i_nlink > USHRT_MAX)
 		return true;
-	if ((inode->i_mtime != inode->sbi->build_time ||
-	     inode->i_mtime_nsec != inode->sbi->fixed_nsec) &&
-	    !cfg.c_ignore_mtime)
+	if (!cfg.c_ignore_mtime &&
+	    !erofs_sb_has_48bit(inode->sbi) &&
+	    inode->i_mtime != inode->sbi->epoch)
 		return true;
 	return false;
 }
@@ -1029,7 +1096,7 @@ int __erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 		if (inode->i_mtime < sbi->build_time)
 			break;
 	case TIMESTAMP_FIXED:
-		inode->i_mtime = sbi->build_time;
+		inode->i_mtime = sbi->epoch + sbi->build_time;
 		inode->i_mtime_nsec = sbi->fixed_nsec;
 	default:
 		break;
@@ -1925,7 +1992,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_sb_info *sbi,
 		if (ret < 0)
 			return ERR_PTR(-errno);
 	}
-	ret = write_uncompressed_file_from_fd(inode, fd);
+	ret = write_uncompressed_file_from_fd(inode, fd, 0);
 	if (ret)
 		return ERR_PTR(ret);
 out:
@@ -1997,7 +2064,7 @@ struct erofs_inode *erofs_rebuild_make_root(struct erofs_sb_info *sbi)
 	root->i_srcpath = strdup("/");
 	root->i_mode = S_IFDIR | 0777;
 	root->i_parent = root;
-	root->i_mtime = root->sbi->build_time;
+	root->i_mtime = root->sbi->epoch + root->sbi->build_time;
 	root->i_mtime_nsec = root->sbi->fixed_nsec;
 	erofs_init_empty_dir(root);
 	return root;

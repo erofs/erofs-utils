@@ -322,6 +322,18 @@ static int erofs_mkfs_feat_set_fragdedupe(bool en, const char *val,
 	return 0;
 }
 
+static int erofs_mkfs_feat_set_48bit(bool en, const char *val,
+				     unsigned int vallen)
+{
+	if (vallen)
+		return -EINVAL;
+	if (en)
+		erofs_sb_set_48bit(&g_sbi);
+	else
+		erofs_sb_clear_48bit(&g_sbi);
+	return 0;
+}
+
 static struct {
 	char *feat;
 	int (*set)(bool en, const char *val, unsigned int len);
@@ -332,6 +344,7 @@ static struct {
 	{"all-fragments", erofs_mkfs_feat_set_all_fragments},
 	{"dedupe", erofs_mkfs_feat_set_dedupe},
 	{"fragdedupe", erofs_mkfs_feat_set_fragdedupe},
+	{"48bit", erofs_mkfs_feat_set_48bit},
 	{NULL, NULL},
 };
 
@@ -1201,6 +1214,7 @@ int main(int argc, char **argv)
 	erofs_blk_t nblocks = 0;
 	struct timeval t;
 	FILE *blklst = NULL;
+	s64 mkfs_time = 0;
 	u32 crc;
 
 	erofs_init_configure();
@@ -1220,12 +1234,17 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	g_sbi.fixed_nsec = 0;
 	if (cfg.c_unix_timestamp != -1) {
-		g_sbi.build_time      = cfg.c_unix_timestamp;
-		g_sbi.fixed_nsec      = 0;
+		mkfs_time = cfg.c_unix_timestamp;
 	} else if (!gettimeofday(&t, NULL)) {
-		g_sbi.build_time      = t.tv_sec;
-		g_sbi.fixed_nsec      = t.tv_usec;
+		mkfs_time = t.tv_sec;
+	}
+	if (erofs_sb_has_48bit(&g_sbi)) {
+		g_sbi.epoch = max_t(s64, 0, mkfs_time - UINT32_MAX);
+		g_sbi.build_time = mkfs_time - g_sbi.epoch;
+	} else {
+		g_sbi.epoch = mkfs_time;
 	}
 
 	err = erofs_dev_open(&g_sbi, cfg.c_img_path, O_RDWR |
