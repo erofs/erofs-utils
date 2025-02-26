@@ -189,7 +189,7 @@ int erofs_allocate_inode_bh_data(struct erofs_inode *inode, erofs_blk_t nblocks)
 
 	if (!nblocks) {
 		/* it has only tail-end data */
-		inode->u.i_blkaddr = NULL_ADDR;
+		inode->u.i_blkaddr = EROFS_NULL_ADDR;
 		return 0;
 	}
 
@@ -844,7 +844,7 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		ibh->fsprivate = erofs_igrab(inode);
 		ibh->op = &erofs_write_inline_bhops;
 
-		erofs_droid_blocklist_write_tail_end(inode, NULL_ADDR);
+		erofs_droid_blocklist_write_tail_end(inode, EROFS_NULL_ADDR);
 	} else {
 		int ret;
 		erofs_off_t pos, zero_pos;
