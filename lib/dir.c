@@ -179,7 +179,7 @@ int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck)
 	}
 
 	if (fsck && (ctx->flags & EROFS_READDIR_ALL_SPECIAL_FOUND) !=
-			EROFS_READDIR_ALL_SPECIAL_FOUND) {
+			EROFS_READDIR_ALL_SPECIAL_FOUND && !err) {
 		erofs_err("`.' or `..' dirent is missing @ nid %llu",
 			  dir->nid | 0ULL);
 		return -EFSCORRUPTED;

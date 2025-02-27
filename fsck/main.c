@@ -20,7 +20,13 @@
 
 static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid);
 
+struct erofsfsck_dirstack {
+	erofs_nid_t dirs[PATH_MAX];
+	int top;
+};
+
 struct erofsfsck_cfg {
+	struct erofsfsck_dirstack dirstack;
 	u64 physical_blocks;
 	u64 logical_blocks;
 	char *extract_path;
@@ -967,7 +973,7 @@ verify:
 
 static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 {
-	int ret;
+	int ret, i;
 	struct erofs_inode inode;
 
 	erofs_dbg("check inode: nid(%llu)", nid | 0ULL);
@@ -999,7 +1005,6 @@ static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 			return ret;
 	}
 
-	/* XXXX: the dir depth should be restricted in order to avoid loops */
 	if (S_ISDIR(inode.i_mode)) {
 		struct erofs_dir_context ctx = {
 			.flags = EROFS_READDIR_VALID_PNID,
@@ -1008,7 +1013,15 @@ static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 			.cb = erofsfsck_dirent_iter,
 		};
 
+		/* XXX: support the deeper cases later */
+		if (fsckcfg.dirstack.top >= ARRAY_SIZE(fsckcfg.dirstack.dirs))
+			return -ENAMETOOLONG;
+		for (i = 0; i < fsckcfg.dirstack.top; ++i)
+			if (inode.nid == fsckcfg.dirstack.dirs[i])
+				return -ELOOP;
+		fsckcfg.dirstack.dirs[fsckcfg.dirstack.top++] = pnid;
 		ret = erofs_iterate_dir(&ctx, true);
+		--fsckcfg.dirstack.top;
 	}
 
 	if (!ret && !erofs_is_packed_inode(&inode))
