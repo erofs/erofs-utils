@@ -826,8 +826,14 @@ out_eot:
 		memcpy(path + j, th->name, sizeof(th->name));
 		path[j + sizeof(th->name)] = '\0';
 		j = strlen(path);
-		while (path[j - 1] == '/')
-			path[--j] = '\0';
+		if (__erofs_unlikely(!j)) {
+			erofs_info("substituting '.' for empty filename");
+			path[0] = '.';
+			path[1] = '\0';
+		} else {
+			while (path[j - 1] == '/')
+				path[--j] = '\0';
+		}
 	}
 
 	dataoff = tar->offset;
