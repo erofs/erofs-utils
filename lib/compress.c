@@ -120,7 +120,7 @@ static bool z_erofs_mt_enabled;
 
 #define Z_EROFS_LEGACY_MAP_HEADER_SIZE	Z_EROFS_FULL_INDEX_ALIGN(0)
 
-static void z_erofs_write_indexes_final(struct z_erofs_compress_ictx *ctx)
+static void z_erofs_fini_full_indexes(struct z_erofs_compress_ictx *ctx)
 {
 	const unsigned int type = Z_EROFS_LCLUSTER_TYPE_PLAIN;
 	struct z_erofs_lcluster_index di;
@@ -136,8 +136,8 @@ static void z_erofs_write_indexes_final(struct z_erofs_compress_ictx *ctx)
 	ctx->metacur += sizeof(di);
 }
 
-static void z_erofs_write_extent(struct z_erofs_compress_ictx *ctx,
-				 struct z_erofs_inmem_extent *e)
+static void z_erofs_write_full_indexes(struct z_erofs_compress_ictx *ctx,
+				       struct z_erofs_inmem_extent *e)
 {
 	struct erofs_inode *inode = ctx->inode;
 	struct erofs_sb_info *sbi = inode->sbi;
@@ -231,20 +231,6 @@ static void z_erofs_write_extent(struct z_erofs_compress_ictx *ctx,
 	} while (clusterofs + count >= erofs_blksiz(sbi));
 
 	ctx->clusterofs = clusterofs + count;
-}
-
-static void z_erofs_write_indexes(struct z_erofs_compress_ictx *ctx)
-{
-	struct z_erofs_extent_item *ei, *n;
-
-	ctx->clusterofs = 0;
-	list_for_each_entry_safe(ei, n, &ctx->extents, list) {
-		z_erofs_write_extent(ctx, &ei->e);
-
-		list_del(&ei->list);
-		free(ei);
-	}
-	z_erofs_write_indexes_final(ctx);
 }
 
 static bool z_erofs_need_refill(struct z_erofs_compress_sctx *ctx)
@@ -1006,6 +992,31 @@ static void z_erofs_write_mapheader(struct erofs_inode *inode,
 	memcpy(compressmeta, &h, sizeof(struct z_erofs_map_header));
 }
 
+static void *z_erofs_write_indexes(struct z_erofs_compress_ictx *ctx)
+{
+	struct erofs_inode *inode = ctx->inode;
+	struct z_erofs_extent_item *ei, *n;
+	void *metabuf;
+
+	metabuf = malloc(BLK_ROUND_UP(inode->sbi, inode->i_size) *
+			 sizeof(struct z_erofs_lcluster_index) +
+			 Z_EROFS_LEGACY_MAP_HEADER_SIZE);
+	if (!metabuf)
+		return ERR_PTR(-ENOMEM);
+
+	ctx->metacur = metabuf + Z_EROFS_LEGACY_MAP_HEADER_SIZE;
+	ctx->clusterofs = 0;
+	list_for_each_entry_safe(ei, n, &ctx->extents, list) {
+		z_erofs_write_full_indexes(ctx, &ei->e);
+
+		list_del(&ei->list);
+		free(ei);
+	}
+	z_erofs_fini_full_indexes(ctx);
+	z_erofs_write_mapheader(inode, metabuf);
+	return metabuf;
+}
+
 void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
@@ -1126,15 +1137,11 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 	DBG_BUGON(compressed_blocks < !!inode->idata_size);
 	compressed_blocks -= !!inode->idata_size;
 
-	compressmeta = malloc(BLK_ROUND_UP(sbi, inode->i_size) *
-			      sizeof(struct z_erofs_lcluster_index) +
-			      Z_EROFS_LEGACY_MAP_HEADER_SIZE);
+	compressmeta = z_erofs_write_indexes(ictx);
 	if (!compressmeta) {
 		ret = -ENOMEM;
 		goto err_free_idata;
 	}
-	ictx->metacur = compressmeta + Z_EROFS_LEGACY_MAP_HEADER_SIZE;
-	z_erofs_write_indexes(ictx);
 
 	legacymetasize = ictx->metacur - compressmeta;
 	/* estimate if data compression saves space or not */
@@ -1146,7 +1153,6 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 		goto err_free_meta;
 	}
 	z_erofs_dedupe_commit(false);
-	z_erofs_write_mapheader(inode, compressmeta);
 
 	if (!ictx->fragemitted)
 		sbi->saved_by_deduplication += inode->fragment_size;
