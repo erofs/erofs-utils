@@ -269,6 +269,7 @@ struct erofs_inode {
 				unsigned int z_idataoff;
 				erofs_off_t fragmentoff;
 			};
+			unsigned int z_extents;
 #define z_idata_size	idata_size
 		};
 	};
