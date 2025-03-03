@@ -71,8 +71,8 @@ struct z_erofs_dedupe_item {
 	long long	hash;
 	u64		prefix_xxh64;
 
-	erofs_blk_t	compressed_blkaddr;
-	unsigned int	compressed_blks;
+	erofs_off_t	pstart;
+	unsigned int	plen;
 
 	int		original_length;
 	bool		partial, raw;
@@ -139,8 +139,8 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 			(window_size + extra < e->original_length);
 		ctx->e.raw = e->raw;
 		ctx->e.inlined = false;
-		ctx->e.blkaddr = e->compressed_blkaddr;
-		ctx->e.compressedblks = e->compressed_blks;
+		ctx->e.pstart = e->pstart;
+		ctx->e.plen = e->plen;
 		return 0;
 	}
 	return -ENOENT;
@@ -165,8 +165,8 @@ int z_erofs_dedupe_insert(struct z_erofs_inmem_extent *e,
 	di->hash = erofs_rolling_hash_init(original_data,
 			window_size, true);
 	memcpy(di->payload, original_data, e->length);
-	di->compressed_blkaddr = e->blkaddr;
-	di->compressed_blks = e->compressedblks;
+	di->pstart = e->pstart;
+	di->plen = e->plen;
 	di->partial = e->partial;
 	di->raw = e->raw;
 
