@@ -592,12 +592,23 @@ int erofs_iflush(struct erofs_inode *inode)
 		struct erofs_inode_compact dic;
 		struct erofs_inode_extended die;
 	} u = {};
+	union erofs_inode_i_u u1;
 	int ret;
 
 	if (inode->bh)
 		off = erofs_btell(inode->bh, false);
 	else
 		off = erofs_iloc(inode);
+
+	if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode) ||
+	    S_ISFIFO(inode->i_mode) || S_ISSOCK(inode->i_mode))
+		u1.rdev = cpu_to_le32(inode->u.i_rdev);
+	else if (is_inode_layout_compression(inode))
+		u1.compressed_blocks = cpu_to_le32(inode->u.i_blocks);
+	else if (inode->datalayout == EROFS_INODE_CHUNK_BASED)
+		u1.c.format = cpu_to_le16(inode->u.chunkformat);
+	else
+		u1.raw_blkaddr = cpu_to_le32(inode->u.i_blkaddr);
 
 	switch (inode->inode_isize) {
 	case sizeof(struct erofs_inode_compact):
@@ -611,28 +622,7 @@ int erofs_iflush(struct erofs_inode *inode)
 
 		u.dic.i_uid = cpu_to_le16((u16)inode->i_uid);
 		u.dic.i_gid = cpu_to_le16((u16)inode->i_gid);
-
-		switch (inode->i_mode & S_IFMT) {
-		case S_IFCHR:
-		case S_IFBLK:
-		case S_IFIFO:
-		case S_IFSOCK:
-			u.dic.i_u.rdev = cpu_to_le32(inode->u.i_rdev);
-			break;
-
-		default:
-			if (is_inode_layout_compression(inode))
-				u.dic.i_u.compressed_blocks =
-					cpu_to_le32(inode->u.i_blocks);
-			else if (inode->datalayout ==
-					EROFS_INODE_CHUNK_BASED)
-				u.dic.i_u.c.format =
-					cpu_to_le16(inode->u.chunkformat);
-			else
-				u.dic.i_u.raw_blkaddr =
-					cpu_to_le32(inode->u.i_blkaddr);
-			break;
-		}
+		u.dic.i_u = u1;
 		break;
 	case sizeof(struct erofs_inode_extended):
 		u.die.i_format = cpu_to_le16(1 | (inode->datalayout << 1));
@@ -648,28 +638,7 @@ int erofs_iflush(struct erofs_inode *inode)
 
 		u.die.i_mtime = cpu_to_le64(inode->i_mtime);
 		u.die.i_mtime_nsec = cpu_to_le32(inode->i_mtime_nsec);
-
-		switch (inode->i_mode & S_IFMT) {
-		case S_IFCHR:
-		case S_IFBLK:
-		case S_IFIFO:
-		case S_IFSOCK:
-			u.die.i_u.rdev = cpu_to_le32(inode->u.i_rdev);
-			break;
-
-		default:
-			if (is_inode_layout_compression(inode))
-				u.die.i_u.compressed_blocks =
-					cpu_to_le32(inode->u.i_blocks);
-			else if (inode->datalayout ==
-					EROFS_INODE_CHUNK_BASED)
-				u.die.i_u.c.format =
-					cpu_to_le16(inode->u.chunkformat);
-			else
-				u.die.i_u.raw_blkaddr =
-					cpu_to_le32(inode->u.i_blkaddr);
-			break;
-		}
+		u.die.i_u = u1;
 		break;
 	default:
 		erofs_err("unsupported on-disk inode version of nid %llu",
