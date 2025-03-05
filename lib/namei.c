@@ -26,14 +26,13 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 {
 	int ret, ifmt;
 	char buf[sizeof(struct erofs_inode_extended)];
+	erofs_off_t inode_loc = erofs_iloc(vi);
 	struct erofs_sb_info *sbi = vi->sbi;
 	struct erofs_inode_compact *dic;
 	struct erofs_inode_extended *die;
-	erofs_off_t inode_loc;
+	union erofs_inode_i_u iu;
 
 	DBG_BUGON(!sbi);
-	inode_loc = erofs_iloc(vi);
-
 	ret = erofs_dev_read(sbi, 0, buf, inode_loc, sizeof(*dic));
 	if (ret < 0)
 		return -EIO;
@@ -61,26 +60,7 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 		vi->xattr_isize = erofs_xattr_ibody_size(die->i_xattr_icount);
 		vi->i_mode = le16_to_cpu(die->i_mode);
 		vi->i_ino[0] = le32_to_cpu(die->i_ino);
-
-		switch (vi->i_mode & S_IFMT) {
-		case S_IFREG:
-		case S_IFDIR:
-		case S_IFLNK:
-			vi->u.i_blkaddr = le32_to_cpu(die->i_u.raw_blkaddr);
-			break;
-		case S_IFCHR:
-		case S_IFBLK:
-			vi->u.i_rdev =
-				erofs_new_decode_dev(le32_to_cpu(die->i_u.rdev));
-			break;
-		case S_IFIFO:
-		case S_IFSOCK:
-			vi->u.i_rdev = 0;
-			break;
-		default:
-			goto bogusimode;
-		}
-
+		iu = die->i_u;
 		vi->i_uid = le32_to_cpu(die->i_uid);
 		vi->i_gid = le32_to_cpu(die->i_gid);
 		vi->i_nlink = le32_to_cpu(die->i_nlink);
@@ -88,35 +68,13 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 		vi->i_mtime = le64_to_cpu(die->i_mtime);
 		vi->i_mtime_nsec = le64_to_cpu(die->i_mtime_nsec);
 		vi->i_size = le64_to_cpu(die->i_size);
-		if (vi->datalayout == EROFS_INODE_CHUNK_BASED)
-			/* fill chunked inode summary info */
-			vi->u.chunkformat = le16_to_cpu(die->i_u.c.format);
 		break;
 	case EROFS_INODE_LAYOUT_COMPACT:
 		vi->inode_isize = sizeof(struct erofs_inode_compact);
 		vi->xattr_isize = erofs_xattr_ibody_size(dic->i_xattr_icount);
 		vi->i_mode = le16_to_cpu(dic->i_mode);
 		vi->i_ino[0] = le32_to_cpu(dic->i_ino);
-
-		switch (vi->i_mode & S_IFMT) {
-		case S_IFREG:
-		case S_IFDIR:
-		case S_IFLNK:
-			vi->u.i_blkaddr = le32_to_cpu(dic->i_u.raw_blkaddr);
-			break;
-		case S_IFCHR:
-		case S_IFBLK:
-			vi->u.i_rdev =
-				erofs_new_decode_dev(le32_to_cpu(dic->i_u.rdev));
-			break;
-		case S_IFIFO:
-		case S_IFSOCK:
-			vi->u.i_rdev = 0;
-			break;
-		default:
-			goto bogusimode;
-		}
-
+		iu = dic->i_u;
 		vi->i_uid = le16_to_cpu(dic->i_uid);
 		vi->i_gid = le16_to_cpu(dic->i_gid);
 		vi->i_nlink = le16_to_cpu(dic->i_nlink);
@@ -125,8 +83,6 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 		vi->i_mtime_nsec = sbi->build_time_nsec;
 
 		vi->i_size = le32_to_cpu(dic->i_size);
-		if (vi->datalayout == EROFS_INODE_CHUNK_BASED)
-			vi->u.chunkformat = le16_to_cpu(dic->i_u.c.format);
 		break;
 	default:
 		erofs_err("unsupported on-disk inode version %u of nid %llu",
@@ -134,8 +90,30 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 		return -EOPNOTSUPP;
 	}
 
+	switch (vi->i_mode & S_IFMT) {
+	case S_IFREG:
+	case S_IFDIR:
+	case S_IFLNK:
+		vi->u.i_blkaddr = le32_to_cpu(iu.raw_blkaddr);
+		break;
+	case S_IFCHR:
+	case S_IFBLK:
+		vi->u.i_rdev = erofs_new_decode_dev(le32_to_cpu(iu.rdev));
+		break;
+	case S_IFIFO:
+	case S_IFSOCK:
+		vi->u.i_rdev = 0;
+		break;
+	default:
+		erofs_err("bogus i_mode (%o) @ nid %llu", vi->i_mode,
+			  vi->nid | 0ULL);
+		return -EFSCORRUPTED;
+	}
+
 	vi->flags = 0;
 	if (vi->datalayout == EROFS_INODE_CHUNK_BASED) {
+		/* fill chunked inode summary info */
+		vi->u.chunkformat = le16_to_cpu(iu.c.format);
 		if (vi->u.chunkformat & ~EROFS_CHUNK_FORMAT_ALL) {
 			erofs_err("unsupported chunk format %x of nid %llu",
 				  vi->u.chunkformat, vi->nid | 0ULL);
@@ -145,9 +123,6 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 			(vi->u.chunkformat & EROFS_CHUNK_FORMAT_BLKBITS_MASK);
 	}
 	return 0;
-bogusimode:
-	erofs_err("bogus i_mode (%o) @ nid %llu", vi->i_mode, vi->nid | 0ULL);
-	return -EFSCORRUPTED;
 }
 
 struct erofs_dirent *find_target_dirent(erofs_nid_t pnid,
