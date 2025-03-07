@@ -524,6 +524,11 @@ int erofs_packedfile_read(struct erofs_sb_info *sbi,
 			erofs_blk_t bnr = erofs_blknr(sbi, pos);
 			bool uptodate;
 
+			if (__erofs_unlikely(bnr > (epi->uptodate_size << 3))) {
+				erofs_err("packed inode EOF exceeded @ %llu",
+					  pos | 0ULL);
+				return -EFSCORRUPTED;
+			}
 			map.m_la = round_down(pos, bsz);
 			len = min_t(erofs_off_t, bsz - (pos & (bsz - 1)),
 				    end - pos);
