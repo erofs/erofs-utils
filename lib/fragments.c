@@ -402,7 +402,7 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 			err = -errno;
 			goto err_out;
 		}
-		epi->uptodate_size = BLK_ROUND_UP(sbi, ei.i_size) / 8;
+		epi->uptodate_size = DIV_ROUND_UP(BLK_ROUND_UP(sbi, ei.i_size), 8);
 		epi->uptodate = calloc(1, epi->uptodate_size);
 		if (!epi->uptodate) {
 			err = -ENOMEM;
