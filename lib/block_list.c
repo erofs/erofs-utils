@@ -38,11 +38,11 @@ void tarerofs_blocklist_write(erofs_blk_t blkaddr, erofs_blk_t nblocks,
 		return;
 
 	if (zeroedlen)
-		fprintf(block_list_fp, "%08x %8x %08" PRIx64 " %08u\n",
-			blkaddr, nblocks, srcoff, zeroedlen);
+		fprintf(block_list_fp, "%08llx %8llx %08" PRIx64 " %08u\n",
+			blkaddr | 0ULL, nblocks | 0ULL, srcoff, zeroedlen);
 	else
-		fprintf(block_list_fp, "%08x %8x %08" PRIx64 "\n",
-			blkaddr, nblocks, srcoff);
+		fprintf(block_list_fp, "%08llx %8llx %08" PRIx64 "\n",
+			blkaddr | 0ULL, nblocks | 0ULL, srcoff);
 }
 
 #ifdef WITH_ANDROID
@@ -62,10 +62,10 @@ static void blocklist_write(const char *path, erofs_blk_t blk_start,
 	}
 
 	if (nblocks == 1)
-		fprintf(block_list_fp, " %u", blk_start);
+		fprintf(block_list_fp, " %llu", blk_start | 0ULL);
 	else
-		fprintf(block_list_fp, " %u-%u", blk_start,
-			blk_start + nblocks - 1);
+		fprintf(block_list_fp, " %llu-%llu", blk_start | 0ULL,
+			(blk_start + nblocks - 1) | 0ULL);
 
 	if (last_extent)
 		fprintf(block_list_fp, "\n");
@@ -114,7 +114,7 @@ void erofs_droid_blocklist_write_tail_end(struct erofs_inode *inode,
 		if (blkaddr == EROFS_NULL_ADDR)
 			fprintf(block_list_fp, "\n");
 		else
-			fprintf(block_list_fp, " %u\n", blkaddr);
+			fprintf(block_list_fp, " %llu\n", blkaddr | 0ULL);
 		return;
 	}
 	if (blkaddr != EROFS_NULL_ADDR)

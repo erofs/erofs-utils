@@ -1184,12 +1184,12 @@ static void erofs_mkfs_showsummaries(erofs_blk_t nblocks)
 	erofs_uuid_unparse_lower(g_sbi.uuid, uuid_str);
 
 	fprintf(stdout, "------\nFilesystem UUID: %s\n"
-		"Filesystem total blocks: %u (of %u-byte blocks)\n"
+		"Filesystem total blocks: %llu (of %u-byte blocks)\n"
 		"Filesystem total inodes: %llu\n"
-		"Filesystem %s metadata blocks: %u\n"
+		"Filesystem %s metadata blocks: %llu\n"
 		"Filesystem %s deduplicated bytes (of source files): %llu\n",
-		uuid_str, nblocks, 1U << g_sbi.blkszbits, g_sbi.inos | 0ULL,
-		incr, erofs_total_metablocks(g_sbi.bmgr),
+		uuid_str, nblocks | 0ULL, 1U << g_sbi.blkszbits, g_sbi.inos | 0ULL,
+		incr, erofs_total_metablocks(g_sbi.bmgr) | 0ULL,
 		incr, g_sbi.saved_by_deduplication | 0ULL);
 }
 
@@ -1222,10 +1222,10 @@ int main(int argc, char **argv)
 
 	if (cfg.c_unix_timestamp != -1) {
 		g_sbi.build_time      = cfg.c_unix_timestamp;
-		g_sbi.build_time_nsec = 0;
+		g_sbi.fixed_nsec      = 0;
 	} else if (!gettimeofday(&t, NULL)) {
 		g_sbi.build_time      = t.tv_sec;
-		g_sbi.build_time_nsec = t.tv_usec;
+		g_sbi.fixed_nsec      = t.tv_usec;
 	}
 
 	err = erofs_dev_open(&g_sbi, cfg.c_img_path, O_RDWR |
