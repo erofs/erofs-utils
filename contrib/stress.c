@@ -256,6 +256,7 @@ static struct fent *getfent(int which, int r)
 }
 
 static int testdir_fd = -1, chkdir_fd = -1;
+static char *dumpfile;
 
 static int __getdents_f(unsigned int sn, struct fent *fe)
 {
@@ -288,6 +289,48 @@ static int getdents_f(int op, unsigned int sn)
 	return __getdents_f(sn, fe);
 }
 
+static void baddump(unsigned int sn, const char *op,
+		    char *buf1, char *buf2, unsigned int sz)
+{
+	int fd, err, i;
+	char *fn = dumpfile;
+
+	if (!fn)
+		return;
+	for (i = 0;;) {
+		fd = open(fn, O_CREAT | O_EXCL | O_WRONLY, 0644);
+		if (fd >= 0) {
+			printf("%d[%u]/%u %s: dump inconsistent data to \"%s\" of %u bytes\n",
+			       getpid(), procid, sn, op, fn, sz);
+			if (fn != dumpfile)
+				free(fn);
+			break;
+		}
+		if (fd < 0 && errno != EEXIST) {
+			fprintf(stderr, "%d[%u]/%u: failed to create dumpfile %s\n",
+				getpid(), procid, sn, fn);
+			if (fn != dumpfile)
+				free(fn);
+			return;
+		}
+		if (fn != dumpfile)
+			free(fn);
+		err = asprintf(&fn, "%s.%d", dumpfile, ++i);
+		if (err < 0) {
+			fprintf(stderr, "%d[%u]/%u: failed to allocate filename\n",
+				getpid(), procid, sn);
+			return;
+		}
+	}
+	if (write(fd, buf1, sz) != sz)
+		fprintf(stderr, "%d[%u]/%u: failed to write buffer1 @ %u\n",
+			getpid(), procid, sn, sz);
+	if (write(fd, buf2, sz) != sz)
+		fprintf(stderr, "%d[%u]/%u: failed to write buffer2 @ %u\n",
+			getpid(), procid, sn, sz);
+	close(fd);
+}
+
 static int readlink_f(int op, unsigned int sn)
 {
 	char buf1[PATH_MAX], buf2[PATH_MAX];
@@ -317,6 +360,7 @@ static int readlink_f(int op, unsigned int sn)
 		if (memcmp(buf1, buf2, sz)) {
 			fprintf(stderr, "%d[%u]/%u %s: symlink mismatch @%s\n",
 				getpid(), procid, sn, __func__, fe->subpath);
+			baddump(sn, "readlink_f", buf1, buf2, sz);
 			return -EBADMSG;
 		}
 	}
@@ -382,8 +426,8 @@ static int __read_f(unsigned int sn, struct fent *fe, uint64_t filesize)
 		trimmed = len <= filesize - off ? len : filesize - off;
 	}
 
-	printf("%d[%u]/%u read_f: %llu bytes @ %llu\n", getpid(), procid, sn,
-	       len | 0ULL, off | 0ULL);
+	printf("%d[%u]/%u read_f: %llu bytes @ %llu of %s\n", getpid(), procid,
+	       sn, len | 0ULL, off | 0ULL, fe->subpath);
 	nread = pread64(fe->fd, buf, len, off);
 	if (nread != trimmed) {
 		fprintf(stderr, "%d[%u]/%u read_f: failed to read %llu bytes @ %llu of %s\n",
@@ -414,6 +458,7 @@ static int __read_f(unsigned int sn, struct fent *fe, uint64_t filesize)
 		fprintf(stderr, "%d[%u]/%u read_f: data mismatch %llu bytes @ %llu of %s\n",
 			getpid(), procid, sn, len | 0ULL, off | 0ULL,
 			fe->subpath);
+		baddump(sn, "read_f", buf, chkbuf, nread);
 		return -EBADMSG;
 	}
 	return 0;
@@ -481,6 +526,7 @@ static int __doscan_f(unsigned int sn, const char *op, struct fent *fe,
 			fprintf(stderr, "%d[%u]/%u %s: %llu bytes mismatch @ %llu of %s\n",
 				getpid(), procid, sn, op, chunksize | 0ULL,
 				pos | 0ULL, fe->subpath);
+			baddump(sn, op, buf, chkbuf, nread);
 			return -EBADMSG;
 		}
 	}
@@ -589,7 +635,7 @@ static int parse_options(int argc, char *argv[])
 	char *testdir, *chkdir;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "l:p:s:")) != -1) {
+	while ((opt = getopt(argc, argv, "d:l:p:s:")) != -1) {
 		switch (opt) {
 		case 'l':
 			loops = atoi(optarg);
@@ -613,6 +659,13 @@ static int parse_options(int argc, char *argv[])
 					r_seed);
 				return -EINVAL;
 			}
+			break;
+		case 'd':
+			if (!*optarg) {
+				fprintf(stderr, "invalid dump file\n");
+				return -EINVAL;
+			}
+			dumpfile = optarg;
 			break;
 		default: /* '?' */
 			return -EINVAL;
@@ -650,9 +703,10 @@ static void usage(void)
 	fputs("usage: [options] TESTDIR [COMPRDIR]\n\n"
 	      "Stress test for EROFS filesystem, where TESTDIR is the directory to test and\n"
 	      "COMPRDIR (optional) serves as a directory for data comparison.\n"
-	      " -l#     Number of times each worker should loop (0 for infinite, default: 1)\n"
-	      " -p#     Number of parallel worker processes (default: 1)\n"
-	      " -s#     Seed for random generator (default: random)\n",
+	      " -l#             Number of times each worker should loop (0 for infinite, default: 1)\n"
+	      " -p#             Number of parallel worker processes (default: 1)\n"
+	      " -s#             Seed for random generator (default: random)\n"
+	      " -d<file>        Specify a dumpfile for the inconsistent data\n",
 	      stderr);
 }
 
