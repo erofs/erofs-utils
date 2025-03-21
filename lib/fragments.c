@@ -44,7 +44,7 @@ struct erofs_packed_inode {
 #if EROFS_MT_ENABLED
 	pthread_mutex_t mutex;
 #endif
-	unsigned int uptodate_size;
+	u64 uptodate_bits;
 };
 
 const char *erofs_frags_packedname = "packed_file";
@@ -402,8 +402,9 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 			err = -errno;
 			goto err_out;
 		}
-		epi->uptodate_size = DIV_ROUND_UP(BLK_ROUND_UP(sbi, ei.i_size), 8);
-		epi->uptodate = calloc(1, epi->uptodate_size);
+		epi->uptodate_bits = round_up(BLK_ROUND_UP(sbi, ei.i_size),
+					      sizeof(epi->uptodate) * 8);
+		epi->uptodate = calloc(1, epi->uptodate_bits >> 3);
 		if (!epi->uptodate) {
 			err = -ENOMEM;
 			goto err_out;
@@ -473,7 +474,7 @@ static void *erofs_packedfile_preload(struct erofs_inode *pi,
 	if (err < 0) {
 		err = -errno;
 		if (err == -ENOSPC) {
-			memset(epi->uptodate, 0, epi->uptodate_size);
+			memset(epi->uptodate, 0, epi->uptodate_bits >> 3);
 			(void)!ftruncate(epi->fd, 0);
 		}
 		goto err_out;
@@ -524,7 +525,7 @@ int erofs_packedfile_read(struct erofs_sb_info *sbi,
 			erofs_blk_t bnr = erofs_blknr(sbi, pos);
 			bool uptodate;
 
-			if (__erofs_unlikely(bnr > (epi->uptodate_size << 3))) {
+			if (__erofs_unlikely(bnr >= epi->uptodate_bits)) {
 				erofs_err("packed inode EOF exceeded @ %llu",
 					  pos | 0ULL);
 				return -EFSCORRUPTED;
