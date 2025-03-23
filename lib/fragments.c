@@ -146,21 +146,13 @@ int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 *tofcrc)
 	if (inode->i_size <= EROFS_TOF_HASHLEN)
 		return 0;
 
-	if (erofs_lseek64(fd, inode->i_size - EROFS_TOF_HASHLEN, SEEK_SET) < 0)
-		return -errno;
-
-	ret = read(fd, data_to_hash, EROFS_TOF_HASHLEN);
+	ret = pread(fd, data_to_hash, EROFS_TOF_HASHLEN,
+		    inode->i_size - EROFS_TOF_HASHLEN);
 	if (ret != EROFS_TOF_HASHLEN)
 		return -errno;
 
 	*tofcrc = erofs_crc32c(~0, data_to_hash, EROFS_TOF_HASHLEN);
-	ret = z_erofs_fragments_dedupe_find(inode, fd, *tofcrc);
-	if (ret < 0)
-		return ret;
-	ret = lseek(fd, 0, SEEK_SET);
-	if (ret < 0)
-		return -errno;
-	return 0;
+	return z_erofs_fragments_dedupe_find(inode, fd, *tofcrc);
 }
 
 static int z_erofs_fragments_dedupe_insert(struct list_head *hash, void *data,
