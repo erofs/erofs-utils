@@ -13,8 +13,8 @@ extern "C"
 #include "internal.h"
 
 struct z_erofs_inmem_extent {
-	erofs_blk_t blkaddr;
-	unsigned int compressedblks;
+	erofs_off_t pstart;
+	unsigned int plen;
 	unsigned int length;
 	bool raw, partial, inlined;
 };
