@@ -32,6 +32,14 @@ void z_erofs_dedupe_commit(bool drop);
 int z_erofs_dedupe_init(unsigned int wsiz);
 void z_erofs_dedupe_exit(void);
 
+int z_erofs_dedupe_ext_insert(struct z_erofs_inmem_extent *e,
+			      u64 hash);
+erofs_blk_t z_erofs_dedupe_ext_match(struct erofs_sb_info *sbi,
+			u8 *encoded, unsigned int size, bool raw, u64 *hash);
+void z_erofs_dedupe_ext_commit(bool drop);
+int z_erofs_dedupe_ext_init(void);
+void z_erofs_dedupe_ext_exit(void);
+
 #ifdef __cplusplus
 }
 #endif

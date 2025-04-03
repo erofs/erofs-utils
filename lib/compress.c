@@ -49,6 +49,7 @@ struct z_erofs_compress_ictx {		/* inode context */
 	u32 tof_chksum;
 	bool fix_dedupedfrag;
 	bool fragemitted;
+	bool dedupe;
 
 	/* fields for write indexes */
 	u8 *metacur;
@@ -337,10 +338,7 @@ static int z_erofs_compress_dedupe(struct z_erofs_compress_sctx *ctx)
 			ei->e.partial = true;
 			ei->e.length -= delta;
 		}
-
-		/* fall back to noncompact indexes for deduplication */
-		inode->z_advise &= ~Z_EROFS_ADVISE_COMPACTED_2B;
-		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
+		ctx->ictx->dedupe = true;
 		erofs_sb_set_dedupe(sbi);
 
 		sbi->saved_by_deduplication += dctx.e.plen;
@@ -1001,8 +999,24 @@ static void z_erofs_write_mapheader(struct erofs_inode *inode,
 static void *z_erofs_write_indexes(struct z_erofs_compress_ictx *ctx)
 {
 	struct erofs_inode *inode = ctx->inode;
+	struct erofs_sb_info *sbi = inode->sbi;
 	struct z_erofs_extent_item *ei, *n;
 	void *metabuf;
+
+	if (!cfg.c_legacy_compress && !ctx->dedupe &&
+	    inode->z_logical_clusterbits <= 14) {
+		if (inode->z_logical_clusterbits <= 12)
+			inode->z_advise |= Z_EROFS_ADVISE_COMPACTED_2B;
+		inode->datalayout = EROFS_INODE_COMPRESSED_COMPACT;
+	} else {
+		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
+	}
+
+	if (erofs_sb_has_big_pcluster(sbi)) {
+		inode->z_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_1;
+		if (inode->datalayout == EROFS_INODE_COMPRESSED_COMPACT)
+			inode->z_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_2;
+	}
 
 	metabuf = malloc(BLK_ROUND_UP(inode->sbi, inode->i_size) *
 			 sizeof(struct z_erofs_lcluster_index) +
@@ -1170,6 +1184,7 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 		ret = -ENOSPC;
 		goto err_free_meta;
 	}
+	z_erofs_dedupe_ext_commit(false);
 	z_erofs_dedupe_commit(false);
 
 	if (!ictx->fragemitted)
@@ -1345,8 +1360,11 @@ int z_erofs_merge_segment(struct z_erofs_compress_ictx *ictx,
 {
 	struct z_erofs_extent_item *ei, *n;
 	struct erofs_sb_info *sbi = ictx->inode->sbi;
+	bool dedupe_ext = cfg.c_fragments;
 	erofs_off_t off = 0;
 	int ret = 0, ret2;
+	erofs_blk_t dupb;
+	u64 hash;
 
 	list_for_each_entry_safe(ei, n, &sctx->extents, list) {
 		list_del(&ei->list);
@@ -1361,13 +1379,30 @@ int z_erofs_merge_segment(struct z_erofs_compress_ictx *ictx,
 		/* skip write data but leave blkaddr for inline fallback */
 		if (ei->e.inlined || !ei->e.plen)
 			continue;
+
+		if (dedupe_ext) {
+			dupb = z_erofs_dedupe_ext_match(sbi, sctx->membuf + off,
+						ei->e.plen, ei->e.raw, &hash);
+			if (dupb != EROFS_NULL_ADDR) {
+				ei->e.pstart = dupb;
+				sctx->pstart -= ei->e.plen;
+				off += ei->e.plen;
+				ictx->dedupe = true;
+				erofs_sb_set_dedupe(sbi);
+				sbi->saved_by_deduplication += ei->e.plen;
+				erofs_dbg("Dedupe %u %scompressed data to %llu of %u bytes",
+					  ei->e.length, ei->e.raw ? "un" : "",
+					  ei->e.pstart | 0ULL, ei->e.plen);
+				continue;
+			}
+		}
 		ret2 = erofs_dev_write(sbi, sctx->membuf + off, ei->e.pstart,
 				       ei->e.plen);
 		off += ei->e.plen;
-		if (ret2) {
+		if (ret2)
 			ret = ret2;
-			continue;
-		}
+		else if (dedupe_ext)
+			z_erofs_dedupe_ext_insert(&ei->e, hash);
 	}
 	free(sctx->membuf);
 	sctx->membuf = NULL;
@@ -1543,19 +1578,6 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 	/* initialize per-file compression setting */
 	inode->z_advise = 0;
 	inode->z_logical_clusterbits = sbi->blkszbits;
-	if (!cfg.c_legacy_compress && inode->z_logical_clusterbits <= 14) {
-		if (inode->z_logical_clusterbits <= 12)
-			inode->z_advise |= Z_EROFS_ADVISE_COMPACTED_2B;
-		inode->datalayout = EROFS_INODE_COMPRESSED_COMPACT;
-	} else {
-		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
-	}
-
-	if (erofs_sb_has_big_pcluster(sbi)) {
-		inode->z_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_1;
-		if (inode->datalayout == EROFS_INODE_COMPRESSED_COMPACT)
-			inode->z_advise |= Z_EROFS_ADVISE_BIG_PCLUSTER_2;
-	}
 	if (cfg.c_fragments && !cfg.c_dedupe)
 		inode->z_advise |= Z_EROFS_ADVISE_INTERLACED_PCLUSTER;
 
@@ -1615,6 +1637,7 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 	init_list_head(&ictx->extents);
 	ictx->fix_dedupedfrag = false;
 	ictx->fragemitted = false;
+	ictx->dedupe = false;
 
 	if (all_fragments && !inode->fragment_size) {
 		ret = z_erofs_pack_file_from_fd(inode, fd, ictx->tof_chksum);

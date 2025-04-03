@@ -1374,6 +1374,15 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (cfg.c_fragments) {
+		err = z_erofs_dedupe_ext_init();
+		if (err) {
+			erofs_err("failed to initialize extent deduplication: %s",
+				  erofs_strerror(err));
+			goto exit;
+		}
+	}
+
 	if (cfg.c_chunkbits) {
 		err = erofs_blob_init(cfg.c_blobdev_path, 1 << cfg.c_chunkbits);
 		if (err)
@@ -1486,6 +1495,7 @@ exit:
 		erofs_iput(root);
 	z_erofs_compress_exit();
 	z_erofs_dedupe_exit();
+	z_erofs_dedupe_ext_exit();
 	blklst = erofs_blocklist_close();
 	if (blklst)
 		fclose(blklst);
