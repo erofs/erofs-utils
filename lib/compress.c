@@ -1202,7 +1202,7 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 	}
 
 	if (ptotal) {
-		ret = erofs_bh_balloon(bh, ptotal);
+		(void)erofs_bh_balloon(bh, ptotal);
 	} else {
 		if (!cfg.c_fragments && !cfg.c_dedupe)
 			DBG_BUGON(!inode->idata_size);
