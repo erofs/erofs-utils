@@ -1056,7 +1056,7 @@ static int init_inode_xattrs(struct erofs_inode *vi)
 	int ret = 0;
 
 	/* the most case is that xattrs of this inode are initialized. */
-	if (vi->flags & EROFS_I_EA_INITED)
+	if (erofs_atomic_read(&vi->flags) & EROFS_I_EA_INITED)
 		return ret;
 
 	/*
@@ -1117,9 +1117,7 @@ static int init_inode_xattrs(struct erofs_inode *vi)
 			le32_to_cpu(*(__le32 *)(it.kaddr + it.ofs));
 		it.ofs += sizeof(__le32);
 	}
-
-	vi->flags |= EROFS_I_EA_INITED;
-
+	erofs_atomic_set_bit(EROFS_I_EA_INITED_BIT, &vi->flags);
 	return ret;
 }
 

@@ -557,7 +557,7 @@ static int z_erofs_fill_inode_lazy(struct erofs_inode *vi)
 	struct erofs_sb_info *sbi = vi->sbi;
 	int err, headnr;
 
-	if (vi->flags & EROFS_I_Z_INITED)
+	if (erofs_atomic_read(&vi->flags) & EROFS_I_Z_INITED)
 		return 0;
 
 	pos = round_up(erofs_iloc(vi) + vi->inode_isize + vi->xattr_isize, 8);
@@ -624,7 +624,7 @@ static int z_erofs_fill_inode_lazy(struct erofs_inode *vi)
 			return err;
 	}
 out:
-	vi->flags |= EROFS_I_Z_INITED;
+	erofs_atomic_set_bit(EROFS_I_Z_INITED_BIT, &vi->flags);
 	return 0;
 }
 

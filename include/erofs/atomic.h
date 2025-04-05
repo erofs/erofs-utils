@@ -22,6 +22,11 @@ __n;})
 	__atomic_store(ptr, &__n, __ATOMIC_RELAXED); \
 } while(0)
 
+#define erofs_atomic_set_bit(bit, ptr) do { \
+	typeof(*ptr) __n = (1 << bit);    \
+	__atomic_or_fetch(ptr, __n, __ATOMIC_ACQ_REL); \
+} while(0)
+
 #define erofs_atomic_test_and_set(ptr) \
 	__atomic_test_and_set(ptr, __ATOMIC_RELAXED)
 

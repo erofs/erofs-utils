@@ -176,8 +176,11 @@ EROFS_FEATURE_FUNCS(xattr_prefixes, incompat, INCOMPAT_XATTR_PREFIXES)
 EROFS_FEATURE_FUNCS(sb_chksum, compat, COMPAT_SB_CHKSUM)
 EROFS_FEATURE_FUNCS(xattr_filter, compat, COMPAT_XATTR_FILTER)
 
-#define EROFS_I_EA_INITED	(1 << 0)
-#define EROFS_I_Z_INITED	(1 << 1)
+#define EROFS_I_EA_INITED_BIT	0
+#define EROFS_I_Z_INITED_BIT	1
+
+#define EROFS_I_EA_INITED	(1 << EROFS_I_EA_INITED_BIT)
+#define EROFS_I_Z_INITED	(1 << EROFS_I_Z_INITED_BIT)
 
 struct erofs_diskbuf;
 
@@ -191,7 +194,7 @@ struct erofs_inode {
 
 	union {
 		/* (erofsfuse) runtime flags */
-		unsigned int flags;
+		erofs_atomic_t flags;
 
 		/* (mkfs.erofs) next pointer for directory dumping */
 		struct erofs_inode *next_dirwrite;
