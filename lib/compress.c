@@ -1208,8 +1208,8 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 			DBG_BUGON(!inode->idata_size);
 	}
 
-	erofs_info("compressed %s (%llu bytes) into %u bytes",
-		   inode->i_srcpath, inode->i_size | 0ULL, ptotal);
+	erofs_info("compressed %s (%llu bytes) into %llu bytes",
+		   inode->i_srcpath, inode->i_size | 0ULL, ptotal | 0ULL);
 
 	if (inode->idata_size) {
 		bh->op = &erofs_skip_write_bhops;
