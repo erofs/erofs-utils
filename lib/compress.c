@@ -1169,7 +1169,7 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 
 	/* fall back to no compression mode */
 	DBG_BUGON(pstart < (!!inode->idata_size) << bbits);
-	ptotal -= (!!inode->idata_size) << bbits;
+	ptotal -= (u64)(!!inode->idata_size) << bbits;
 
 	compressmeta = z_erofs_write_indexes(ictx);
 	if (!compressmeta) {
@@ -1687,7 +1687,7 @@ int erofs_write_compressed_file(struct z_erofs_compress_ictx *ictx)
 		ret = PTR_ERR(bh);
 		goto err_free_idata;
 	}
-	pstart = erofs_mapbh(NULL, bh->block) << sbi->blkszbits;
+	pstart = erofs_pos(sbi, erofs_mapbh(NULL, bh->block));
 
 	ictx->seg_num = 1;
 	sctx = (struct z_erofs_compress_sctx) {
