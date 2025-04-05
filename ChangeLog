@@ -1,3 +1,14 @@
+erofs-utils 1.8.6
+
+ * This release includes the following updates:
+   - (mkfs.erofs) Support per-segment reaper for multi-threaded compression;
+   - (mkfs.erofs) Support multi-threaded fragments;
+   - (mkfs.erofs) Support extent-based deduplication for `-Efragments`;
+   - (mkfs.erofs) Optimize space allocation performance;
+   - Several minor bugfixes.
+
+ -- Gao Xiang <xiang@kernel.org>  Sun, 06 Apr 2025 00:00:00 +0800
+
 erofs-utils 1.8.5
 
  * Another maintenance release includes the following fixes:
