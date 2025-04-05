@@ -729,6 +729,7 @@ fix_dedupedfrag:
 static int z_erofs_compress_one(struct z_erofs_compress_sctx *ctx)
 {
 	struct z_erofs_compress_ictx *ictx = ctx->ictx;
+	bool tsg = ctx->seg_idx + 1 >= ictx->seg_num;
 	struct z_erofs_extent_item *ei;
 
 	while (ctx->tail > ctx->head) {
@@ -753,7 +754,7 @@ static int z_erofs_compress_one(struct z_erofs_compress_sctx *ctx)
 		}
 
 		ctx->pivot = ei;
-		if (ictx->fix_dedupedfrag && !ictx->fragemitted &&
+		if (tsg && ictx->fix_dedupedfrag && !ictx->fragemitted &&
 		    z_erofs_fixup_deduped_fragment(ctx))
 			break;
 
