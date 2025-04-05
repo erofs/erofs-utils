@@ -974,12 +974,9 @@ verify:
 static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 {
 	int ret, i;
-	struct erofs_inode inode;
+	struct erofs_inode inode = {.sbi = &g_sbi, .nid = nid};
 
 	erofs_dbg("check inode: nid(%llu)", nid | 0ULL);
-
-	inode.nid = nid;
-	inode.sbi = &g_sbi;
 	ret = erofs_read_inode_from_disk(&inode);
 	if (ret) {
 		if (ret == -EIO)

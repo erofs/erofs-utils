@@ -231,7 +231,7 @@ static void erofsfuse_open(fuse_req_t req, fuse_ino_t ino,
 		return;
 	}
 
-	vi = (struct erofs_inode *)malloc(sizeof(struct erofs_inode));
+	vi = calloc(1, sizeof(struct erofs_inode));
 	if (!vi) {
 		fuse_reply_err(req, ENOMEM);
 		return;
@@ -281,7 +281,7 @@ static void erofsfuse_opendir(fuse_req_t req, fuse_ino_t ino,
 	int ret;
 	struct erofs_inode *vi;
 
-	vi = (struct erofs_inode *)malloc(sizeof(struct erofs_inode));
+	vi = calloc(1, sizeof(struct erofs_inode));
 	if (!vi) {
 		fuse_reply_err(req, ENOMEM);
 		return;
@@ -324,7 +324,7 @@ static void erofsfuse_lookup(fuse_req_t req, fuse_ino_t parent,
 	struct fuse_entry_param fentry = { 0 };
 	struct erofsfuse_lookupdir_context ctx = { 0 };
 
-	vi = (struct erofs_inode *)malloc(sizeof(struct erofs_inode));
+	vi = calloc(1, sizeof(struct erofs_inode));
 	if (!vi) {
 		fuse_reply_err(req, ENOMEM);
 		return;
