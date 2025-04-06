@@ -1238,9 +1238,6 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 		DBG_BUGON(ret);
 	}
 	inode->compressmeta = compressmeta;
-	if (!erofs_is_packed_inode(inode))
-		erofs_droid_blocklist_write(inode, pstart >> bbits,
-					    inode->u.i_blocks);
 	return 0;
 
 err_free_meta:

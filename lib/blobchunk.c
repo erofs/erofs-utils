@@ -145,7 +145,6 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 	erofs_blk_t extent_end, chunkblks;
 	erofs_off_t source_offset;
 	unsigned int dst, src, unit, zeroedlen;
-	bool first_extent = true;
 
 	if (inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES)
 		unit = sizeof(struct erofs_inode_chunk_index);
@@ -176,11 +175,6 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 				tarerofs_blocklist_write(extent_start,
 						extent_end - extent_start,
 						source_offset, 0);
-				erofs_droid_blocklist_write_extent(inode,
-					extent_start,
-					extent_end - extent_start,
-					first_extent, false);
-				first_extent = false;
 			}
 			extent_start = idx.blkaddr;
 			source_offset = chunk->sourceoffset;
@@ -203,11 +197,6 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 		tarerofs_blocklist_write(extent_start, extent_end - extent_start,
 					 source_offset, zeroedlen);
 	}
-	erofs_droid_blocklist_write_extent(inode, extent_start,
-			extent_start == EROFS_NULL_ADDR ?
-					0 : extent_end - extent_start,
-					   first_extent, true);
-
 	return erofs_dev_write(inode->sbi, inode->chunkindexes, off,
 			       inode->extent_isize);
 }

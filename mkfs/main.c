@@ -63,7 +63,6 @@ static struct option long_options[] = {
 #ifdef WITH_ANDROID
 	{"product-out", required_argument, NULL, 513},
 	{"fs-config-file", required_argument, NULL, 514},
-	{"block-list-file", required_argument, NULL, 515},
 #endif
 	{"ovlfs-strip", optional_argument, NULL, 516},
 	{"offset", required_argument, NULL, 517},
@@ -213,7 +212,6 @@ static void usage(int argc, char **argv)
 		"Android-specific options:\n"
 		" --product-out=X       X=product_out directory\n"
 		" --fs-config-file=X    X=fs_config file\n"
-		" --block-list-file=X   X=block_list file\n"
 #endif
 #ifdef EROFS_MT_ENABLED
 		, erofs_get_available_processors() /* --workers= */
@@ -722,9 +720,6 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			break;
 		case 514:
 			cfg.fs_config_file = optarg;
-			break;
-		case 515:
-			cfg.block_list_file = optarg;
 			break;
 #endif
 		case 'C':
@@ -1240,14 +1235,6 @@ int main(int argc, char **argv)
 	    load_canned_fs_config(cfg.fs_config_file) < 0) {
 		erofs_err("failed to load fs config %s", cfg.fs_config_file);
 		return 1;
-	}
-
-	if (cfg.block_list_file) {
-		blklst = fopen(cfg.block_list_file, "w");
-		if (!blklst || erofs_blocklist_open(blklst, false)) {
-			erofs_err("failed to open %s", cfg.block_list_file);
-			return 1;
-		}
 	}
 #endif
 	erofs_show_config();
