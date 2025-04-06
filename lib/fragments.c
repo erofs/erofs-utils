@@ -179,21 +179,6 @@ static int z_erofs_fragments_dedupe_insert(struct list_head *hash, void *data,
 	return 0;
 }
 
-void z_erofs_fragments_commit(struct erofs_inode *inode)
-{
-	if (!inode->fragment_size)
-		return;
-	/*
-	 * If the packed inode is larger than 4GiB, the full fragmentoff
-	 * will be recorded by switching to the noncompact layout anyway.
-	 */
-	if (inode->fragmentoff >> 32)
-		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
-
-	inode->z_advise |= Z_EROFS_ADVISE_FRAGMENT_PCLUSTER;
-	erofs_sb_set_fragments(inode->sbi);
-}
-
 int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofcrc)
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
@@ -250,8 +235,9 @@ int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofcrc)
 		}
 	}
 
-	erofs_dbg("Recording %llu fragment data at %llu",
-		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL);
+	erofs_dbg("Recording %llu fragment data at %llu of %s",
+		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL,
+		  inode->i_srcpath);
 
 	if (memblock)
 		rc = z_erofs_fragments_dedupe_insert(
@@ -289,8 +275,9 @@ int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
 		return -EIO;
 	}
 
-	erofs_dbg("Recording %llu fragment data at %llu",
-		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL);
+	erofs_dbg("Recording %llu fragment data at %llu of %s",
+		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL,
+		  inode->i_srcpath);
 
 	ret = z_erofs_fragments_dedupe_insert(&epi->hash[FRAGMENT_HASH(tofcrc)],
 					      data, len, inode->fragmentoff);

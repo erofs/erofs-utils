@@ -1004,7 +1004,13 @@ static void *z_erofs_write_indexes(struct z_erofs_compress_ictx *ctx)
 	struct z_erofs_extent_item *ei, *n;
 	void *metabuf;
 
-	if (!cfg.c_legacy_compress && !ctx->dedupe &&
+	/*
+	 * If the packed inode is larger than 4GiB, the full fragmentoff
+	 * will be recorded by switching to the noncompact layout anyway.
+	 */
+	if (inode->fragment_size && inode->fragmentoff >> 32) {
+		inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
+	} else if (!cfg.c_legacy_compress && !ctx->dedupe &&
 	    inode->z_logical_clusterbits <= 14) {
 		if (inode->z_logical_clusterbits <= 12)
 			inode->z_advise |= Z_EROFS_ADVISE_COMPACTED_2B;
@@ -1165,7 +1171,10 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 	u8 *compressmeta;
 	int ret;
 
-	z_erofs_fragments_commit(inode);
+	if (inode->fragment_size) {
+		inode->z_advise |= Z_EROFS_ADVISE_FRAGMENT_PCLUSTER;
+		erofs_sb_set_fragments(inode->sbi);
+	}
 
 	/* fall back to no compression mode */
 	DBG_BUGON(pstart < (!!inode->idata_size) << bbits);
