@@ -100,7 +100,7 @@ int __erofs_map_blocks(struct erofs_inode *inode,
 		return -EIO;
 
 	map->m_la = chunknr << vi->u.chunkbits;
-	map->m_plen = min_t(erofs_off_t, 1UL << vi->u.chunkbits,
+	map->m_plen = min_t(erofs_off_t, 1ULL << vi->u.chunkbits,
 			roundup(inode->i_size - map->m_la, erofs_blksiz(sbi)));
 
 	/* handle block map */
