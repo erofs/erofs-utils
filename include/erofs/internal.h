@@ -267,12 +267,12 @@ struct erofs_inode {
 			union {
 				uint64_t z_tailextent_headlcn;
 				erofs_off_t fragment_size;
-				u64		z_extents;
 			};
 			union {
 				erofs_off_t	fragmentoff;
 				erofs_off_t	z_fragmentoff;
 			};
+			u64	z_extents;
 #define z_idata_size	idata_size
 		};
 	};
