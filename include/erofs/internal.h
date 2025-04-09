@@ -270,8 +270,8 @@ struct erofs_inode {
 				erofs_off_t fragment_size;
 			};
 			union {
-				unsigned int z_idataoff;
-				erofs_off_t fragmentoff;
+				erofs_off_t	fragmentoff;
+				erofs_off_t	z_fragmentoff;
 			};
 #define z_idata_size	idata_size
 		};
