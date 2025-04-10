@@ -52,6 +52,8 @@ unsigned long erofs_memcmp2(const u8 *s1, const u8 *s2,
 #define kBitLens0Number_3_10    (kBitLensRepNumber_3_6 + 1)
 #define kBitLens0Number_11_138  (kBitLens0Number_3_10 + 1)
 
+#define kMaxLen                 (kTableDirectLevels - 1)
+
 static u32 kstaticHuff_mainCodes[kFixedLenTableSize];
 static const u8 kstaticHuff_litLenLevels[kFixedLenTableSize] = {
 	[0   ... 143] = 8, [144 ... 255] = 9,
@@ -179,8 +181,6 @@ static void flushbits(struct kite_deflate *s)
 	s->bitpos = 0;
 	s->inflightbits = 0;
 }
-
-#define kMaxLen 16
 
 static void deflate_genhuffcodes(const u8 *lens, u32 *p, unsigned int nr_codes,
 				 const u32 *bl_count)
