@@ -9,6 +9,8 @@
 #include "erofs/err.h"
 #include "erofs/print.h"
 
+#if defined(HAVE_LIBZSTD) || defined(HAVE_QPL) || defined(HAVE_LIBDEFLATE) || \
+    defined(HAVE_ZLIB) || defined(HAVE_LIBLZMA) || defined(LZ4_ENABLED)
 static unsigned int z_erofs_fixup_insize(const u8 *padbuf, unsigned int padbufsize)
 {
 	unsigned int inputmargin;
@@ -17,6 +19,7 @@ static unsigned int z_erofs_fixup_insize(const u8 *padbuf, unsigned int padbufsi
 	     !padbuf[inputmargin]; ++inputmargin);
 	return inputmargin;
 }
+#endif
 
 #ifdef HAVE_LIBZSTD
 #include <zstd.h>
