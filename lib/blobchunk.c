@@ -616,7 +616,8 @@ int erofs_blob_init(const char *blobfile_path, erofs_off_t chunksize)
 		blobfile = erofs_tmpfile();
 		multidev = false;
 	} else {
-		blobfile = open(blobfile_path, O_WRONLY | O_BINARY);
+		blobfile = open(blobfile_path, O_WRONLY | O_CREAT |
+						O_TRUNC | O_BINARY, 0666);
 		multidev = true;
 	}
 	if (blobfile < 0)
