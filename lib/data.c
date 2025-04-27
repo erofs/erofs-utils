@@ -249,6 +249,11 @@ int z_erofs_read_one_data(struct erofs_inode *inode,
 	int ret = 0;
 
 	if (map->m_flags & EROFS_MAP_FRAGMENT) {
+		if (__erofs_unlikely(inode->nid == sbi->packed_nid)) {
+			erofs_err("fragment should not exist in the packed inode %llu",
+				  sbi->packed_nid | 0ULL);
+			return -EFSCORRUPTED;
+		}
 		return erofs_packedfile_read(sbi, buffer, length - skip,
 				   inode->fragmentoff + skip);
 	}
