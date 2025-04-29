@@ -194,6 +194,7 @@ AC_ARG_WITH(selinux,
 AC_CHECK_HEADERS(m4_flatten([
 	dirent.h
 	execinfo.h
+	endian.h
 	fcntl.h
 	getopt.h
 	inttypes.h
