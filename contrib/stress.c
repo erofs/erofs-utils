@@ -4,6 +4,7 @@
  *
  * Copyright (C) 2019-2025 Gao Xiang <xiang@kernel.org>
  */
+#define _FILE_OFFSET_BITS 64
 #define _GNU_SOURCE
 #include "erofs/defs.h"
 #include <errno.h>
@@ -271,7 +272,7 @@ static int __getdents_f(unsigned int sn, struct fent *fe)
 	}
 
 	dir = fdopendir(dfd);
-	while (readdir64(dir) != NULL)
+	while (readdir(dir) != NULL)
 		continue;
 	closedir(dir);
 	return 0;
@@ -428,7 +429,7 @@ static int __read_f(unsigned int sn, struct fent *fe, uint64_t filesize)
 
 	printf("%d[%u]/%u read_f: %llu bytes @ %llu of %s\n", getpid(), procid,
 	       sn, len | 0ULL, off | 0ULL, fe->subpath);
-	nread = pread64(fe->fd, buf, len, off);
+	nread = pread(fe->fd, buf, len, off);
 	if (nread != trimmed) {
 		fprintf(stderr, "%d[%u]/%u read_f: failed to read %llu bytes @ %llu of %s\n",
 			getpid(), procid, sn, len | 0ULL, off | 0ULL,
@@ -439,7 +440,7 @@ static int __read_f(unsigned int sn, struct fent *fe, uint64_t filesize)
 	if (fe->chkfd < 0)
 		return 0;
 
-	nread2 = pread64(fe->chkfd, chkbuf, len, off);
+	nread2 = pread(fe->chkfd, chkbuf, len, off);
 	if (nread2 <= 0) {
 		fprintf(stderr, "%d[%u]/%u read_f: failed to check %llu bytes @ %llu of %s\n",
 			getpid(), procid, sn, len | 0ULL, off | 0ULL,
@@ -477,14 +478,14 @@ static int read_f(int op, unsigned int sn)
 	if (ret)
 		return ret;
 
-	fsz = lseek64(fe->fd, 0, SEEK_END);
+	fsz = lseek(fe->fd, 0, SEEK_END);
 	if (fsz <= 0) {
 		if (!fsz) {
 			printf("%d[%u]/%u %s: zero size @ %s\n",
 			       getpid(), procid, sn, __func__, fe->subpath);
 			return 0;
 		}
-		fprintf(stderr, "%d[%u]/%u %s: lseek64 %s failed %d\n",
+		fprintf(stderr, "%d[%u]/%u %s: lseek %s failed %d\n",
 			getpid(), procid, sn, __func__, fe->subpath, errno);
 		return -errno;
 	}
@@ -504,7 +505,7 @@ static int __doscan_f(unsigned int sn, const char *op, struct fent *fe,
 	for (pos = 0; pos < filesize; pos += chunksize) {
 		ssize_t nread, nread2;
 
-		nread = pread64(fe->fd, buf, chunksize, pos);
+		nread = pread(fe->fd, buf, chunksize, pos);
 
 		if (nread <= 0)
 			return -errno;
@@ -515,7 +516,7 @@ static int __doscan_f(unsigned int sn, const char *op, struct fent *fe,
 		if (fe->chkfd < 0)
 			continue;
 
-		nread2 = pread64(fe->chkfd, chkbuf, chunksize, pos);
+		nread2 = pread(fe->chkfd, chkbuf, chunksize, pos);
 		if (nread2 <= 0)
 			return -errno;
 
@@ -547,14 +548,14 @@ static int doscan_f(int op, unsigned int sn)
 	if (ret)
 		return ret;
 
-	fsz = lseek64(fe->fd, 0, SEEK_END);
+	fsz = lseek(fe->fd, 0, SEEK_END);
 	if (fsz <= 0) {
 		if (!fsz) {
 			printf("%d[%u]/%u %s: zero size @ %s\n",
 			       getpid(), procid, sn, __func__, fe->subpath);
 			return 0;
 		}
-		fprintf(stderr, "%d[%u]/%u %s: lseek64 %s failed %d\n",
+		fprintf(stderr, "%d[%u]/%u %s: lseek %s failed %d\n",
 			getpid(), procid, sn, __func__, fe->subpath, errno);
 		return -errno;
 	}
@@ -576,7 +577,7 @@ static int doscan_aligned_f(int op, unsigned int sn)
 	ret = tryopen(sn, __func__, fe);
 	if (ret)
 		return ret;
-	fsz = lseek64(fe->fd, 0, SEEK_END);
+	fsz = lseek(fe->fd, 0, SEEK_END);
 	if (fsz <= psz) {
 		if (fsz >= 0) {
 			printf("%d[%u]/%u %s: size too small %lld @ %s\n",
@@ -584,7 +585,7 @@ static int doscan_aligned_f(int op, unsigned int sn)
 			       fe->subpath);
 			return 0;
 		}
-		fprintf(stderr, "%d[%u]/%u %s: lseek64 %s failed %d\n",
+		fprintf(stderr, "%d[%u]/%u %s: lseek %s failed %d\n",
 			getpid(), procid, sn, __func__, fe->subpath, errno);
 		return -errno;
 	}
