@@ -910,7 +910,8 @@ out:
 	return 0;
 }
 
-static bool erofs_should_use_inode_extended(struct erofs_inode *inode)
+static bool erofs_should_use_inode_extended(struct erofs_inode *inode,
+					    const char *path)
 {
 	if (cfg.c_force_inodeversion == FORCE_INODE_EXTENDED)
 		return true;
@@ -924,7 +925,8 @@ static bool erofs_should_use_inode_extended(struct erofs_inode *inode)
 		return true;
 	if (inode->i_nlink > USHRT_MAX)
 		return true;
-	if ((inode->i_mtime != inode->sbi->build_time ||
+	if (path != EROFS_PACKED_INODE &&
+	    (inode->i_mtime != inode->sbi->build_time ||
 	     inode->i_mtime_nsec != inode->sbi->build_time_nsec) &&
 	    !cfg.c_ignore_mtime)
 		return true;
@@ -1016,6 +1018,11 @@ int __erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 		erofs_err("gid overflow @ %s", path);
 	inode->i_gid += cfg.c_gid_offset;
 
+	if (path == EROFS_PACKED_INODE) {
+		inode->i_mtime = sbi->build_time;
+		inode->i_mtime_nsec = sbi->build_time_nsec;
+		return 0;
+	}
 	inode->i_mtime = st->st_mtime;
 	inode->i_mtime_nsec = ST_MTIM_NSEC(st);
 
@@ -1029,7 +1036,6 @@ int __erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 	default:
 		break;
 	}
-
 	return 0;
 }
 
@@ -1065,7 +1071,7 @@ static int erofs_fill_inode(struct erofs_inode *inode, struct stat *st,
 	if (!inode->i_srcpath)
 		return -ENOMEM;
 
-	if (erofs_should_use_inode_extended(inode)) {
+	if (erofs_should_use_inode_extended(inode, path)) {
 		if (cfg.c_force_inodeversion == FORCE_INODE_COMPACT) {
 			erofs_err("file %s cannot be in compact form",
 				  inode->i_srcpath);
@@ -1610,7 +1616,7 @@ static int erofs_rebuild_handle_inode(struct erofs_inode *inode,
 	erofs_update_progressinfo("Processing %s ...", trimmed);
 	free(trimmed);
 
-	if (erofs_should_use_inode_extended(inode)) {
+	if (erofs_should_use_inode_extended(inode, inode->i_srcpath)) {
 		if (cfg.c_force_inodeversion == FORCE_INODE_COMPACT) {
 			erofs_err("file %s cannot be in compact form",
 				  inode->i_srcpath);
