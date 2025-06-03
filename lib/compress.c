@@ -28,13 +28,6 @@
 
 #define Z_EROFS_DESTBUF_SZ	(Z_EROFS_PCLUSTER_MAX_SIZE + EROFS_MAX_BLOCK_SIZE * 2)
 
-/* compressing configuration specified by users */
-struct erofs_compress_cfg {
-	struct erofs_compress handle;
-	unsigned int algorithmtype;
-	bool enable;
-} erofs_ccfg[EROFS_MAX_COMPR_CFGS];
-
 struct z_erofs_extent_item {
 	struct list_head list;
 	struct z_erofs_inmem_extent e;
@@ -117,6 +110,17 @@ static struct {
 	bool hasfwq;
 } z_erofs_mt_ctrl;
 #endif
+
+/* compressing configuration specified by users */
+struct erofs_compress_cfg {
+	struct erofs_compress handle;
+	unsigned int algorithmtype;
+	bool enable;
+};
+
+struct z_erofs_mgr {
+	struct erofs_compress_cfg ccfg[EROFS_MAX_COMPR_CFGS];
+};
 
 static bool z_erofs_mt_enabled;
 
@@ -1463,6 +1467,7 @@ int z_erofs_mt_compress(struct z_erofs_compress_ictx *ictx)
 		if (i >= nsegs - 1) {
 			cur->ctx.remaining = inode->i_size -
 					inode->fragment_size - (u64)i * segsz;
+
 			if (z_erofs_mt_ctrl.hasfwq) {
 				erofs_queue_work(&z_erofs_mt_ctrl.fwq,
 						 &cur->work);
@@ -1591,7 +1596,7 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 		while (1) {
 			inode->z_algorithmtype[0] =
 				rand() % EROFS_MAX_COMPR_CFGS;
-			if (erofs_ccfg[inode->z_algorithmtype[0]].enable)
+			if (sbi->zmgr->ccfg[inode->z_algorithmtype[0]].enable)
 				break;
 		}
 	}
@@ -1616,7 +1621,7 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 		ictx->fd = dup(fd);
 	}
 
-	ictx->ccfg = &erofs_ccfg[inode->z_algorithmtype[0]];
+	ictx->ccfg = &sbi->zmgr->ccfg[inode->z_algorithmtype[0]];
 	inode->z_algorithmtype[0] = ictx->ccfg->algorithmtype;
 	inode->z_algorithmtype[1] = 0;
 
@@ -1844,8 +1849,15 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 	u32 max_dict_size[Z_EROFS_COMPRESSION_MAX] = {};
 	u32 available_compr_algs = 0;
 
+	if (!sbi->zmgr) {
+		sbi->zmgr = calloc(1, sizeof(*sbi->zmgr));
+		if (!sbi->zmgr)
+			return -ENOMEM;
+	}
+
 	for (i = 0; cfg.c_compr_opts[i].alg; ++i) {
-		struct erofs_compress *c = &erofs_ccfg[i].handle;
+		struct erofs_compress_cfg *ccfg = &sbi->zmgr->ccfg[i];
+		struct erofs_compress *c = &ccfg->handle;
 
 		ret = erofs_compressor_init(sbi, c, cfg.c_compr_opts[i].alg,
 					    cfg.c_compr_opts[i].level,
@@ -1854,10 +1866,10 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 			return ret;
 
 		id = z_erofs_get_compress_algorithm_id(c);
-		erofs_ccfg[i].algorithmtype = id;
-		erofs_ccfg[i].enable = true;
-		available_compr_algs |= 1 << erofs_ccfg[i].algorithmtype;
-		if (erofs_ccfg[i].algorithmtype != Z_EROFS_COMPRESSION_LZ4)
+		ccfg->algorithmtype = id;
+		ccfg->enable = true;
+		available_compr_algs |= 1 << ccfg->algorithmtype;
+		if (ccfg->algorithmtype != Z_EROFS_COMPRESSION_LZ4)
 			erofs_sb_set_compr_cfgs(sbi);
 		if (c->dict_size > max_dict_size[id])
 			max_dict_size[id] = c->dict_size;
@@ -1921,12 +1933,17 @@ int z_erofs_compress_init(struct erofs_sb_info *sbi, struct erofs_buffer_head *s
 	return z_erofs_mt_init();
 }
 
-int z_erofs_compress_exit(void)
+int z_erofs_compress_exit(struct erofs_sb_info *sbi)
 {
 	int i, ret;
 
+	if (!sbi->zmgr) {
+		DBG_BUGON(1);
+		return -EINVAL;
+	}
+
 	for (i = 0; cfg.c_compr_opts[i].alg; ++i) {
-		ret = erofs_compressor_exit(&erofs_ccfg[i].handle);
+		ret = erofs_compressor_exit(&sbi->zmgr->ccfg[i].handle);
 		if (ret)
 			return ret;
 	}

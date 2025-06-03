@@ -82,6 +82,7 @@ struct erofs_xattr_prefix_item {
 
 struct erofs_mkfs_dfops;
 struct erofs_packed_inode;
+struct z_erofs_mgr;
 
 struct erofs_sb_info {
 	struct erofs_sb_lz4_info lz4;
@@ -141,6 +142,7 @@ struct erofs_sb_info {
 	struct erofs_mkfs_dfops *mkfs_dfops;
 #endif
 	struct erofs_bufmgr *bmgr;
+	struct z_erofs_mgr *zmgr;
 	struct erofs_packed_inode *packedinode;
 	bool useqpl;
 };

@@ -1491,7 +1491,7 @@ int main(int argc, char **argv)
 exit:
 	if (root)
 		erofs_iput(root);
-	z_erofs_compress_exit();
+	z_erofs_compress_exit(&g_sbi);
 	z_erofs_dedupe_exit();
 	z_erofs_dedupe_ext_exit();
 	blklst = erofs_blocklist_close();
