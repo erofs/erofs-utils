@@ -46,7 +46,7 @@ struct z_erofs_compress_ictx {		/* inode context */
 	int fd;
 	u64 fpos;
 
-	u32 tof_chksum;
+	u32 tofh;
 	bool fix_dedupedfrag;
 	bool fragemitted;
 	bool dedupe;
@@ -626,7 +626,7 @@ nocompression:
 		   (!inode->fragment_size || ictx->fix_dedupedfrag)) {
 frag_packing:
 		ret = z_erofs_pack_fragments(inode, ctx->queue + ctx->head,
-					     len, ictx->tof_chksum);
+					     len, ictx->tofh);
 		if (ret < 0)
 			return ret;
 		e->plen = 0;	/* indicate a fragment */
@@ -1103,7 +1103,7 @@ int z_erofs_compress_segment(struct z_erofs_compress_sctx *ctx,
 	DBG_BUGON(offset != -1 && frag && inode->fragment_size);
 	if (offset != -1 && frag && !inode->fragment_size &&
 	    cfg.c_fragdedupe != FRAGDEDUPE_OFF) {
-		ret = z_erofs_fragments_dedupe(inode, fd, &ictx->tof_chksum);
+		ret = z_erofs_fragments_dedupe(inode, fd, ictx->tofh);
 		if (ret < 0)
 			return ret;
 		if (inode->fragment_size > ctx->remaining)
@@ -1622,21 +1622,23 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 	inode->z_algorithmtype[0] = ictx->ccfg->algorithmtype;
 	inode->z_algorithmtype[1] = 0;
 
-	/*
-	 * Handle tails in advance to avoid writing duplicated
-	 * parts into the packed inode.
-	 */
-	if (cfg.c_fragments && !erofs_is_packed_inode(inode) &&
-	    ictx == &g_ictx && cfg.c_fragdedupe != FRAGDEDUPE_OFF) {
-		ret = z_erofs_fragments_dedupe(inode, fd, &ictx->tof_chksum);
-		if (ret < 0)
-			goto err_free_ictx;
+	if (cfg.c_fragments && !erofs_is_packed_inode(inode)) {
+		ictx->tofh = z_erofs_fragments_tofh(inode, fd, fpos);
+		if (ictx == &g_ictx && cfg.c_fragdedupe != FRAGDEDUPE_OFF) {
+			/*
+			 * Handle tails in advance to avoid writing duplicated
+			 * parts into the packed inode.
+			 */
+			ret = z_erofs_fragments_dedupe(inode, fd, ictx->tofh);
+			if (ret < 0)
+				goto err_free_ictx;
 
-		if (cfg.c_fragdedupe == FRAGDEDUPE_INODE &&
-		    inode->fragment_size < inode->i_size) {
-			erofs_dbg("Discard the sub-inode tail fragment of %s",
-				  inode->i_srcpath);
-			inode->fragment_size = 0;
+			if (cfg.c_fragdedupe == FRAGDEDUPE_INODE &&
+			    inode->fragment_size < inode->i_size) {
+				erofs_dbg("Discard the sub-inode tail fragment of %s",
+					  inode->i_srcpath);
+				inode->fragment_size = 0;
+			}
 		}
 	}
 	ictx->inode = inode;
@@ -1647,7 +1649,7 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 	ictx->dedupe = false;
 
 	if (all_fragments && !inode->fragment_size) {
-		ret = z_erofs_pack_file_from_fd(inode, fd, ictx->tof_chksum);
+		ret = z_erofs_pack_file_from_fd(inode, fd, ictx->tofh);
 		if (ret)
 			goto err_free_idata;
 	}

@@ -3,9 +3,6 @@
  * Copyright (C), 2022, Coolpad Group Limited.
  * Created by Yue Hu <huyue2@coolpad.com>
  */
-#ifndef _LARGEFILE64_SOURCE
-#define _LARGEFILE64_SOURCE
-#endif
 #ifndef _FILE_OFFSET_BITS
 #define _FILE_OFFSET_BITS 64
 #endif
@@ -49,23 +46,39 @@ struct erofs_packed_inode {
 
 const char *erofs_frags_packedname = "packed_file";
 
-#ifndef HAVE_LSEEK64
-#define erofs_lseek64 lseek
-#else
-#define erofs_lseek64 lseek64
-#endif
+u32 z_erofs_fragments_tofh(struct erofs_inode *inode, int fd, erofs_off_t fpos)
+{
+	u8 data_to_hash[EROFS_TOF_HASHLEN];
+	u32 hash;
+	int ret;
 
-static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
-					 u32 crc)
+	if (inode->i_size <= EROFS_TOF_HASHLEN)
+		return ~0U;
+
+	ret = pread(fd, data_to_hash, EROFS_TOF_HASHLEN,
+		    fpos + inode->i_size - EROFS_TOF_HASHLEN);
+	if (ret < 0)
+		return -errno;
+	if (ret != EROFS_TOF_HASHLEN) {
+		DBG_BUGON(1);
+		return -EIO;
+	}
+	hash = erofs_crc32c(~0, data_to_hash, EROFS_TOF_HASHLEN);
+	return hash != ~0U ? hash : 0;
+}
+
+int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 tofh)
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
 	struct erofs_fragment_dedupe_item *cur, *di = NULL;
-	struct list_head *head = &epi->hash[FRAGMENT_HASH(crc)];
+	struct list_head *head = &epi->hash[FRAGMENT_HASH(tofh)];
 	unsigned int s1, e1;
 	erofs_off_t deduped;
 	u8 *data;
 	int ret;
 
+	if (inode->i_size <= EROFS_TOF_HASHLEN)
+		return 0;
 	if (list_empty(head))
 		return 0;
 
@@ -138,27 +151,13 @@ static int z_erofs_fragments_dedupe_find(struct erofs_inode *inode, int fd,
 	return 0;
 }
 
-int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 *tofcrc)
+static int z_erofs_fragments_dedupe_insert(struct erofs_inode *inode,
+					   void *data, u32 tofh)
 {
-	u8 data_to_hash[EROFS_TOF_HASHLEN];
-	int ret;
-
-	if (inode->i_size <= EROFS_TOF_HASHLEN)
-		return 0;
-
-	ret = pread(fd, data_to_hash, EROFS_TOF_HASHLEN,
-		    inode->i_size - EROFS_TOF_HASHLEN);
-	if (ret != EROFS_TOF_HASHLEN)
-		return -errno;
-
-	*tofcrc = erofs_crc32c(~0, data_to_hash, EROFS_TOF_HASHLEN);
-	return z_erofs_fragments_dedupe_find(inode, fd, *tofcrc);
-}
-
-static int z_erofs_fragments_dedupe_insert(struct list_head *hash, void *data,
-					   unsigned int len, erofs_off_t pos)
-{
+	struct erofs_packed_inode *epi = inode->sbi->packedinode;
 	struct erofs_fragment_dedupe_item *di;
+	erofs_off_t len = inode->fragment_size;
+	erofs_off_t pos = inode->fragmentoff;
 
 	if (len <= EROFS_TOF_HASHLEN)
 		return 0;
@@ -172,14 +171,13 @@ static int z_erofs_fragments_dedupe_insert(struct list_head *hash, void *data,
 		return -ENOMEM;
 
 	memcpy(di->data, data, len);
-	di->length = len;
 	di->pos = pos;
-
-	list_add_tail(&di->list, hash);
+	di->length = len;
+	list_add_tail(&di->list, &epi->hash[FRAGMENT_HASH(tofh)]);
 	return 0;
 }
 
-int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofcrc)
+int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofh)
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
 	s64 offset, rc;
@@ -240,9 +238,7 @@ int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofcrc)
 		  inode->i_srcpath);
 
 	if (memblock)
-		rc = z_erofs_fragments_dedupe_insert(
-			&epi->hash[FRAGMENT_HASH(tofcrc)], memblock,
-			inode->fragment_size, inode->fragmentoff);
+		rc = z_erofs_fragments_dedupe_insert(inode, memblock, tofh);
 	else
 		rc = 0;
 out:
@@ -256,7 +252,7 @@ out:
 }
 
 int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
-			   unsigned int len, u32 tofcrc)
+			   unsigned int len, u32 tofh)
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
 	s64 offset = lseek(epi->fd, 0, SEEK_CUR);
@@ -279,8 +275,7 @@ int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
 		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL,
 		  inode->i_srcpath);
 
-	ret = z_erofs_fragments_dedupe_insert(&epi->hash[FRAGMENT_HASH(tofcrc)],
-					      data, len, inode->fragmentoff);
+	ret = z_erofs_fragments_dedupe_insert(inode, data, tofh);
 	if (ret)
 		return ret;
 	return len;

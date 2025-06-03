@@ -15,7 +15,8 @@ extern "C"
 extern const char *erofs_frags_packedname;
 #define EROFS_PACKED_INODE	erofs_frags_packedname
 
-int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 *tofcrc);
+u32 z_erofs_fragments_tofh(struct erofs_inode *inode, int fd, erofs_off_t fpos);
+int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 tofh);
 
 int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofcrc);
 int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
