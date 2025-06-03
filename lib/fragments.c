@@ -31,7 +31,7 @@ struct erofs_fragmentitem {
 };
 
 #define EROFS_FRAGMENT_INMEM_SZ_MAX	(256 * 1024)
-#define EROFS_TOF_HASHLEN		16
+#define EROFS_TOF_HASHLEN		64
 
 #define FRAGMENT_HASHSIZE		65536
 #define FRAGMENT_HASH(c)		((c) & (FRAGMENT_HASHSIZE - 1))
