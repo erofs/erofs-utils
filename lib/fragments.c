@@ -20,12 +20,14 @@
 #include "erofs/fragments.h"
 #include "erofs/bitops.h"
 #include "liberofs_private.h"
+#ifdef HAVE_SYS_SENDFILE_H
+#include <sys/sendfile.h>
+#endif
 
-struct erofs_fragment_dedupe_item {
+struct erofs_fragmentitem {
 	struct list_head	list;
-	unsigned int		length;
-	erofs_off_t		pos;
-	u8			data[];
+	u8			*data;
+	erofs_off_t		length, pos;
 };
 
 #define EROFS_FRAGMENT_INMEM_SZ_MAX	(256 * 1024)
@@ -34,8 +36,15 @@ struct erofs_fragment_dedupe_item {
 #define FRAGMENT_HASHSIZE		65536
 #define FRAGMENT_HASH(c)		((c) & (FRAGMENT_HASHSIZE - 1))
 
+struct erofs_fragment_bucket {
+	struct list_head hash;
+#ifdef EROFS_MT_ENABLED
+	pthread_rwlock_t lock;
+#endif
+};
+
 struct erofs_packed_inode {
-	struct list_head *hash;
+	struct erofs_fragment_bucket *bks;
 	int fd;
 	unsigned long *uptodate;
 #if EROFS_MT_ENABLED
@@ -67,11 +76,53 @@ u32 z_erofs_fragments_tofh(struct erofs_inode *inode, int fd, erofs_off_t fpos)
 	return hash != ~0U ? hash : 0;
 }
 
-int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 tofh)
+static erofs_off_t erofs_fragment_longmatch(struct erofs_inode *inode,
+					    struct erofs_fragmentitem *fi,
+					    erofs_off_t matched, int fd)
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
-	struct erofs_fragment_dedupe_item *cur, *di = NULL;
-	struct list_head *head = &epi->hash[FRAGMENT_HASH(tofh)];
+	erofs_off_t total = min_t(erofs_off_t, fi->length, inode->i_size);
+	erofs_off_t pos;
+	bool inmem = false;
+
+	if (!fi->pos) {
+		inmem = true;
+		pos = fi->length - matched;
+	} else {
+		pos = fi->pos - matched;
+	}
+
+	while (matched < total) {
+		char buf[2][16384];
+		unsigned int sz;
+
+		if (__erofs_unlikely(!inmem && pos <= total - matched)) {
+			DBG_BUGON(1);
+			return matched;
+		}
+		sz = min_t(u64, total - matched, sizeof(buf[0]));
+		if (pread(fd, buf[0], sz, inode->i_size - matched - sz) != sz)
+			break;
+
+		if (!inmem) {
+			if (pread(epi->fd, buf[1], sz, pos - sz) != sz)
+				break;
+			if (memcmp(buf[0], buf[1], sz))
+				break;
+		} else if (memcmp(buf[0], fi->data + pos - sz, sz)) {
+			break;
+		}
+		pos -= sz;
+		matched += sz;
+	}
+	return matched;
+}
+
+int erofs_fragment_findmatch(struct erofs_inode *inode, int fd, u32 tofh)
+{
+	struct erofs_packed_inode *epi = inode->sbi->packedinode;
+	struct erofs_fragmentitem *cur, *fi = NULL;
+	struct erofs_fragment_bucket *bk = &epi->bks[FRAGMENT_HASH(tofh)];
 	unsigned int s1, e1;
 	erofs_off_t deduped;
 	u8 *data;
@@ -79,7 +130,7 @@ int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 tofh)
 
 	if (inode->i_size <= EROFS_TOF_HASHLEN)
 		return 0;
-	if (list_empty(head))
+	if (list_empty(&bk->hash))
 		return 0;
 
 	s1 = min_t(u64, EROFS_FRAGMENT_INMEM_SZ_MAX, inode->i_size);
@@ -94,13 +145,21 @@ int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 tofh)
 	}
 	e1 = s1 - EROFS_TOF_HASHLEN;
 	deduped = 0;
-	list_for_each_entry(cur, head, list) {
+
+#ifdef EROFS_MT_ENABLED
+	pthread_rwlock_rdlock(&bk->lock);
+#endif
+	list_for_each_entry(cur, &bk->hash, list) {
 		unsigned int e2, mn;
-		erofs_off_t i, pos;
+		erofs_off_t inmax, i;
 
 		DBG_BUGON(cur->length <= EROFS_TOF_HASHLEN);
-		e2 = cur->length - EROFS_TOF_HASHLEN;
-
+		if (cur->pos)
+			inmax = min_t(u64, cur->length,
+				      EROFS_FRAGMENT_INMEM_SZ_MAX);
+		else
+			inmax = cur->length;
+		e2 = inmax - EROFS_TOF_HASHLEN;
 		if (memcmp(data + e1, cur->data + e2, EROFS_TOF_HASHLEN))
 			continue;
 
@@ -112,173 +171,213 @@ int z_erofs_fragments_dedupe(struct erofs_inode *inode, int fd, u32 tofh)
 		i += EROFS_TOF_HASHLEN;
 		if (i >= s1) {		/* full short match */
 			DBG_BUGON(i > s1);
-			pos = cur->pos + cur->length - s1;
-			while (i < inode->i_size && pos) {
-				char buf[2][16384];
-				unsigned int sz;
-
-				sz = min_t(u64, pos, sizeof(buf[0]));
-				sz = min_t(u64, sz, inode->i_size - i);
-				if (pread(epi->fd, buf[0], sz, pos - sz) != sz)
-					break;
-				if (pread(fd, buf[1], sz,
-					  inode->i_size - i - sz) != sz)
-					break;
-
-				if (memcmp(buf[0], buf[1], sz))
-					break;
-				pos -= sz;
-				i += sz;
-			}
+			i = erofs_fragment_longmatch(inode, cur, s1, fd);
 		}
 
 		if (i <= deduped)
 			continue;
-		di = cur;
+		fi = cur;
 		deduped = i;
 		if (deduped == inode->i_size)
 			break;
 	}
-
+#ifdef EROFS_MT_ENABLED
+	pthread_rwlock_unlock(&bk->lock);
+#endif
 	free(data);
 	if (deduped) {
-		DBG_BUGON(!di);
+		DBG_BUGON(!fi);
 		inode->fragment_size = deduped;
-		inode->fragmentoff = di->pos + di->length - deduped;
-		erofs_dbg("Dedupe %llu tail data at %llu",
-			  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL);
+		inode->fragment = fi;
+		erofs_dbg("Dedupe %llu tail data of %s",
+			  inode->fragment_size | 0ULL, inode->i_srcpath);
 	}
 	return 0;
 }
 
-static int z_erofs_fragments_dedupe_insert(struct erofs_inode *inode,
-					   void *data, u32 tofh)
+int erofs_fragment_pack(struct erofs_inode *inode, void *data,
+			erofs_off_t pos, erofs_off_t len, u32 tofh, bool tail)
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
-	struct erofs_fragment_dedupe_item *di;
-	erofs_off_t len = inode->fragment_size;
-	erofs_off_t pos = inode->fragmentoff;
+	struct erofs_fragment_bucket *bk = &epi->bks[FRAGMENT_HASH(tofh)];
+	struct erofs_fragmentitem *fi;
+	bool inmem = (pos == ~0ULL);
 
-	if (len <= EROFS_TOF_HASHLEN)
-		return 0;
-	if (len > EROFS_FRAGMENT_INMEM_SZ_MAX) {
-		data += len - EROFS_FRAGMENT_INMEM_SZ_MAX;
-		pos += len - EROFS_FRAGMENT_INMEM_SZ_MAX;
-		len = EROFS_FRAGMENT_INMEM_SZ_MAX;
-	}
-	di = malloc(sizeof(*di) + len);
-	if (!di)
+	fi = malloc(sizeof(*fi));
+	if (!fi)
 		return -ENOMEM;
+	fi->length = len;
+	if (!inmem) {
+		pos += len;
+		if (len > EROFS_FRAGMENT_INMEM_SZ_MAX) {
+			if (!tail)
+				data += len - EROFS_FRAGMENT_INMEM_SZ_MAX;
+			len = EROFS_FRAGMENT_INMEM_SZ_MAX;
+		}
+	}
 
-	memcpy(di->data, data, len);
-	di->pos = pos;
-	di->length = len;
-	list_add_tail(&di->list, &epi->hash[FRAGMENT_HASH(tofh)]);
+	fi->data = malloc(len);
+	if (!fi->data) {
+		free(fi);
+		return -ENOMEM;
+	}
+	memcpy(fi->data, data, len);
+	fi->pos = inmem ? 0 : pos;
+	if (len > EROFS_TOF_HASHLEN) {
+		list_add_tail(&fi->list, &bk->hash);
+	} else {
+		init_list_head(&fi->list);
+	}
+	inode->fragment = fi;
+	inode->fragment_size = fi->length;
+	erofs_dbg("Recording %llu fragment data of %s",
+		  fi->length | 0ULL, inode->i_srcpath);
 	return 0;
 }
 
-int z_erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofh)
+int erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofh)
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
-	s64 offset, rc;
+	s64 offset, rc, sz;
 	char *memblock;
+	bool onheap = false;
 
 	offset = lseek(epi->fd, 0, SEEK_CUR);
 	if (offset < 0)
 		return -errno;
 
-	inode->fragmentoff = (erofs_off_t)offset;
-	inode->fragment_size = inode->i_size;
-
 	memblock = mmap(NULL, inode->i_size, PROT_READ, MAP_SHARED, fd, 0);
 	if (memblock == MAP_FAILED || !memblock) {
-		unsigned long long remaining = inode->fragment_size;
+		erofs_off_t remaining = inode->i_size;
+		struct erofs_vfile vin = { .fd = fd };
 
-		memblock = NULL;
+#if defined(HAVE_SYS_SENDFILE_H) && defined(HAVE_SENDFILE)
+		do {
+			sz = min_t(u64, remaining, UINT_MAX);
+			rc = sendfile(epi->fd, fd, NULL, sz);
+			if (rc < 0)
+				goto out;
+			remaining -= rc;
+		} while (remaining);
+#endif
 		while (remaining) {
 			char buf[32768];
-			unsigned int sz = min_t(unsigned int, remaining,
-						sizeof(buf));
 
-			rc = read(fd, buf, sz);
-			if (rc != sz) {
-				if (rc <= 0) {
-					if (!rc)
-						rc = -EIO;
-					else
-						rc = -errno;
-					goto out;
-				}
-				sz = rc;
-			}
-			rc = __erofs_io_write(epi->fd, buf, sz);
-			if (rc != sz) {
-				if (rc >= 0)
-					rc = -EIO;
+			sz = min_t(u64, remaining, sizeof(buf));
+			rc = erofs_io_read(&vin, buf, sz);
+			if (rc < 0)
 				goto out;
+			if (rc > 0) {
+				rc = write(epi->fd, buf, rc);
+				if (rc < 0)
+					goto out;
 			}
-			remaining -= sz;
+			remaining -= rc;
 		}
+
+		sz = min_t(u64, inode->i_size, EROFS_FRAGMENT_INMEM_SZ_MAX);
+		memblock = malloc(sz);
+		if (!memblock) {
+			rc = -ENOMEM;
+			goto out;
+		}
+		onheap = true;
+
+		rc = pread(epi->fd, memblock, sz, offset + inode->i_size - sz);
+		if (rc != sz) {
+			if (rc >= 0) {
+				DBG_BUGON(1);
+				rc = -EIO;
+			}
+			goto out;
+		}
+
 		rc = lseek(fd, 0, SEEK_SET);
 		if (rc < 0) {
 			rc = -errno;
 			goto out;
 		}
 	} else {
-		rc = __erofs_io_write(epi->fd, memblock, inode->fragment_size);
-		if (rc != inode->fragment_size) {
+		rc = __erofs_io_write(epi->fd, memblock, inode->i_size);
+		if (rc != inode->i_size) {
 			if (rc >= 0)
 				rc = -EIO;
 			goto out;
 		}
 	}
 
-	erofs_dbg("Recording %llu fragment data at %llu of %s",
-		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL,
-		  inode->i_srcpath);
-
-	if (memblock)
-		rc = z_erofs_fragments_dedupe_insert(inode, memblock, tofh);
-	else
-		rc = 0;
+	rc = erofs_fragment_pack(inode, memblock, offset, inode->i_size,
+				 tofh, onheap);
 out:
-	if (rc)
-		erofs_err("Failed to record %llu-byte fragment data @ %llu for nid %llu: %d",
-			  inode->fragment_size | 0ULL,
-			  inode->fragmentoff | 0ULL, inode->nid | 0ULL, (int)rc);
-	if (memblock)
+	if (onheap)
+		free(memblock);
+	else
 		munmap(memblock, inode->i_size);
 	return rc;
 }
 
-int z_erofs_pack_fragments(struct erofs_inode *inode, void *data,
-			   unsigned int len, u32 tofh)
+int erofs_fragment_commit(struct erofs_inode *inode, u32 tofh)
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
-	s64 offset = lseek(epi->fd, 0, SEEK_CUR);
+	struct erofs_fragmentitem *fi = inode->fragment;
+	erofs_off_t len = inode->fragment_size;
+	unsigned int sz;
+	s64 offset;
 	int ret;
 
+	if (!len) {
+		DBG_BUGON(fi);
+		return 0;
+	}
+
+	if (fi->pos) {
+		inode->fragmentoff = fi->pos - len;
+		return 0;
+	}
+
+	offset = lseek(epi->fd, 0, SEEK_CUR);
 	if (offset < 0)
 		return -errno;
 
-	inode->fragmentoff = (erofs_off_t)offset;
-	inode->fragment_size = len;
-
-	ret = write(epi->fd, data, len);
-	if (ret != len) {
+	ret = write(epi->fd, fi->data, fi->length);
+	if (ret != fi->length) {
 		if (ret < 0)
 			return -errno;
 		return -EIO;
 	}
+	offset += fi->length;
 
-	erofs_dbg("Recording %llu fragment data at %llu of %s",
-		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL,
-		  inode->i_srcpath);
+	if (!list_empty(&fi->list)) {
+#ifdef EROFS_MT_ENABLED
+		struct erofs_fragment_bucket *bk = &epi->bks[FRAGMENT_HASH(tofh)];
+#endif
+		void *nb;
 
-	ret = z_erofs_fragments_dedupe_insert(inode, data, tofh);
-	if (ret)
-		return ret;
-	return len;
+		sz = min_t(u64, fi->length, EROFS_FRAGMENT_INMEM_SZ_MAX);
+#ifdef EROFS_MT_ENABLED
+		pthread_rwlock_wrlock(&bk->lock);
+#endif
+		memmove(fi->data, fi->data + fi->length - sz, sz);
+
+		nb = realloc(fi->data, sz);
+		if (!nb) {
+#ifdef EROFS_MT_ENABLED
+			pthread_rwlock_unlock(&bk->lock);
+#endif
+			fi->data = NULL;
+			return -ENOMEM;
+		}
+		fi->data = nb;
+		fi->pos = (erofs_off_t)offset;
+#ifdef EROFS_MT_ENABLED
+		pthread_rwlock_unlock(&bk->lock);
+#endif
+		inode->fragmentoff = fi->pos - len;
+		return 0;
+	}
+	inode->fragmentoff = (erofs_off_t)offset - len;
+	free(fi);
+	return 0;
 }
 
 int erofs_flush_packed_inode(struct erofs_sb_info *sbi)
@@ -306,8 +405,8 @@ int erofs_packedfile(struct erofs_sb_info *sbi)
 void erofs_packedfile_exit(struct erofs_sb_info *sbi)
 {
 	struct erofs_packed_inode *epi = sbi->packedinode;
-	struct erofs_fragment_dedupe_item *di, *n;
-	int i;
+	struct erofs_fragmentitem *fi, *n;
+	struct erofs_fragment_bucket *bk;
 
 	if (!epi)
 		return;
@@ -315,11 +414,14 @@ void erofs_packedfile_exit(struct erofs_sb_info *sbi)
 	if (epi->uptodate)
 		free(epi->uptodate);
 
-	if (epi->hash) {
-		for (i = 0; i < FRAGMENT_HASHSIZE; ++i)
-			list_for_each_entry_safe(di, n, &epi->hash[i], list)
-				free(di);
-		free(epi->hash);
+	if (epi->bks) {
+		for (bk = epi->bks; bk < &epi->bks[FRAGMENT_HASHSIZE]; ++bk) {
+			list_for_each_entry_safe(fi, n, &bk->hash, list) {
+				free(fi->data);
+				free(fi);
+			}
+		}
+		free(epi->bks);
 	}
 
 	if (epi->fd >= 0)
@@ -342,13 +444,17 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 
 	sbi->packedinode = epi;
 	if (fragments_mkfs) {
-		epi->hash = malloc(sizeof(*epi->hash) * FRAGMENT_HASHSIZE);
-		if (!epi->hash) {
+		epi->bks = malloc(sizeof(*epi->bks) * FRAGMENT_HASHSIZE);
+		if (!epi->bks) {
 			err = -ENOMEM;
 			goto err_out;
 		}
-		for (i = 0; i < FRAGMENT_HASHSIZE; ++i)
-			init_list_head(&epi->hash[i]);
+		for (i = 0; i < FRAGMENT_HASHSIZE; ++i) {
+			init_list_head(&epi->bks[i].hash);
+#ifdef EROFS_MT_ENABLED
+			pthread_rwlock_init(&epi->bks[i].lock, NULL);
+#endif
+		}
 	}
 
 	epi->fd = erofs_tmpfile();

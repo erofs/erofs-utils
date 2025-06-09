@@ -526,11 +526,8 @@ static bool z_erofs_fixup_deduped_fragment(struct z_erofs_compress_sctx *ctx)
 		return false;
 	}
 
-	inode->fragmentoff += inode->fragment_size - newsize;
 	inode->fragment_size = newsize;
-
-	erofs_dbg("Reducing fragment size to %llu at %llu",
-		  inode->fragment_size | 0ULL, inode->fragmentoff | 0ULL);
+	erofs_dbg("Reducing fragment size to %llu", inode->fragment_size | 0ULL);
 
 	/* it's the end */
 	DBG_BUGON(ctx->tail - ctx->head + ctx->remaining != newsize);
@@ -625,8 +622,8 @@ nocompression:
 		   compressedsize < ctx->pclustersize &&
 		   (!inode->fragment_size || ictx->fix_dedupedfrag)) {
 frag_packing:
-		ret = z_erofs_pack_fragments(inode, ctx->queue + ctx->head,
-					     len, ictx->tofh);
+		ret = erofs_fragment_pack(inode, ctx->queue + ctx->head,
+					  ~0ULL, len, ictx->tofh, false);
 		if (ret < 0)
 			return ret;
 		e->plen = 0;	/* indicate a fragment */
@@ -1103,7 +1100,7 @@ int z_erofs_compress_segment(struct z_erofs_compress_sctx *ctx,
 	DBG_BUGON(offset != -1 && frag && inode->fragment_size);
 	if (offset != -1 && frag && !inode->fragment_size &&
 	    cfg.c_fragdedupe != FRAGDEDUPE_OFF) {
-		ret = z_erofs_fragments_dedupe(inode, fd, ictx->tofh);
+		ret = erofs_fragment_findmatch(inode, fd, ictx->tofh);
 		if (ret < 0)
 			return ret;
 		if (inode->fragment_size > ctx->remaining)
@@ -1172,6 +1169,9 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 	int ret;
 
 	if (inode->fragment_size) {
+		ret = erofs_fragment_commit(inode, ictx->tofh);
+		if (ret)
+			goto err_free_idata;
 		inode->z_advise |= Z_EROFS_ADVISE_FRAGMENT_PCLUSTER;
 		erofs_sb_set_fragments(inode->sbi);
 	}
@@ -1210,12 +1210,10 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 		legacymetasize = Z_EROFS_LEGACY_MAP_HEADER_SIZE;
 	}
 
-	if (ptotal) {
+	if (ptotal)
 		(void)erofs_bh_balloon(bh, ptotal);
-	} else {
-		if (!cfg.c_fragments && !cfg.c_dedupe)
-			DBG_BUGON(!inode->idata_size);
-	}
+	else if (!cfg.c_fragments && !cfg.c_dedupe)
+		DBG_BUGON(!inode->idata_size);
 
 	erofs_info("compressed %s (%llu bytes) into %llu bytes",
 		   inode->i_srcpath, inode->i_size | 0ULL, ptotal | 0ULL);
@@ -1629,7 +1627,7 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 			 * Handle tails in advance to avoid writing duplicated
 			 * parts into the packed inode.
 			 */
-			ret = z_erofs_fragments_dedupe(inode, fd, ictx->tofh);
+			ret = erofs_fragment_findmatch(inode, fd, ictx->tofh);
 			if (ret < 0)
 				goto err_free_ictx;
 
@@ -1649,7 +1647,7 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 	ictx->dedupe = false;
 
 	if (all_fragments && !inode->fragment_size) {
-		ret = z_erofs_pack_file_from_fd(inode, fd, ictx->tofh);
+		ret = erofs_pack_file_from_fd(inode, fd, ictx->tofh);
 		if (ret)
 			goto err_free_idata;
 	}
