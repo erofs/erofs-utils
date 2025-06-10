@@ -1221,6 +1221,7 @@ out:
 		inode->i_diskbuf = NULL;
 		inode->datasource = EROFS_INODE_DATA_SOURCE_NONE;
 	} else {
+		DBG_BUGON(ctx->fd < 0);
 		close(ctx->fd);
 	}
 	return ret;
@@ -1280,6 +1281,9 @@ static int erofs_mkfs_jobfn(struct erofs_mkfs_jobitem *item)
 	struct erofs_inode *inode = item->u.inode;
 	int ret;
 
+	if (item->type >= EROFS_MKFS_JOB_MAX)
+		return 1;
+
 	if (item->type == EROFS_MKFS_JOB_NDIR)
 		return erofs_mkfs_handle_nondirectory(&item->u.ndir);
 
@@ -1314,8 +1318,6 @@ struct erofs_mkfs_dfops {
 	bool idle;	/* initialize as false before the dfops worker runs */
 };
 
-#define EROFS_MT_QUEUE_SIZE 256
-
 static void erofs_mkfs_flushjobs(struct erofs_sb_info *sbi)
 {
 	struct erofs_mkfs_dfops *q = sbi->mkfs_dfops;
@@ -1326,7 +1328,7 @@ static void erofs_mkfs_flushjobs(struct erofs_sb_info *sbi)
 	pthread_mutex_unlock(&q->lock);
 }
 
-static void *erofs_mkfs_pop_jobitem(struct erofs_mkfs_dfops *q)
+static void *erofs_mkfs_top_jobitem(struct erofs_mkfs_dfops *q)
 {
 	struct erofs_mkfs_jobitem *item;
 
@@ -1337,31 +1339,34 @@ static void *erofs_mkfs_pop_jobitem(struct erofs_mkfs_dfops *q)
 		pthread_cond_signal(&q->drain);
 		pthread_cond_wait(&q->empty, &q->lock);
 	}
-
-	item = q->queue + q->head;
-	q->head = (q->head + 1) & (q->entries - 1);
-
-	pthread_cond_signal(&q->full);
+	item = q->queue + (q->head & (q->entries - 1));
 	pthread_mutex_unlock(&q->lock);
 	return item;
+}
+
+static void erofs_mkfs_pop_jobitem(struct erofs_mkfs_dfops *q)
+{
+	pthread_mutex_lock(&q->lock);
+	DBG_BUGON(q->head == q->tail);
+	++q->head;
+	pthread_cond_signal(&q->full);
+	pthread_mutex_unlock(&q->lock);
 }
 
 static void *z_erofs_mt_dfops_worker(void *arg)
 {
 	struct erofs_sb_info *sbi = arg;
-	int ret = 0;
+	struct erofs_mkfs_dfops *dfops = sbi->mkfs_dfops;
+	int ret;
 
-	while (1) {
+	do {
 		struct erofs_mkfs_jobitem *item;
 
-		item = erofs_mkfs_pop_jobitem(sbi->mkfs_dfops);
-		if (item->type >= EROFS_MKFS_JOB_MAX)
-			break;
+		item = erofs_mkfs_top_jobitem(dfops);
 		ret = erofs_mkfs_jobfn(item);
-		if (ret)
-			break;
-	}
-	pthread_exit((void *)(uintptr_t)ret);
+		erofs_mkfs_pop_jobitem(dfops);
+	} while (!ret);
+	pthread_exit((void *)(uintptr_t)(ret < 0 ? ret : 0));
 }
 
 static int erofs_mkfs_go(struct erofs_sb_info *sbi,
@@ -1372,14 +1377,13 @@ static int erofs_mkfs_go(struct erofs_sb_info *sbi,
 
 	pthread_mutex_lock(&q->lock);
 
-	while (((q->tail + 1) & (q->entries - 1)) == q->head)
+	while (q->tail - q->head >= q->entries)
 		pthread_cond_wait(&q->full, &q->lock);
 
-	item = q->queue + q->tail;
+	item = q->queue + (q->tail++ & (q->entries - 1));
 	item->type = type;
 	if (size)
 		memcpy(&item->u, elem, size);
-	q->tail = (q->tail + 1) & (q->entries - 1);
 	q->idle = false;
 
 	pthread_cond_signal(&q->empty);
@@ -1581,7 +1585,7 @@ static int erofs_mkfs_handle_inode(struct erofs_inode *inode)
 		return ret;
 
 	if (!S_ISDIR(inode->i_mode)) {
-		struct erofs_mkfs_job_ndir_ctx ctx = { .inode = inode };
+		struct erofs_mkfs_job_ndir_ctx ctx = { .inode = inode, .fd = -1 };
 
 		if (!S_ISLNK(inode->i_mode) && inode->i_size) {
 			ctx.fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
@@ -1813,7 +1817,7 @@ static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 	if (!q)
 		return -ENOMEM;
 
-	q->entries = EROFS_MT_QUEUE_SIZE;
+	q->entries = cfg.c_mt_async_queue_limit ?: 32768;
 	q->queue = malloc(q->entries * sizeof(*q->queue));
 	if (!q->queue) {
 		free(q);

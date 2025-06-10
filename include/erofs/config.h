@@ -80,10 +80,6 @@ struct erofs_configure {
 	char c_force_chunkformat;
 	/* < 0, xattr disabled and INT_MAX, always use inline xattrs */
 	int c_inline_xattr_tolerance;
-#ifdef EROFS_MT_ENABLED
-	u64 c_mkfs_segment_size;
-	u32 c_mt_workers;
-#endif
 	u32 c_mkfs_pclustersize_max;
 	u32 c_mkfs_pclustersize_def;
 	u32 c_mkfs_pclustersize_packed;
@@ -93,6 +89,11 @@ struct erofs_configure {
 	const char *mount_point;
 	long long c_uid_offset, c_gid_offset;
 	u32 c_root_xattr_isize;
+#ifdef EROFS_MT_ENABLED
+	u64 c_mkfs_segment_size;
+	u32 c_mt_workers;
+	u32 c_mt_async_queue_limit;
+#endif
 #ifdef WITH_ANDROID
 	char *target_out_path;
 	char *fs_config_file;

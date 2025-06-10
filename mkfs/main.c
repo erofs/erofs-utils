@@ -86,6 +86,9 @@ static struct option long_options[] = {
 	{"sort", required_argument, NULL, 527},
 	{"hard-dereference", no_argument, NULL, 528},
 	{"dsunit", required_argument, NULL, 529},
+#ifdef EROFS_MT_ENABLED
+	{"async-queue-limit", required_argument, NULL, 530},
+#endif
 	{0, 0, 0, 0},
 };
 
@@ -159,6 +162,9 @@ static void usage(int argc, char **argv)
 		"    --mkfs-time        the timestamp is applied as build time only\n"
 		" -UX                   use a given filesystem UUID\n"
 		" --all-root            make all files owned by root\n"
+#ifdef EROFS_MT_ENABLED
+		" --async-queue-limit=# specify the maximum number of entries in the multi-threaded job queue\n"
+#endif
 		" --blobdev=X           specify an extra device X to store chunked data\n"
 		" --chunksize=#         generate chunk-based files with #-byte chunks\n"
 		" --clean=X             run full clean build (default) or:\n"
@@ -881,6 +887,15 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				return -EINVAL;
 			}
 			break;
+#ifdef EROFS_MT_ENABLED
+		case 530:
+			cfg.c_mt_async_queue_limit = strtoul(optarg, &endptr, 0);
+			if (*endptr != '\0') {
+				erofs_err("invalid async-queue-limit %s", optarg);
+				return -EINVAL;
+			}
+			break;
+#endif
 		case 'V':
 			version();
 			exit(0);
