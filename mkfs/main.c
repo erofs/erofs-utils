@@ -89,6 +89,7 @@ static struct option long_options[] = {
 #ifdef EROFS_MT_ENABLED
 	{"async-queue-limit", required_argument, NULL, 530},
 #endif
+	{"fsalignblks", required_argument, NULL, 531},
 	{0, 0, 0, 0},
 };
 
@@ -180,6 +181,7 @@ static void usage(int argc, char **argv)
 #endif
 		" --force-uid=#         set all file uids to # (# = UID)\n"
 		" --force-gid=#         set all file gids to # (# = GID)\n"
+		" --fsalignblks=#       specify the alignment of the primary device size in blocks\n"
 		" --uid-offset=#        add offset # to all file uids (# = id offset)\n"
 		" --gid-offset=#        add offset # to all file gids (# = id offset)\n"
 		" --hard-dereference    dereference hardlinks, add links as separate inodes\n"
@@ -250,6 +252,7 @@ static LIST_HEAD(rebuild_src_list);
 static u8 fixeduuid[16];
 static bool valid_fixeduuid;
 static unsigned int dsunit;
+static unsigned int fsalignblks = 1;
 
 static int erofs_mkfs_feat_set_legacy_compress(bool en, const char *val,
 					       unsigned int vallen)
@@ -896,6 +899,13 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 			}
 			break;
 #endif
+		case 531:
+			fsalignblks = strtoul(optarg, &endptr, 0);
+			if (*endptr != '\0') {
+				erofs_err("invalid fsalignblks %s", optarg);
+				return -EINVAL;
+			}
+			break;
 		case 'V':
 			version();
 			exit(0);
@@ -1183,7 +1193,7 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 	return 0;
 }
 
-static void erofs_mkfs_showsummaries(erofs_blk_t nblocks)
+static void erofs_mkfs_showsummaries(void)
 {
 	char uuid_str[37] = {};
 	char *incr = incremental_mode ? "new" : "total";
@@ -1194,11 +1204,12 @@ static void erofs_mkfs_showsummaries(erofs_blk_t nblocks)
 	erofs_uuid_unparse_lower(g_sbi.uuid, uuid_str);
 
 	fprintf(stdout, "------\nFilesystem UUID: %s\n"
-		"Filesystem total blocks: %u (of %u-byte blocks)\n"
+		"Filesystem total blocks: %llu (of %u-byte blocks)\n"
 		"Filesystem total inodes: %llu\n"
 		"Filesystem %s metadata blocks: %u\n"
 		"Filesystem %s deduplicated bytes (of source files): %llu\n",
-		uuid_str, nblocks, 1U << g_sbi.blkszbits, g_sbi.inos | 0ULL,
+		uuid_str, g_sbi.total_blocks | 0ULL, 1U << g_sbi.blkszbits,
+		g_sbi.inos | 0ULL,
 		incr, erofs_total_metablocks(g_sbi.bmgr),
 		incr, g_sbi.saved_by_deduplication | 0ULL);
 }
@@ -1208,7 +1219,6 @@ int main(int argc, char **argv)
 	int err = 0;
 	struct erofs_buffer_head *sb_bh;
 	struct erofs_inode *root = NULL;
-	erofs_blk_t nblocks = 0;
 	struct timeval t;
 	FILE *blklst = NULL;
 	u32 crc;
@@ -1478,6 +1488,12 @@ int main(int argc, char **argv)
 			goto exit;
 	}
 
+	g_sbi.primarydevice_blocks =
+		roundup(erofs_mapbh(g_sbi.bmgr, NULL), fsalignblks);
+	err = erofs_write_device_table(&g_sbi);
+	if (err)
+		goto exit;
+
 	/* flush all buffers except for the superblock */
 	err = erofs_bflush(g_sbi.bmgr, NULL);
 	if (err)
@@ -1487,7 +1503,7 @@ int main(int argc, char **argv)
 	erofs_iput(root);
 	root = NULL;
 
-	err = erofs_writesb(&g_sbi, sb_bh, &nblocks);
+	err = erofs_writesb(&g_sbi, sb_bh);
 	if (err)
 		goto exit;
 
@@ -1496,7 +1512,7 @@ int main(int argc, char **argv)
 	if (err)
 		goto exit;
 
-	err = erofs_dev_resize(&g_sbi, nblocks);
+	err = erofs_dev_resize(&g_sbi, g_sbi.primarydevice_blocks);
 
 	if (!err && erofs_sb_has_sb_chksum(&g_sbi)) {
 		err = erofs_enable_sb_chksum(&g_sbi, &crc);
@@ -1534,7 +1550,7 @@ exit:
 		return 1;
 	}
 	erofs_update_progressinfo("Build completed.\n");
-	erofs_mkfs_showsummaries(nblocks);
+	erofs_mkfs_showsummaries();
 	erofs_put_super(&g_sbi);
 	return 0;
 }

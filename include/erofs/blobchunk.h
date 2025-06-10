@@ -24,7 +24,6 @@ int tarerofs_write_chunkes(struct erofs_inode *inode, erofs_off_t data_offset);
 int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi);
 void erofs_blob_exit(void);
 int erofs_blob_init(const char *blobfile_path, erofs_off_t chunksize);
-int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices);
 
 #ifdef __cplusplus
 }

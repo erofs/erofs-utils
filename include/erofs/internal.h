@@ -144,6 +144,7 @@ struct erofs_sb_info {
 	struct erofs_bufmgr *bmgr;
 	struct z_erofs_mgr *zmgr;
 	struct erofs_packed_inode *packedinode;
+	struct erofs_buffer_head *bh_devt;
 	bool useqpl;
 };
 
@@ -412,9 +413,10 @@ struct erofs_map_dev {
 /* super.c */
 int erofs_read_superblock(struct erofs_sb_info *sbi);
 void erofs_put_super(struct erofs_sb_info *sbi);
-int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh,
-		  erofs_blk_t *blocks);
+int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh);
 struct erofs_buffer_head *erofs_reserve_sb(struct erofs_bufmgr *bmgr);
+int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices);
+int erofs_write_device_table(struct erofs_sb_info *sbi);
 int erofs_enable_sb_chksum(struct erofs_sb_info *sbi, u32 *crc);
 
 /* namei.c */

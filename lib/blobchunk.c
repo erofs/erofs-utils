@@ -31,8 +31,6 @@ static struct hashmap blob_hashmap;
 static int blobfile = -1;
 static erofs_blk_t remapped_base;
 static erofs_off_t datablob_size;
-static bool multidev;
-static struct erofs_buffer_head *bh_devt;
 struct erofs_blobchunk erofs_holechunk = {
 	.blkaddr = EROFS_NULL_ADDR,
 };
@@ -493,30 +491,8 @@ int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
 			datablob_size = length;
 	}
 
-	if (sbi->extra_devices) {
-		unsigned int i, ret;
-		erofs_blk_t nblocks;
-
-		nblocks = erofs_mapbh(sbi->bmgr, NULL);
-		pos_out = erofs_btell(bh_devt, false);
-		i = 0;
-		do {
-			struct erofs_deviceslot dis = {
-				.mapped_blkaddr = cpu_to_le32(nblocks),
-				.blocks = cpu_to_le32(sbi->devs[i].blocks),
-			};
-
-			memcpy(dis.tag, sbi->devs[i].tag, sizeof(dis.tag));
-			ret = erofs_dev_write(sbi, &dis, pos_out, sizeof(dis));
-			if (ret)
-				return ret;
-			pos_out += sizeof(dis);
-			nblocks += sbi->devs[i].blocks;
-		} while (++i < sbi->extra_devices);
-		bh_devt->op = &erofs_drop_directly_bhops;
-		erofs_bdrop(bh_devt, false);
+	if (sbi->extra_devices)
 		return 0;
-	}
 
 	bh = erofs_balloc(sbi->bmgr, DATA, datablob_size, 0);
 	if (IS_ERR(bh))
@@ -612,40 +588,14 @@ static int erofs_insert_zerochunk(erofs_off_t chunksize)
 
 int erofs_blob_init(const char *blobfile_path, erofs_off_t chunksize)
 {
-	if (!blobfile_path) {
+	if (!blobfile_path)
 		blobfile = erofs_tmpfile();
-		multidev = false;
-	} else {
+	else
 		blobfile = open(blobfile_path, O_WRONLY | O_CREAT |
 						O_TRUNC | O_BINARY, 0666);
-		multidev = true;
-	}
 	if (blobfile < 0)
 		return -errno;
 
 	hashmap_init(&blob_hashmap, erofs_blob_hashmap_cmp, 0);
 	return erofs_insert_zerochunk(chunksize);
-}
-
-int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices)
-{
-	if (!devices)
-		return 0;
-
-	sbi->devs = calloc(devices, sizeof(sbi->devs[0]));
-	if (!sbi->devs)
-		return -ENOMEM;
-
-	bh_devt = erofs_balloc(sbi->bmgr, DEVT,
-		sizeof(struct erofs_deviceslot) * devices, 0);
-	if (IS_ERR(bh_devt)) {
-		free(sbi->devs);
-		return PTR_ERR(bh_devt);
-	}
-	erofs_mapbh(NULL, bh_devt->block);
-	bh_devt->op = &erofs_skip_write_bhops;
-	sbi->devt_slotoff = erofs_btell(bh_devt, false) / EROFS_DEVT_SLOT_SIZE;
-	sbi->extra_devices = devices;
-	erofs_sb_set_device_table(sbi);
-	return 0;
 }

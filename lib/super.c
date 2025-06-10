@@ -155,8 +155,7 @@ void erofs_put_super(struct erofs_sb_info *sbi)
 	}
 }
 
-int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh,
-		  erofs_blk_t *blocks)
+int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh)
 {
 	struct erofs_super_block sb = {
 		.magic     = cpu_to_le32(EROFS_SUPER_MAGIC_V1),
@@ -180,8 +179,7 @@ int erofs_writesb(struct erofs_sb_info *sbi, struct erofs_buffer_head *sb_bh,
 	char *buf;
 	int ret;
 
-	*blocks         = erofs_mapbh(sbi->bmgr, NULL);
-	sb.blocks       = cpu_to_le32(*blocks);
+	sb.blocks       = cpu_to_le32(sbi->primarydevice_blocks);
 	memcpy(sb.uuid, sbi->uuid, sizeof(sb.uuid));
 	memcpy(sb.volume_name, sbi->volume_name, sizeof(sb.volume_name));
 
@@ -281,5 +279,68 @@ int erofs_enable_sb_chksum(struct erofs_sb_info *sbi, u32 *crc)
 		return ret;
 	}
 
+	return 0;
+}
+
+int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices)
+{
+	struct erofs_buffer_head *bh;
+
+	if (!devices)
+		return 0;
+
+	sbi->devs = calloc(devices, sizeof(sbi->devs[0]));
+	if (!sbi->devs)
+		return -ENOMEM;
+
+	bh = erofs_balloc(sbi->bmgr, DEVT,
+			  sizeof(struct erofs_deviceslot) * devices, 0);
+	if (IS_ERR(bh)) {
+		free(sbi->devs);
+		sbi->devs = NULL;
+		return PTR_ERR(bh);
+	}
+	erofs_mapbh(NULL, bh->block);
+	bh->op = &erofs_skip_write_bhops;
+	sbi->bh_devt = bh;
+	sbi->devt_slotoff = erofs_btell(bh, false) / EROFS_DEVT_SLOT_SIZE;
+	sbi->extra_devices = devices;
+	erofs_sb_set_device_table(sbi);
+	return 0;
+}
+
+int erofs_write_device_table(struct erofs_sb_info *sbi)
+{
+	erofs_blk_t nblocks = sbi->primarydevice_blocks;
+	struct erofs_buffer_head *bh = sbi->bh_devt;
+	erofs_off_t pos;
+	unsigned int i, ret;
+
+	if (!sbi->extra_devices)
+		goto out;
+	if (!bh)
+		return -EINVAL;
+
+	pos = erofs_btell(bh, false);
+	i = 0;
+	do {
+		struct erofs_deviceslot dis = {
+			.mapped_blkaddr = cpu_to_le32(nblocks),
+			.blocks = cpu_to_le32(sbi->devs[i].blocks),
+		};
+
+		memcpy(dis.tag, sbi->devs[i].tag, sizeof(dis.tag));
+		ret = erofs_dev_write(sbi, &dis, pos, sizeof(dis));
+		if (ret)
+			return ret;
+		pos += sizeof(dis);
+		nblocks += sbi->devs[i].blocks;
+	} while (++i < sbi->extra_devices);
+
+	bh->op = &erofs_drop_directly_bhops;
+	erofs_bdrop(bh, false);
+	sbi->bh_devt = NULL;
+out:
+	sbi->total_blocks = nblocks;
 	return 0;
 }
