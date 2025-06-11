@@ -96,6 +96,39 @@ ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf,
 	return written;
 }
 
+ssize_t erofs_io_pwritev(struct erofs_vfile *vf, const struct iovec *iov,
+			 int iovcnt, u64 pos)
+{
+	ssize_t ret, written;
+	int i;
+
+	if (__erofs_unlikely(cfg.c_dry_run))
+		return 0;
+
+#ifdef HAVE_PWRITEV
+	if (!vf->ops) {
+		ret = pwritev(vf->fd, iov, iovcnt, pos + vf->offset);
+		if (ret < 0)
+			return -errno;
+		return ret;
+	}
+#endif
+	if (vf->ops && vf->ops->pwritev)
+		return vf->ops->pwritev(vf, iov, iovcnt, pos);
+	written = 0;
+	for (i = 0; i < iovcnt; ++i) {
+		ret = erofs_io_pwrite(vf, iov[i].iov_base, pos, iov[i].iov_len);
+		if (ret < iov[i].iov_len) {
+			if (ret < 0)
+				return ret;
+			return written + ret;
+		}
+		written += iov[i].iov_len;
+		pos += iov[i].iov_len;
+	}
+	return written;
+}
+
 int erofs_io_fsync(struct erofs_vfile *vf)
 {
 	int ret;

@@ -827,6 +827,7 @@ static struct erofs_bhops erofs_write_inline_bhops = {
 
 static int erofs_write_tail_end(struct erofs_inode *inode)
 {
+	static const u8 zeroed[EROFS_MAX_BLOCK_SIZE];
 	struct erofs_sb_info *sbi = inode->sbi;
 	struct erofs_buffer_head *bh, *ibh;
 
@@ -843,8 +844,10 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		ibh->fsprivate = erofs_igrab(inode);
 		ibh->op = &erofs_write_inline_bhops;
 	} else {
+		struct iovec iov[2];
+		erofs_off_t pos;
 		int ret;
-		erofs_off_t pos, zero_pos;
+		bool h0;
 
 		if (!bh) {
 			bh = erofs_balloc(sbi->bmgr,
@@ -874,25 +877,19 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		pos = erofs_btell(bh, true) - erofs_blksiz(sbi);
 
 		/* 0'ed data should be padded at head for 0padding conversion */
-		if (erofs_sb_has_lz4_0padding(sbi) && inode->compressed_idata) {
-			zero_pos = pos;
-			pos += erofs_blksiz(sbi) - inode->idata_size;
-		} else {
-			/* pad 0'ed data for the other cases */
-			zero_pos = pos + inode->idata_size;
-		}
-		ret = erofs_dev_write(sbi, inode->idata, pos, inode->idata_size);
-		if (ret)
-			return ret;
-
+		h0 = erofs_sb_has_lz4_0padding(sbi) && inode->compressed_idata;
 		DBG_BUGON(inode->idata_size > erofs_blksiz(sbi));
-		if (inode->idata_size < erofs_blksiz(sbi)) {
-			ret = erofs_dev_fillzero(sbi, zero_pos,
-					   erofs_blksiz(sbi) - inode->idata_size,
-					   false);
-			if (ret)
-				return ret;
-		}
+
+		iov[h0] = (struct iovec) { .iov_base = inode->idata,
+					   .iov_len = inode->idata_size };
+		iov[!h0] = (struct iovec) { .iov_base = (u8 *)zeroed,
+				erofs_blksiz(sbi) - inode->idata_size };
+		ret = erofs_io_pwritev(&sbi->bdev, iov, 2, pos);
+		if (ret < 0)
+			return ret;
+		else if (ret < erofs_blksiz(sbi))
+			return -EIO;
+
 		inode->idata_size = 0;
 		free(inode->idata);
 		inode->idata = NULL;

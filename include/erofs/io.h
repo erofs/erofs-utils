@@ -16,6 +16,7 @@ extern "C"
 #define _GNU_SOURCE
 #endif
 #include <unistd.h>
+#include <sys/uio.h>
 #include "defs.h"
 
 #ifndef O_BINARY
@@ -27,6 +28,8 @@ struct erofs_vfile;
 struct erofs_vfops {
 	ssize_t (*pread)(struct erofs_vfile *vf, void *buf, u64 offset, size_t len);
 	ssize_t (*pwrite)(struct erofs_vfile *vf, const void *buf, u64 offset, size_t len);
+	ssize_t (*pwritev)(struct erofs_vfile *vf, const struct iovec *iov,
+			   int iovcnt, u64 pos);
 	int (*fsync)(struct erofs_vfile *vf);
 	int (*fallocate)(struct erofs_vfile *vf, u64 offset, size_t len, bool pad);
 	int (*ftruncate)(struct erofs_vfile *vf, u64 length);
@@ -53,6 +56,8 @@ ssize_t __erofs_io_write(int fd, const void *buf, size_t len);
 
 int erofs_io_fstat(struct erofs_vfile *vf, struct stat *buf);
 ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf, u64 pos, size_t len);
+ssize_t erofs_io_pwritev(struct erofs_vfile *vf, const struct iovec *iov,
+			 int iovcnt, u64 pos);
 int erofs_io_fsync(struct erofs_vfile *vf);
 ssize_t erofs_io_fallocate(struct erofs_vfile *vf, u64 offset, size_t len, bool pad);
 int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length);

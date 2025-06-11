@@ -216,6 +216,7 @@ AC_CHECK_HEADERS(m4_flatten([
 	sys/statfs.h
 	sys/sysmacros.h
 	sys/time.h
+	sys/uio.h
 	unistd.h
 ]))
 
@@ -274,6 +275,7 @@ AC_CHECK_FUNCS(m4_flatten([
 	ftello64
 	pread64
 	pwrite64
+	pwritev
 	posix_fadvise
 	fstatfs
 	sendfile
