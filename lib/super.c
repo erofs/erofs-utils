@@ -145,6 +145,11 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 void erofs_put_super(struct erofs_sb_info *sbi)
 {
 	if (sbi->devs) {
+		int i;
+
+		DBG_BUGON(!sbi->extra_devices);
+		for (i = 0; i < sbi->extra_devices; ++i)
+			free(sbi->devs[i].src_path);
 		free(sbi->devs);
 		sbi->devs = NULL;
 	}
