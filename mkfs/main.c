@@ -90,6 +90,7 @@ static struct option long_options[] = {
 	{"async-queue-limit", required_argument, NULL, 530},
 #endif
 	{"fsalignblks", required_argument, NULL, 531},
+	{"vmdk-desc", required_argument, NULL, 532},
 	{0, 0, 0, 0},
 };
 
@@ -210,6 +211,7 @@ static void usage(int argc, char **argv)
 		" --unxz[=X]            try to filter the tarball stream through xz/lzma/lzip\n"
 		"                       (and optionally dump the raw stream to X together)\n"
 #endif
+		" --vmdk-desc=X         generate a VMDK descriptor file to merge sub-filesystems\n"
 #ifdef EROFS_MT_ENABLED
 		" --workers=#           set the number of worker threads to # (default: %u)\n"
 #endif
@@ -254,6 +256,7 @@ static bool valid_fixeduuid;
 static unsigned int dsunit;
 static unsigned int fsalignblks = 1;
 static int tarerofs_decoder;
+static FILE *vmdk_dcf;
 
 static int erofs_mkfs_feat_set_legacy_compress(bool en, const char *val,
 					       unsigned int vallen)
@@ -988,6 +991,13 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				return -EINVAL;
 			}
 			break;
+		case 532:
+			vmdk_dcf = fopen(optarg, "wb");
+			if (!vmdk_dcf) {
+				erofs_err("failed to open vmdk desc `%s`", optarg);
+				return -EINVAL;
+			}
+			break;
 		case 'V':
 			version();
 			exit(0);
@@ -1547,6 +1557,11 @@ int main(int argc, char **argv)
 		err = erofs_enable_sb_chksum(&g_sbi, &crc);
 		if (!err)
 			erofs_info("superblock checksum 0x%08x written", crc);
+	}
+
+	if (!err && vmdk_dcf) {
+		err = erofs_dump_vmdk_desc(vmdk_dcf, &g_sbi);
+		fclose(vmdk_dcf);
 	}
 exit:
 	if (root)
