@@ -1313,6 +1313,7 @@ struct erofs_mkfs_dfops {
 	struct erofs_mkfs_jobitem *queue;
 	unsigned int entries, head, tail;
 	bool idle;	/* initialize as false before the dfops worker runs */
+	bool exited;
 };
 
 static void erofs_mkfs_flushjobs(struct erofs_sb_info *sbi)
@@ -1363,6 +1364,10 @@ static void *z_erofs_mt_dfops_worker(void *arg)
 		ret = erofs_mkfs_jobfn(item);
 		erofs_mkfs_pop_jobitem(dfops);
 	} while (!ret);
+
+	dfops->exited = true;
+	if (ret < 0)
+		pthread_cond_signal(&dfops->full);
 	pthread_exit((void *)(uintptr_t)(ret < 0 ? ret : 0));
 }
 
@@ -1374,8 +1379,13 @@ static int erofs_mkfs_go(struct erofs_sb_info *sbi,
 
 	pthread_mutex_lock(&q->lock);
 
-	while (q->tail - q->head >= q->entries)
+	while (q->tail - q->head >= q->entries) {
+		if (q->exited) {
+			pthread_mutex_unlock(&q->lock);
+			return -ECHILD;
+		}
 		pthread_cond_wait(&q->full, &q->lock);
+	}
 
 	item = q->queue + (q->tail++ & (q->entries - 1));
 	item->type = type;
@@ -1828,9 +1838,10 @@ static int erofs_get_fdlimit(void)
 
 static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 {
+	struct erofs_sb_info *sbi = ctx->sbi ? ctx->sbi : ctx->u.root->sbi;
 	struct erofs_mkfs_dfops *q;
 	int err, err2;
-	struct erofs_sb_info *sbi = ctx->sbi ? ctx->sbi : ctx->u.root->sbi;
+	void *retval;
 
 	q = calloc(1, sizeof(*q));
 	if (!q)
@@ -1862,9 +1873,13 @@ static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 
 	err = __erofs_mkfs_build_tree(ctx);
 	erofs_mkfs_go(sbi, ~0, NULL, 0);
-	err2 = pthread_join(sbi->dfops_worker, NULL);
-	if (!err)
+	err2 = pthread_join(sbi->dfops_worker, &retval);
+	DBG_BUGON(!q->exited);
+	if (!err || err == -ECHILD) {
 		err = err2;
+		if (!err)
+			err = (intptr_t)retval;
+	}
 
 fail:
 	pthread_cond_destroy(&q->empty);
