@@ -1584,7 +1584,6 @@ int erofs_mt_write_compressed_file(struct z_erofs_compress_ictx *ictx)
 	ret = erofs_commit_compressed_file(ictx, bh, pstart - ptotal, ptotal);
 
 out:
-	close(ictx->fd);
 	free(ictx);
 	return ret;
 }
@@ -1658,13 +1657,12 @@ void *erofs_begin_compressed_file(struct erofs_inode *inode, int fd, u64 fpos)
 		pthread_mutex_unlock(&g_ictx.mutex);
 #endif
 		ictx = &g_ictx;
-		ictx->fd = fd;
 	} else {
 		ictx = malloc(sizeof(*ictx));
 		if (!ictx)
 			return ERR_PTR(-ENOMEM);
-		ictx->fd = dup(fd);
 	}
+	ictx->fd = fd;
 
 	ictx->ccfg = &sbi->zmgr->ccfg[inode->z_algorithmtype[0]];
 	inode->z_algorithmtype[0] = ictx->ccfg->algorithmtype;
