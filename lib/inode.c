@@ -1804,6 +1804,28 @@ static int __erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 }
 
 #ifdef EROFS_MT_ENABLED
+
+#ifdef HAVE_SYS_RESOURCE_H
+#include <sys/resource.h>
+#endif
+
+static int erofs_get_fdlimit(void)
+{
+#if defined(HAVE_SYS_RESOURCE_H) && defined(HAVE_GETRLIMIT)
+	struct rlimit rlim;
+	int err;
+
+	err = getrlimit(RLIMIT_NOFILE, &rlim);
+	if (err < 0)
+		return _POSIX_OPEN_MAX;
+	if (rlim.rlim_cur == RLIM_INFINITY)
+		return 0;
+	return rlim.rlim_cur;
+#else
+	return _POSIX_OPEN_MAX;
+#endif
+}
+
 static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 {
 	struct erofs_mkfs_dfops *q;
@@ -1814,7 +1836,14 @@ static int erofs_mkfs_build_tree(struct erofs_mkfs_buildtree_ctx *ctx)
 	if (!q)
 		return -ENOMEM;
 
-	q->entries = cfg.c_mt_async_queue_limit ?: 32768;
+	if (cfg.c_mt_async_queue_limit) {
+		q->entries = cfg.c_mt_async_queue_limit;
+	} else {
+		err = roundup_pow_of_two(erofs_get_fdlimit()) >> 1;
+		q->entries = err && err < 32768 ? err : 32768;
+	}
+	erofs_dbg("Set the asynchronous queue size to %u", q->entries);
+
 	q->queue = malloc(q->entries * sizeof(*q->queue));
 	if (!q->queue) {
 		free(q);

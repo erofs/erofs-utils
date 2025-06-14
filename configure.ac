@@ -211,6 +211,7 @@ AC_CHECK_HEADERS(m4_flatten([
 	sys/ioctl.h
 	sys/mman.h
 	sys/random.h
+	sys/resource.h
 	sys/sendfile.h
 	sys/stat.h
 	sys/statfs.h
@@ -265,6 +266,7 @@ AC_CHECK_FUNCS(m4_flatten([
 	backtrace
 	copy_file_range
 	fallocate
+	getrlimit
 	gettimeofday
 	lgetxattr
 	llistxattr
