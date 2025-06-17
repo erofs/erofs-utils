@@ -327,6 +327,11 @@ int erofs_write_device_table(struct erofs_sb_info *sbi)
 		return -EINVAL;
 
 	pos = erofs_btell(bh, false);
+	if (pos == NULL_ADDR_UL) {
+		DBG_BUGON(1);
+		return -EINVAL;
+	}
+
 	i = 0;
 	do {
 		struct erofs_deviceslot dis = {

@@ -60,7 +60,7 @@ int erofs_dump_vmdk_desc(FILE *f, struct erofs_sb_info *sbi)
 		const char *name = sbi->devs[i].src_path ?:
 				(const char *)sbi->devs[i].tag;
 
-		sectors = sbi->devs[i].blocks << (sbi->blkszbits - 9);
+		sectors = (u64)sbi->devs[i].blocks << (sbi->blkszbits - 9);
 		ret = erofs_vmdk_desc_add_extent(f, sectors, name, 0);
 		if (ret)
 			return ret;
