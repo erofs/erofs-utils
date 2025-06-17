@@ -242,6 +242,9 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofh)
 	char *memblock;
 	bool onheap = false;
 
+	if (__erofs_unlikely(!inode->i_size))
+		return 0;
+
 	offset = lseek(epi->fd, 0, SEEK_CUR);
 	if (offset < 0)
 		return -errno;
@@ -255,8 +258,8 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofh)
 		do {
 			sz = min_t(u64, remaining, UINT_MAX);
 			rc = sendfile(epi->fd, fd, NULL, sz);
-			if (rc < 0)
-				goto out;
+			if (rc <= 0)
+				break;
 			remaining -= rc;
 		} while (remaining);
 #endif
