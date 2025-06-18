@@ -19,6 +19,7 @@
 #include "erofs/internal.h"
 #include "erofs/fragments.h"
 #include "erofs/bitops.h"
+#include "erofs/lock.h"
 #include "liberofs_private.h"
 #ifdef HAVE_SYS_SENDFILE_H
 #include <sys/sendfile.h>
@@ -38,18 +39,14 @@ struct erofs_fragmentitem {
 
 struct erofs_fragment_bucket {
 	struct list_head hash;
-#ifdef EROFS_MT_ENABLED
-	pthread_rwlock_t lock;
-#endif
+	erofs_rwsem_t lock;
 };
 
 struct erofs_packed_inode {
 	struct erofs_fragment_bucket *bks;
 	int fd;
 	unsigned long *uptodate;
-#if EROFS_MT_ENABLED
-	pthread_mutex_t mutex;
-#endif
+	erofs_mutex_t mutex;
 	u64 uptodate_bits;
 };
 
@@ -146,9 +143,7 @@ int erofs_fragment_findmatch(struct erofs_inode *inode, int fd, u32 tofh)
 	e1 = s1 - EROFS_TOF_HASHLEN;
 	deduped = 0;
 
-#ifdef EROFS_MT_ENABLED
-	pthread_rwlock_rdlock(&bk->lock);
-#endif
+	erofs_down_read(&bk->lock);
 	list_for_each_entry(cur, &bk->hash, list) {
 		unsigned int e2, mn;
 		erofs_off_t inmax, i;
@@ -181,9 +176,7 @@ int erofs_fragment_findmatch(struct erofs_inode *inode, int fd, u32 tofh)
 		if (deduped == inode->i_size)
 			break;
 	}
-#ifdef EROFS_MT_ENABLED
-	pthread_rwlock_unlock(&bk->lock);
-#endif
+	erofs_up_read(&bk->lock);
 	free(data);
 	if (deduped) {
 		DBG_BUGON(!fi);
@@ -351,30 +344,23 @@ int erofs_fragment_commit(struct erofs_inode *inode, u32 tofh)
 	offset += fi->length;
 
 	if (!list_empty(&fi->list)) {
-#ifdef EROFS_MT_ENABLED
 		struct erofs_fragment_bucket *bk = &epi->bks[FRAGMENT_HASH(tofh)];
-#endif
 		void *nb;
 
 		sz = min_t(u64, fi->length, EROFS_FRAGMENT_INMEM_SZ_MAX);
-#ifdef EROFS_MT_ENABLED
-		pthread_rwlock_wrlock(&bk->lock);
-#endif
+
+		erofs_down_write(&bk->lock);
 		memmove(fi->data, fi->data + fi->length - sz, sz);
 
 		nb = realloc(fi->data, sz);
 		if (!nb) {
-#ifdef EROFS_MT_ENABLED
-			pthread_rwlock_unlock(&bk->lock);
-#endif
+			erofs_up_write(&bk->lock);
 			fi->data = NULL;
 			return -ENOMEM;
 		}
 		fi->data = nb;
 		fi->pos = (erofs_off_t)offset;
-#ifdef EROFS_MT_ENABLED
-		pthread_rwlock_unlock(&bk->lock);
-#endif
+		erofs_up_write(&bk->lock);
 		inode->fragmentoff = fi->pos - len;
 		return 0;
 	}
@@ -454,9 +440,7 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 		}
 		for (i = 0; i < FRAGMENT_HASHSIZE; ++i) {
 			init_list_head(&epi->bks[i].hash);
-#ifdef EROFS_MT_ENABLED
-			pthread_rwlock_init(&epi->bks[i].lock, NULL);
-#endif
+			erofs_init_rwsem(&epi->bks[i].lock);
 		}
 	}
 
@@ -492,6 +476,7 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 			err = -ENOMEM;
 			goto err_out;
 		}
+		erofs_mutex_init(&epi->mutex);
 	}
 	return 0;
 
@@ -619,23 +604,21 @@ int erofs_packedfile_read(struct erofs_sb_info *sbi,
 			uptodate = __erofs_test_bit(bnr, epi->uptodate);
 			if (!uptodate) {
 #if EROFS_MT_ENABLED
-				pthread_mutex_lock(&epi->mutex);
+				erofs_mutex_lock(&epi->mutex);
 				uptodate = __erofs_test_bit(bnr, epi->uptodate);
 				if (!uptodate) {
 #endif
 					free(buffer);
 					buffer = erofs_packedfile_preload(&pi, &map);
 					if (IS_ERR(buffer)) {
-#if EROFS_MT_ENABLED
-						pthread_mutex_unlock(&epi->mutex);
-#endif
+						erofs_mutex_unlock(&epi->mutex);
 						buffer = NULL;
 						goto fallback;
 					}
 
 #if EROFS_MT_ENABLED
 				}
-				pthread_mutex_unlock(&epi->mutex);
+				erofs_mutex_unlock(&epi->mutex);
 #endif
 			}
 
