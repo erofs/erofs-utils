@@ -481,7 +481,7 @@ static int erofs_rebuild_basedir_dirent_iter(struct erofs_dir_context *ctx)
 		if (S_ISDIR(inode->i_mode) &&
 		    (ctx->de_ftype == EROFS_FT_DIR ||
 		     ctx->de_ftype == EROFS_FT_UNKNOWN)) {
-			list_del(&inode->i_hash);
+			erofs_remove_ihash(inode);
 			inode->dev = dir->sbi->dev;
 			inode->i_ino[1] = ctx->de_nid;
 			erofs_insert_ihash(inode);

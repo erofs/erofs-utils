@@ -6,9 +6,6 @@
  * with heavy changes by Gao Xiang <xiang@kernel.org>
  */
 #define _GNU_SOURCE
-#ifdef EROFS_MT_ENABLED
-#include <pthread.h>
-#endif
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -19,6 +16,7 @@
 #endif
 #include <dirent.h>
 #include "erofs/print.h"
+#include "erofs/lock.h"
 #include "erofs/diskbuf.h"
 #include "erofs/inode.h"
 #include "erofs/cache.h"
@@ -85,48 +83,50 @@ unsigned char erofs_ftype_to_dtype(unsigned int filetype)
 	return erofs_dtype_by_ftype[filetype];
 }
 
-#define NR_INODE_HASHTABLE	16384
-
-struct list_head inode_hashtable[NR_INODE_HASHTABLE];
+static struct list_head erofs_ihash[65536];
+static erofs_rwsem_t erofs_ihashlock;
 
 void erofs_inode_manager_init(void)
 {
 	unsigned int i;
 
-	for (i = 0; i < NR_INODE_HASHTABLE; ++i)
-		init_list_head(&inode_hashtable[i]);
+	for (i = 0; i < ARRAY_SIZE(erofs_ihash); ++i)
+		init_list_head(&erofs_ihash[i]);
+	erofs_init_rwsem(&erofs_ihashlock);
 }
 
 void erofs_insert_ihash(struct erofs_inode *inode)
 {
-	unsigned int nr = (inode->i_ino[1] ^ inode->dev) % NR_INODE_HASHTABLE;
+	u32 nr = (inode->i_ino[1] ^ inode->dev) % ARRAY_SIZE(erofs_ihash);
 
-	list_add(&inode->i_hash, &inode_hashtable[nr]);
+	erofs_down_write(&erofs_ihashlock);
+	list_add(&inode->i_hash, &erofs_ihash[nr]);
+	erofs_up_write(&erofs_ihashlock);
+}
+
+void erofs_remove_ihash(struct erofs_inode *inode)
+{
+	erofs_down_write(&erofs_ihashlock);
+	list_del(&inode->i_hash);
+	erofs_up_write(&erofs_ihashlock);
 }
 
 /* get the inode from the (source) inode # */
 struct erofs_inode *erofs_iget(dev_t dev, ino_t ino)
 {
-	struct list_head *head =
-		&inode_hashtable[(ino ^ dev) % NR_INODE_HASHTABLE];
-	struct erofs_inode *inode;
+	u32 nr = (ino ^ dev) % ARRAY_SIZE(erofs_ihash);
+	struct list_head *head = &erofs_ihash[nr];
+	struct erofs_inode *ret = NULL, *inode;
 
-	list_for_each_entry(inode, head, i_hash)
-		if (inode->i_ino[1] == ino && inode->dev == dev)
-			return erofs_igrab(inode);
-	return NULL;
-}
-
-struct erofs_inode *erofs_iget_by_nid(erofs_nid_t nid)
-{
-	struct list_head *head =
-		&inode_hashtable[nid % NR_INODE_HASHTABLE];
-	struct erofs_inode *inode;
-
-	list_for_each_entry(inode, head, i_hash)
-		if (inode->nid == nid)
-			return erofs_igrab(inode);
-	return NULL;
+	erofs_down_read(&erofs_ihashlock);
+	list_for_each_entry(inode, head, i_hash) {
+		if (inode->i_ino[1] == ino && inode->dev == dev) {
+			ret = erofs_igrab(inode);
+			break;
+		}
+	}
+	erofs_up_read(&erofs_ihashlock);
+	return ret;
 }
 
 unsigned int erofs_iput(struct erofs_inode *inode)
@@ -142,7 +142,7 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 
 	free(inode->compressmeta);
 	free(inode->eof_tailraw);
-	list_del(&inode->i_hash);
+	erofs_remove_ihash(inode);
 	free(inode->i_srcpath);
 
 	if (inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF) {
@@ -1094,6 +1094,11 @@ struct erofs_inode *erofs_new_inode(struct erofs_sb_info *sbi)
 		return ERR_PTR(-ENOMEM);
 
 	inode->sbi = sbi;
+	/*
+	 * By default, newly allocated in-memory inodes are associated with
+	 * the target filesystem rather than any other foreign sources.
+	 */
+	inode->dev = sbi->dev;
 	inode->i_count = 1;
 	inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 
@@ -1707,7 +1712,7 @@ static int erofs_mkfs_dump_tree(struct erofs_inode *root, bool rebuild,
 	if (incremental) {
 		root->dev = root->sbi->dev;
 		root->i_ino[1] = sbi->root_nid;
-		list_del(&root->i_hash);
+		erofs_remove_ihash(root);
 		erofs_insert_ihash(root);
 	} else if (cfg.c_root_xattr_isize) {
 		if (cfg.c_root_xattr_isize > EROFS_XATTR_ALIGN(
