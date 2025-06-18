@@ -314,7 +314,7 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode, int fd, u32 tofh)
 out:
 	if (onheap)
 		free(memblock);
-	else
+	else if (memblock)
 		munmap(memblock, inode->i_size);
 	return rc;
 }
