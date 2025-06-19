@@ -1992,10 +1992,9 @@ int z_erofs_compress_exit(struct erofs_sb_info *sbi)
 {
 	int i, ret;
 
-	if (!sbi->zmgr) {
-		DBG_BUGON(1);
-		return -EINVAL;
-	}
+	/* If `zmgr` is uninitialized, return directly. */
+	if (!sbi->zmgr)
+		return 0;
 
 	for (i = 0; cfg.c_compr_opts[i].alg; ++i) {
 		ret = erofs_compressor_exit(&sbi->zmgr->ccfg[i].handle);
