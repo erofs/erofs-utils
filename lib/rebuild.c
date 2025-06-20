@@ -71,18 +71,27 @@ static struct erofs_dentry *erofs_rebuild_mkdir(struct erofs_inode *dir,
 	return d;
 }
 
+struct erofs_dentry *erofs_d_lookup(struct erofs_inode *dir, const char *name)
+{
+	struct erofs_dentry *d;
+
+	list_for_each_entry(d, &dir->i_subdirs, d_child)
+		if (!strcmp(d->name, name))
+			return d;
+	return NULL;
+}
+
 struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
 		char *path, bool aufs, bool *whout, bool *opq, bool to_head)
 {
 	struct erofs_dentry *d = NULL;
-	unsigned int len = strlen(path);
 	char *s = path;
 
 	*whout = false;
 	*opq = false;
 
-	while (s < path + len) {
-		char *slash = memchr(s, '/', path + len - s);
+	while (1) {
+		char *slash = strchr(s, '/');
 
 		if (slash) {
 			if (s == slash) {
@@ -90,60 +99,54 @@ struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
 				continue;
 			}
 			*slash = '\0';
+		} else if (*s == '\0') {
+			break;
 		}
 
-		if (!memcmp(s, ".", 2)) {
-			/* null */
-		} else if (!memcmp(s, "..", 3)) {
-			pwd = pwd->i_parent;
+		if (__erofs_unlikely(is_dot_dotdot(s))) {
+			if (s[1] == '.') {
+				pwd = pwd->i_parent;
+			}
 		} else {
-			struct erofs_inode *inode = NULL;
-
 			if (aufs && !slash) {
-				if (!memcmp(s, AUFS_WH_DIROPQ, sizeof(AUFS_WH_DIROPQ))) {
+				if (!strcmp(s, AUFS_WH_DIROPQ)) {
 					*opq = true;
 					break;
 				}
-				if (!memcmp(s, AUFS_WH_PFX, sizeof(AUFS_WH_PFX) - 1)) {
+				if (!strcmp(s, AUFS_WH_PFX)) {
 					s += sizeof(AUFS_WH_PFX) - 1;
 					*whout = true;
 				}
 			}
 
-			list_for_each_entry(d, &pwd->i_subdirs, d_child) {
-				if (!strcmp(d->name, s)) {
-					if (d->type != EROFS_FT_DIR && slash)
-						return ERR_PTR(-EIO);
-					inode = d->inode;
-					break;
-				}
-			}
-
-			if (inode) {
-				if (to_head) {
+			d = erofs_d_lookup(pwd, s);
+			if (d) {
+				if (d->type != EROFS_FT_DIR) {
+					if (slash)
+						return ERR_PTR(-ENOTDIR);
+				} else if (to_head) {
 					list_del(&d->d_child);
 					list_add(&d->d_child, &pwd->i_subdirs);
 				}
-				pwd = inode;
-			} else if (!slash) {
+				pwd = d->inode;
+			} else if (slash) {
+				d = erofs_rebuild_mkdir(pwd, s);
+				if (IS_ERR(d))
+					return d;
+			} else {
 				d = erofs_d_alloc(pwd, s);
 				if (IS_ERR(d))
 					return d;
 				d->type = EROFS_FT_UNKNOWN;
 				d->inode = pwd;
-			} else {
-				d = erofs_rebuild_mkdir(pwd, s);
-				if (IS_ERR(d))
-					return d;
-				pwd = d->inode;
 			}
+			pwd = d->inode;
 		}
-		if (slash) {
-			*slash = '/';
-			s = slash + 1;
-		} else {
+
+		if (!slash)
 			break;
-		}
+		*slash = '/';
+		s = slash + 1;
 	}
 	return d;
 }
