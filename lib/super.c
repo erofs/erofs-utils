@@ -76,13 +76,13 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 {
 	u8 data[EROFS_MAX_BLOCK_SIZE];
 	struct erofs_super_block *dsb;
-	int ret;
+	int read, ret;
 
-	sbi->blkszbits = ilog2(EROFS_MAX_BLOCK_SIZE);
-	ret = erofs_blk_read(sbi, 0, data, 0, erofs_blknr(sbi, sizeof(data)));
-	if (ret < 0) {
+	read = erofs_io_pread(&sbi->bdev, data, 0, EROFS_MAX_BLOCK_SIZE);
+	if (read < EROFS_SUPER_END) {
+		ret = read < 0 ? read : -EIO;
 		erofs_err("cannot read erofs superblock: %d", ret);
-		return -EIO;
+		return ret;
 	}
 	dsb = (struct erofs_super_block *)(data + EROFS_SUPER_OFFSET);
 
@@ -105,9 +105,8 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 	}
 
 	sbi->sb_size = 128 + dsb->sb_extslots * EROFS_SB_EXTSLOT_SIZE;
-	if (sbi->sb_size > (1 << sbi->blkszbits) - EROFS_SUPER_OFFSET) {
-		erofs_err("invalid sb_extslots %u (more than a fs block)",
-			  dsb->sb_extslots);
+	if (sbi->sb_size > read - EROFS_SUPER_OFFSET) {
+		erofs_err("invalid sb_extslots %u", dsb->sb_extslots);
 		return -EINVAL;
 	}
 	sbi->primarydevice_blocks = le32_to_cpu(dsb->blocks);
