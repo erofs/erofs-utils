@@ -1,3 +1,16 @@
+erofs-utils 1.8.7
+
+ * This release includes the following updates:
+   - (mkfs.erofs) Speed up multi-threaded `-Efragments` even further;
+   - (mkfs.erofs) Fix DEFLATE due to incorrect maximum Huffman length;
+   - (mkfs.erofs) Support `--fsalignblks` to align filesystem sizes;
+   - (mkfs.erofs) Support `--vmdk-desc` to generate VMDK for flattened
+                  block devices;
+   - (mkfs.erofs) Fix image reproducibility of `-E(all-)fragments`;
+   - Other minor fixes.
+
+ -- Gao Xiang <xiang@kernel.org>  Sun, 22 Jun 2025 00:00:00 +0800
+
 erofs-utils 1.8.6
 
  * This release includes the following updates:
