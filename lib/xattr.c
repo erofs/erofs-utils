@@ -165,6 +165,8 @@ bool erofs_xattr_prefix_matches(const char *key, unsigned int *index,
 {
 	struct xattr_prefix *p;
 
+	*index = 0;
+	*len = 0;
 	for (p = xattr_types; p < xattr_types + ARRAY_SIZE(xattr_types); ++p) {
 		if (p->prefix && !strncmp(p->prefix, key, p->prefix_len)) {
 			*len = p->prefix_len;
@@ -219,13 +221,9 @@ static struct xattr_item *get_xattritem(char *kvbuf, unsigned int len[2])
 	if (!item)
 		return ERR_PTR(-ENOMEM);
 
-	if (!erofs_xattr_prefix_matches(kvbuf, &item->base_index,
-					&item->prefix_len)) {
-		free(item);
-		return ERR_PTR(-ENODATA);
-	}
+	(void)erofs_xattr_prefix_matches(kvbuf, &item->base_index,
+					 &item->prefix_len);
 	DBG_BUGON(len[0] < item->prefix_len);
-
 	INIT_HLIST_NODE(&item->node);
 	item->count = 1;
 	item->kvbuf = kvbuf;
@@ -292,12 +290,7 @@ static struct xattr_item *parse_one_xattr(const char *path, const char *key,
 	item = get_xattritem(kvbuf, len);
 	if (!IS_ERR(item))
 		return item;
-	if (item == ERR_PTR(-ENODATA)) {
-		erofs_warn("skipped unidentified xattr: %s", key);
-		ret = 0;
-	} else {
-		ret = PTR_ERR(item);
-	}
+	ret = PTR_ERR(item);
 out:
 	free(kvbuf);
 	return ERR_PTR(ret);
@@ -443,13 +436,16 @@ static int read_xattrs_from_file(const char *path, mode_t mode,
 			continue;
 
 		item = parse_one_xattr(path, key, keylen);
+		/* skip inaccessible xattrs */
+		if (item == ERR_PTR(-ENODATA) || !item) {
+			erofs_warn("skipped inaccessible xattr %s in %s",
+				   key, path);
+			continue;
+		}
 		if (IS_ERR(item)) {
 			ret = PTR_ERR(item);
 			goto err;
 		}
-		/* skip unidentified xattrs */
-		if (!item)
-			continue;
 
 		ret = erofs_xattr_add(ixattrs, item);
 		if (ret < 0)
@@ -1430,7 +1426,6 @@ int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
 
 	if (!erofs_xattr_prefix_matches(name, &prefix, &prefixlen))
 		return -ENODATA;
-
 	it.it.sbi = vi->sbi;
 	it.index = prefix;
 	it.name = name + prefixlen;
