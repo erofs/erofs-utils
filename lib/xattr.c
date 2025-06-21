@@ -75,6 +75,28 @@
 #define OVL_XATTR_ORIGIN OVL_XATTR_TRUSTED_PREFIX OVL_XATTR_ORIGIN_POSTFIX
 #endif
 
+static ssize_t erofs_sys_llistxattr(const char *path, char *list, size_t size)
+{
+#ifdef HAVE_LLISTXATTR
+	return llistxattr(path, list, size);
+#elif defined(__APPLE__)
+	return listxattr(path, list, size, XATTR_NOFOLLOW);
+#endif
+	return 0;
+}
+
+static ssize_t erofs_sys_lgetxattr(const char *path, const char *name,
+				   void *value, size_t size)
+{
+#ifdef HAVE_LGETXATTR
+	return lgetxattr(path, name, value, size);
+#elif defined(__APPLE__)
+	return getxattr(path, name, value, size, 0, XATTR_NOFOLLOW);
+#endif
+	errno = ENODATA;
+	return -1;
+}
+
 #define EA_HASHTABLE_BITS 16
 
 /* one extra byte for the trailing `\0` of attribute name */
@@ -241,13 +263,7 @@ static struct xattr_item *parse_one_xattr(const char *path, const char *key,
 	len[0] = keylen;
 
 	/* determine length of the value */
-#ifdef HAVE_LGETXATTR
-	ret = lgetxattr(path, key, NULL, 0);
-#elif defined(__APPLE__)
-	ret = getxattr(path, key, NULL, 0, 0, XATTR_NOFOLLOW);
-#else
-	return ERR_PTR(-EOPNOTSUPP);
-#endif
+	ret = erofs_sys_lgetxattr(path, key, NULL, 0);
 	if (ret < 0)
 		return ERR_PTR(-errno);
 	len[1] = ret;
@@ -259,16 +275,9 @@ static struct xattr_item *parse_one_xattr(const char *path, const char *key,
 	memcpy(kvbuf, key, EROFS_XATTR_KSIZE(len));
 	if (len[1]) {
 		/* copy value to buffer */
-#ifdef HAVE_LGETXATTR
-		ret = lgetxattr(path, key, kvbuf + EROFS_XATTR_KSIZE(len),
-				len[1]);
-#elif defined(__APPLE__)
-		ret = getxattr(path, key, kvbuf + EROFS_XATTR_KSIZE(len),
-			       len[1], 0, XATTR_NOFOLLOW);
-#else
-		ret = -EOPNOTSUPP;
-		goto out;
-#endif
+		ret = erofs_sys_lgetxattr(path, key,
+					  kvbuf + EROFS_XATTR_KSIZE(len),
+					  len[1]);
 		if (ret < 0) {
 			ret = -errno;
 			goto out;
@@ -392,21 +401,15 @@ static bool erofs_is_skipped_xattr(const char *key)
 static int read_xattrs_from_file(const char *path, mode_t mode,
 				 struct list_head *ixattrs)
 {
-#ifdef HAVE_LLISTXATTR
-	ssize_t kllen = llistxattr(path, NULL, 0);
-#elif defined(__APPLE__)
-	ssize_t kllen = listxattr(path, NULL, 0, XATTR_NOFOLLOW);
-#else
-	ssize_t kllen = 0;
-#endif
-	int ret;
+	ssize_t kllen = erofs_sys_llistxattr(path, NULL, 0);
 	char *keylst, *key, *klend;
 	unsigned int keylen;
 	struct xattr_item *item;
+	int ret;
 
 	if (kllen < 0 && errno != ENODATA && errno != EOPNOTSUPP) {
-		erofs_err("llistxattr to get the size of names for %s failed",
-			  path);
+		erofs_err("failed to get the size of the xattr list for %s: %s",
+			  path, strerror(errno));
 		return -errno;
 	}
 
@@ -419,19 +422,13 @@ static int read_xattrs_from_file(const char *path, mode_t mode,
 		return -ENOMEM;
 
 	/* copy the list of attribute keys to the buffer.*/
-#ifdef HAVE_LLISTXATTR
-	kllen = llistxattr(path, keylst, kllen);
-#elif defined(__APPLE__)
-	kllen = listxattr(path, keylst, kllen, XATTR_NOFOLLOW);
+	kllen = erofs_sys_llistxattr(path, keylst, kllen);
 	if (kllen < 0) {
 		erofs_err("llistxattr to get names for %s failed", path);
 		ret = -errno;
 		goto err;
 	}
-#else
-	ret = -EOPNOTSUPP;
-	goto err;
-#endif
+
 	/*
 	 * loop over the list of zero terminated strings with the
 	 * attribute keys. Use the remaining buffer length to determine
