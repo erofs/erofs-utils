@@ -1,4 +1,17 @@
-erofs-utils 1.8.7
+erofs-utils 1.8.8
+
+ * A quick maintenance release that includes the following fixes:
+   - (mkfs.erofs, tarerofs) Fix AUFS whiteout handling;
+   - (mkfs.erofs, tarerofs) Properly handle negative GNU mtime;
+   - Fix superblock checksum for small fs block size filesystems;
+   - (mkfs.erofs) Fix temporary memory leak from small fragments;
+   - (fsck.erofs) Handle crafted Z_EROFS_COMPRESSION_INTERLACED extents.
+
+ -- Gao Xiang <xiang@kernel.org>  Thu, 26 Jun 2025 00:00:00 +0800
+
+erofs-utils 1.8.7 (OBSOLETE)
+
+ [ PLEASE CONSIDER USING 1.8.8 TO AVOID A BUG IN TAREROFS AUFS MODE. ]
 
  * This release includes the following updates:
    - (mkfs.erofs) Speed up multi-threaded `-Efragments` even further;

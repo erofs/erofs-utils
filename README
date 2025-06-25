@@ -92,8 +92,8 @@ option `--enable-multithreading`; otherwise, single-threaded compression
 will be used for now.  It may take more time on multiprocessor platforms
 if multi-threaded support is not enabled.
 
-Currently, both `-Efragments` (not `-Eall-fragments`) and `-Ededupe`
-don't support multi-threading due to time limitations.
+Currently, `-Ededupe` doesn't support multi-threading due to limited
+development resources.
 
 Reproducible builds
 ~~~~~~~~~~~~~~~~~~~
@@ -244,10 +244,9 @@ dump.erofs and fsck.erofs are used to analyze, check, and extract
 EROFS filesystems. Note that extended attributes and ACLs are still
 unsupported when extracting images with fsck.erofs.
 
-Note that fragment extraction with fsck.erofs could be slow now and
-it needs to be optimized later.  If you are interested, contribution
-is, as always, welcome.
-
+Note that extraction with fsck.erofs is still single-threaded and will
+need optimization later.  If you are interested, contributions are, as
+always, welcome.
 
 Contribution
 ------------
