@@ -514,14 +514,13 @@ int z_erofs_decompress(struct z_erofs_decompress_req *rq)
 	if (rq->alg == Z_EROFS_COMPRESSION_INTERLACED) {
 		unsigned int count, rightpart, skip;
 
+		if (rq->decodedlength > rq->inputsize)
+			return -EOPNOTSUPP;
+		if (rq->decodedlength < rq->decodedskip)
+			return -EFSCORRUPTED;
+
 		/* XXX: should support inputsize >= erofs_blksiz(sbi) later */
 		if (rq->inputsize > erofs_blksiz(sbi))
-			return -EFSCORRUPTED;
-
-		if (rq->decodedlength > erofs_blksiz(sbi))
-			return -EFSCORRUPTED;
-
-		if (rq->decodedlength < rq->decodedskip)
 			return -EFSCORRUPTED;
 
 		count = rq->decodedlength - rq->decodedskip;
@@ -532,9 +531,10 @@ int z_erofs_decompress(struct z_erofs_decompress_req *rq)
 		return 0;
 	} else if (rq->alg == Z_EROFS_COMPRESSION_SHIFTED) {
 		if (rq->decodedlength > rq->inputsize)
+			return -EOPNOTSUPP;
+		if (rq->decodedlength < rq->decodedskip)
 			return -EFSCORRUPTED;
 
-		DBG_BUGON(rq->decodedlength < rq->decodedskip);
 		memcpy(rq->out, rq->in + rq->decodedskip,
 		       rq->decodedlength - rq->decodedskip);
 		return 0;
