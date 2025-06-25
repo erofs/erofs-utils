@@ -283,7 +283,7 @@ static long long tarerofs_otoi(const char *ptr, int len)
 	inp[len] = '\0';
 
 	errno = 0;
-	val = strtol(inp, &endp, 8);
+	val = strtoll(inp, &endp, 8);
 	if ((*endp == '\0' && endp == inp) |
 	    (*endp != '\0' && *endp != ' '))
 		errno = EINVAL;
@@ -292,16 +292,17 @@ static long long tarerofs_otoi(const char *ptr, int len)
 
 static long long tarerofs_parsenum(const char *ptr, int len)
 {
+	errno = 0;
 	/*
 	 * For fields containing numbers or timestamps that are out of range
 	 * for the basic format, the GNU format uses a base-256 representation
 	 * instead of an ASCII octal number.
 	 */
-	if (*(char *)ptr == '\200') {
+	if (*(char *)ptr == '\200' || *(char *)ptr == '\377') {
 		long long res = 0;
 
 		while (--len)
-			res = (res << 8) + (u8)*(++ptr);
+			res = (res << 8) | (u8)*(++ptr);
 		return res;
 	}
 	return tarerofs_otoi(ptr, len);
