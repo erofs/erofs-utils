@@ -419,6 +419,7 @@ struct erofs_buffer_head *erofs_reserve_sb(struct erofs_bufmgr *bmgr);
 int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices);
 int erofs_write_device_table(struct erofs_sb_info *sbi);
 int erofs_enable_sb_chksum(struct erofs_sb_info *sbi, u32 *crc);
+int erofs_superblock_csum_verify(struct erofs_sb_info *sbi);
 
 /* namei.c */
 int erofs_read_inode_from_disk(struct erofs_inode *vi);

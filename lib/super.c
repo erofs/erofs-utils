@@ -246,19 +246,22 @@ int erofs_enable_sb_chksum(struct erofs_sb_info *sbi, u32 *crc)
 	unsigned int len;
 	struct erofs_super_block *sb;
 
-	ret = erofs_blk_read(sbi, 0, buf, 0, erofs_blknr(sbi, EROFS_SUPER_END) + 1);
+	/*
+	 * skip the first 1024 bytes, to allow for the installation
+	 * of x86 boot sectors and other oddities.
+	 */
+	if (erofs_blksiz(sbi) > EROFS_SUPER_OFFSET)
+		len = erofs_blksiz(sbi) - EROFS_SUPER_OFFSET;
+	else
+		len = erofs_blksiz(sbi);
+	ret = erofs_dev_read(sbi, 0, buf, EROFS_SUPER_OFFSET, len);
 	if (ret) {
 		erofs_err("failed to read superblock to set checksum: %s",
 			  erofs_strerror(ret));
 		return ret;
 	}
 
-	/*
-	 * skip the first 1024 bytes, to allow for the installation
-	 * of x86 boot sectors and other oddities.
-	 */
-	sb = (struct erofs_super_block *)(buf + EROFS_SUPER_OFFSET);
-
+	sb = (struct erofs_super_block *)buf;
 	if (le32_to_cpu(sb->magic) != EROFS_SUPER_MAGIC_V1) {
 		erofs_err("internal error: not an erofs valid image");
 		return -EFAULT;
@@ -267,23 +270,45 @@ int erofs_enable_sb_chksum(struct erofs_sb_info *sbi, u32 *crc)
 	/* turn on checksum feature */
 	sb->feature_compat = cpu_to_le32(le32_to_cpu(sb->feature_compat) |
 					 EROFS_FEATURE_COMPAT_SB_CHKSUM);
-	if (erofs_blksiz(sbi) > EROFS_SUPER_OFFSET)
-		len = erofs_blksiz(sbi) - EROFS_SUPER_OFFSET;
-	else
-		len = erofs_blksiz(sbi);
 	*crc = erofs_crc32c(~0, (u8 *)sb, len);
 
 	/* set up checksum field to erofs_super_block */
 	sb->checksum = cpu_to_le32(*crc);
 
-	ret = erofs_blk_write(sbi, buf, 0, 1);
+	ret = erofs_dev_write(sbi, buf, EROFS_SUPER_OFFSET, len);
 	if (ret) {
 		erofs_err("failed to write checksummed superblock: %s",
 			  erofs_strerror(ret));
 		return ret;
 	}
-
 	return 0;
+}
+
+int erofs_superblock_csum_verify(struct erofs_sb_info *sbi)
+{
+	u32 len = erofs_blksiz(sbi), crc;
+	u8 buf[EROFS_MAX_BLOCK_SIZE];
+	struct erofs_super_block *sb;
+	int ret;
+
+	if (len > EROFS_SUPER_OFFSET)
+		len -= EROFS_SUPER_OFFSET;
+	ret = erofs_dev_read(sbi, 0, buf, EROFS_SUPER_OFFSET, len);
+	if (ret) {
+		erofs_err("failed to read superblock to calculate sbcsum: %d",
+			  ret);
+		return -1;
+	}
+
+	sb = (struct erofs_super_block *)buf;
+	sb->checksum = 0;
+
+	crc = erofs_crc32c(~0, (u8 *)sb, len);
+	if (crc == sbi->checksum)
+		return 0;
+	erofs_err("invalid checksum 0x%08x, 0x%08x expected",
+		  sbi->checksum, crc);
+	return -EBADMSG;
 }
 
 int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices)

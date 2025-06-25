@@ -41,6 +41,7 @@ struct erofsfsck_cfg {
 	bool preserve_owner;
 	bool preserve_perms;
 	bool dump_xattrs;
+	bool nosbcrc;
 };
 static struct erofsfsck_cfg fsckcfg;
 
@@ -60,6 +61,7 @@ static struct option long_options[] = {
 	{"offset", required_argument, 0, 12},
 	{"xattrs", no_argument, 0, 13},
 	{"no-xattrs", no_argument, 0, 14},
+	{"no-sbcrc", no_argument, 0, 512},
 	{0, 0, 0, 0},
 };
 
@@ -110,6 +112,7 @@ static void usage(int argc, char **argv)
 		" --extract[=X]          check if all files are well encoded, optionally\n"
 		"                        extract to X\n"
 		" --offset=#             skip # bytes at the beginning of IMAGE\n"
+		" --no-sbcrc             bypass the superblock checksum verification\n"
 		" --[no-]xattrs          whether to dump extended attributes (default off)\n"
 		"\n"
 		" -a, -A, -y             no-op, for compatibility with fsck of other filesystems\n"
@@ -244,6 +247,9 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 		case 14:
 			fsckcfg.dump_xattrs = false;
 			break;
+		case 512:
+			fsckcfg.nosbcrc = true;
+			break;
 		default:
 			return -EINVAL;
 		}
@@ -320,35 +326,6 @@ static void erofsfsck_set_attributes(struct erofs_inode *inode, char *path)
 		if (ret < 0)
 			erofs_warn("failed to set permissions: %s", path);
 	}
-}
-
-static int erofs_check_sb_chksum(void)
-{
-#ifndef FUZZING
-	u8 buf[EROFS_MAX_BLOCK_SIZE];
-	u32 crc;
-	struct erofs_super_block *sb;
-	int ret;
-
-	ret = erofs_blk_read(&g_sbi, 0, buf, 0, 1);
-	if (ret) {
-		erofs_err("failed to read superblock to check checksum: %d",
-			  ret);
-		return -1;
-	}
-
-	sb = (struct erofs_super_block *)(buf + EROFS_SUPER_OFFSET);
-	sb->checksum = 0;
-
-	crc = erofs_crc32c(~0, (u8 *)sb, erofs_blksiz(&g_sbi) - EROFS_SUPER_OFFSET);
-	if (crc != g_sbi.checksum) {
-		erofs_err("superblock chksum doesn't match: saved(%08xh) calculated(%08xh)",
-			  g_sbi.checksum, crc);
-		fsckcfg.corrupted = true;
-		return -1;
-	}
-#endif
-	return 0;
 }
 
 static int erofs_verify_xattr(struct erofs_inode *inode)
@@ -1066,6 +1043,7 @@ int main(int argc, char *argv[])
 
 #ifdef FUZZING
 	cfg.c_dbg_lvl = -1;
+	fsckcfg.nosbcrc = true;
 #endif
 
 	err = erofs_dev_open(&g_sbi, cfg.c_img_path, O_RDONLY);
@@ -1080,7 +1058,9 @@ int main(int argc, char *argv[])
 		goto exit_dev_close;
 	}
 
-	if (erofs_sb_has_sb_chksum(&g_sbi) && erofs_check_sb_chksum()) {
+	if (!fsckcfg.nosbcrc && erofs_sb_has_sb_chksum(&g_sbi) &&
+	    erofs_superblock_csum_verify(&g_sbi)) {
+		fsckcfg.corrupted = true;
 		erofs_err("failed to verify superblock checksum");
 		goto exit_put_super;
 	}
