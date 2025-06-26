@@ -1,4 +1,14 @@
-erofs-utils 1.8.8
+erofs-utils 1.8.9
+
+ * A quick maintenance release that includes the following fix:
+   - (mkfs.erofs) Fix corrupted small fragments introduced in
+                  erofs-utils 1.8.8.
+
+ -- Gao Xiang <xiang@kernel.org>  Thu, 26 Jun 2025 21:30:00 +0800
+
+erofs-utils 1.8.8 (OBSOLETE)
+
+ [ PLEASE CONSIDER USING 1.8.9 TO AVOID THAT STUPID FRAGMENT BUG. :-( ]
 
  * A quick maintenance release that includes the following fixes:
    - (mkfs.erofs, tarerofs) Fix AUFS whiteout handling;
@@ -11,7 +21,7 @@ erofs-utils 1.8.8
 
 erofs-utils 1.8.7 (OBSOLETE)
 
- [ PLEASE CONSIDER USING 1.8.8 TO AVOID A BUG IN TAREROFS AUFS MODE. ]
+ [ PLEASE CONSIDER USING 1.8.9 TO AVOID A BUG IN TAREROFS AUFS MODE. ]
 
  * This release includes the following updates:
    - (mkfs.erofs) Speed up multi-threaded `-Efragments` even further;
