@@ -365,7 +365,6 @@ int erofs_fragment_commit(struct erofs_inode *inode, u32 tofh)
 		return 0;
 	}
 	inode->fragmentoff = (erofs_off_t)offset - len;
-	inode->fragment = NULL;
 	free(fi->data);
 	free(fi);
 	return 0;
