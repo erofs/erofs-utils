@@ -1124,11 +1124,6 @@ int parse_source_date_epoch(void)
 			  source_date_epoch);
 		return -EINVAL;
 	}
-
-	if (cfg.c_force_inodeversion != FORCE_INODE_EXTENDED)
-		erofs_info("SOURCE_DATE_EPOCH is set, forcely generate extended inodes instead");
-
-	cfg.c_force_inodeversion = FORCE_INODE_EXTENDED;
 	cfg.c_unix_timestamp = epoch;
 	cfg.c_timeinherit = TIMESTAMP_CLAMPING;
 	return 0;
