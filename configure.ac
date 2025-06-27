@@ -266,6 +266,7 @@ AC_CHECK_FUNCS(m4_flatten([
 	backtrace
 	copy_file_range
 	fallocate
+	getrandom
 	getrlimit
 	gettimeofday
 	lgetxattr
