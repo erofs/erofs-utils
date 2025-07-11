@@ -32,14 +32,14 @@ int z_erofs_dedupe_ext_insert(struct z_erofs_inmem_extent *e,
 	return 0;
 }
 
-erofs_blk_t z_erofs_dedupe_ext_match(struct erofs_sb_info *sbi,
+erofs_off_t z_erofs_dedupe_ext_match(struct erofs_sb_info *sbi,
 				     u8 *encoded, unsigned int len,
 				     bool raw, u64 *hash)
 {
 	struct z_erofs_dedupe_ext_item *item;
 	struct list_head *p;
 	u64 _xxh64;
-	char *memb;
+	char *memb = NULL;
 	int ret;
 
 	*hash = _xxh64 = xxh64(encoded, len, 0);
@@ -47,19 +47,20 @@ erofs_blk_t z_erofs_dedupe_ext_match(struct erofs_sb_info *sbi,
 	list_for_each_entry(item, p, list) {
 		if (item->xxh64 == _xxh64 && item->e.plen == len &&
 		    item->e.raw == raw) {
-			memb = malloc(len);
-			if (!memb)
-				break;
-			ret = erofs_dev_read(sbi, 0, memb, item->e.pstart, len);
-			if (ret < 0 || memcmp(memb, encoded, len)) {
-				free(memb);
-				break;
+			if (!memb) {
+				memb = malloc(len);
+				if (!memb)
+					break;
 			}
+			ret = erofs_dev_read(sbi, 0, memb, item->e.pstart, len);
+			if (ret < 0 || memcmp(memb, encoded, len))
+				continue;
 			free(memb);
 			return item->e.pstart;
 		}
 	}
-	return EROFS_NULL_ADDR;
+	free(memb);
+	return 0;
 }
 
 void z_erofs_dedupe_ext_commit(bool drop)

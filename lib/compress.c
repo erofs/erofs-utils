@@ -403,7 +403,7 @@ static int write_uncompressed_block(struct z_erofs_compress_sctx *ctx,
 	memcpy(dst, ctx->queue + ctx->head + rightpart, count - rightpart);
 
 	if (ctx->membuf) {
-		erofs_dbg("Writing %u uncompressed data of %s", count,
+		erofs_dbg("Recording %u uncompressed data of %s", count,
 			  inode->i_srcpath);
 		memcpy(ctx->membuf + ctx->memoff, dst, erofs_blksiz(sbi));
 		ctx->memoff += erofs_blksiz(sbi);
@@ -705,7 +705,7 @@ frag_packing:
 
 		/* write compressed data */
 		if (ctx->membuf) {
-			erofs_dbg("Writing %u compressed data of %u bytes of %s",
+			erofs_dbg("Recording %u compressed data of %u bytes of %s",
 				  e->length, e->plen, inode->i_srcpath);
 
 			memcpy(ctx->membuf + ctx->memoff,
@@ -1207,6 +1207,7 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 	/* estimate if data compression saves space or not */
 	if (!inode->fragment_size && ptotal + inode->idata_size +
 	    legacymetasize >= inode->i_size) {
+		z_erofs_dedupe_ext_commit(true);
 		z_erofs_dedupe_commit(true);
 		ret = -ENOSPC;
 		goto err_free_meta;
@@ -1411,7 +1412,7 @@ int z_erofs_merge_segment(struct z_erofs_compress_ictx *ictx,
 	bool dedupe_ext = cfg.c_fragments;
 	erofs_off_t off = 0;
 	int ret = 0, ret2;
-	erofs_blk_t dupb;
+	erofs_off_t dpo;
 	u64 hash;
 
 	list_for_each_entry_safe(ei, n, &sctx->extents, list) {
@@ -1429,10 +1430,10 @@ int z_erofs_merge_segment(struct z_erofs_compress_ictx *ictx,
 			continue;
 
 		if (dedupe_ext) {
-			dupb = z_erofs_dedupe_ext_match(sbi, sctx->membuf + off,
+			dpo = z_erofs_dedupe_ext_match(sbi, sctx->membuf + off,
 						ei->e.plen, ei->e.raw, &hash);
-			if (dupb != EROFS_NULL_ADDR) {
-				ei->e.pstart = dupb;
+			if (dpo) {
+				ei->e.pstart = dpo;
 				sctx->pstart -= ei->e.plen;
 				off += ei->e.plen;
 				ictx->dedupe = true;
@@ -1444,6 +1445,8 @@ int z_erofs_merge_segment(struct z_erofs_compress_ictx *ictx,
 				continue;
 			}
 		}
+		erofs_dbg("Writing %u %scompressed data of %s to %llu", ei->e.length,
+			  ei->e.raw ? "un" : "", ictx->inode->i_srcpath, ei->e.pstart);
 		ret2 = erofs_dev_write(sbi, sctx->membuf + off, ei->e.pstart,
 				       ei->e.plen);
 		off += ei->e.plen;
