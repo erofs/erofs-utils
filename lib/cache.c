@@ -52,6 +52,7 @@ struct erofs_bufmgr *erofs_buffer_init(struct erofs_sb_info *sbi,
 	bmgr->blkh.blkaddr = NULL_ADDR;
 	bmgr->tail_blkaddr = startblk;
 	bmgr->last_mapped_block = &bmgr->blkh;
+	bmgr->metablkcnt = 0;
 	bmgr->dsunit = 0;
 	return bmgr;
 }
