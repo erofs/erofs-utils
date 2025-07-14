@@ -469,7 +469,7 @@ static void erofsdump_show_fileinfo(bool show_extent)
 			return;
 		}
 
-		if (map.m_flags & EROFS_MAP_FRAGMENT)
+		if (map.m_flags & __EROFS_MAP_FRAGMENT)
 			fprintf(stdout, ext_fmt[!!mdev.m_deviceid],
 				extent_count++,
 				map.m_la, map.m_la + map.m_llen, map.m_llen,

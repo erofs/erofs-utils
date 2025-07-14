@@ -507,7 +507,7 @@ static int z_erofs_do_map_blocks(struct erofs_inode *vi,
 		map->m_pa = vi->z_idataoff;
 		map->m_plen = vi->z_idata_size;
 	} else if (fragment && m.lcn == vi->z_tailextent_headlcn) {
-		map->m_flags |= EROFS_MAP_FRAGMENT;
+		map->m_flags = EROFS_MAP_FRAGMENT;
 	} else {
 		map->m_pa = erofs_pos(sbi, m.pblk);
 		err = z_erofs_get_extent_compressedlen(&m, initial_lcn);
@@ -644,8 +644,7 @@ int z_erofs_map_blocks_iter(struct erofs_inode *vi,
 			    !vi->z_tailextent_headlcn) {
 				map->m_la = 0;
 				map->m_llen = vi->i_size;
-				map->m_flags = EROFS_MAP_MAPPED |
-					EROFS_MAP_FULL_MAPPED | EROFS_MAP_FRAGMENT;
+				map->m_flags = EROFS_MAP_FRAGMENT;
 			} else {
 				err = z_erofs_do_map_blocks(vi, map, flags);
 			}

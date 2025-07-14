@@ -376,9 +376,11 @@ enum {
 /* The length of extent is full */
 #define EROFS_MAP_FULL_MAPPED	(1 << BH_FullMapped)
 /* Located in the special packed inode */
-#define EROFS_MAP_FRAGMENT	(1 << BH_Fragment)
+#define __EROFS_MAP_FRAGMENT	(1 << BH_Fragment)
 /* The extent refers to partial decompressed data */
 #define EROFS_MAP_PARTIAL_REF	(1 << BH_Partialref)
+
+#define EROFS_MAP_FRAGMENT	(EROFS_MAP_MAPPED | __EROFS_MAP_FRAGMENT)
 
 struct erofs_map_blocks {
 	char mpage[EROFS_MAX_BLOCK_SIZE];
