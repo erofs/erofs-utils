@@ -1005,6 +1005,8 @@ static void kite_deflate_writestore(struct kite_deflate *s)
 
 static void kite_deflate_endblock(struct kite_deflate *s)
 {
+	u64 b = s->outlen - s->pos_out;
+
 	if (s->encode_mode == 1) {
 		u32 fixedcost = s->costbits;
 		unsigned int storelen, storeblocks, storecost;
@@ -1025,8 +1027,11 @@ static void kite_deflate_endblock(struct kite_deflate *s)
 		}
 	}
 
-	s->lastblock |= (s->costbits + s->bitpos >=
-			(s->outlen - s->pos_out) * 8);
+	if (s->costbits + s->bitpos +
+	    3 + kstaticHuff_litLenLevels[kSymbolEndOfBlock] >= b * 8) {
+		DBG_BUGON(s->costbits + s->bitpos > b * 8);
+		s->lastblock = true;
+	}
 }
 
 static void kite_deflate_startblock(struct kite_deflate *s)
@@ -1256,38 +1261,129 @@ int kite_deflate_destsize(struct kite_deflate *s, const u8 *in, u8 *out,
 #include <fcntl.h>
 #include <sys/mman.h>
 
+#ifdef HAVE_ZLIB
+#include <zlib.h>
+
+static int kite_deflate_decompress_zlib(const u8 *in, size_t inlen,
+					u8 *out, size_t out_capacity)
+{
+	z_stream z;
+	int res;
+
+	memset(&z, 0, sizeof(z));
+	res = inflateInit2(&z, -15);
+	if (res != Z_OK) {
+		DBG_BUGON(1);
+		return -1;
+	}
+	z.next_in = (void *)in;
+	z.avail_in = inlen;
+	z.next_out = (void *)out;
+	z.avail_out = out_capacity;
+	res = inflate(&z, Z_FINISH);
+	if (res != Z_STREAM_END) {
+		DBG_BUGON(1);
+		return -1;
+	}
+	inflateEnd(&z);
+	return out_capacity - z.avail_out;
+}
+
+static void kite_deflate_decompress_test_zlib(const u8 *in, size_t inlen,
+					      u8 *out, size_t out_capacity,
+					      const u8 *expected_out,
+					      size_t expected_outlen)
+{
+	int outlen;
+
+	outlen = kite_deflate_decompress_zlib(in, inlen, out, out_capacity);
+	BUG_ON(outlen != expected_outlen);
+	if (expected_outlen)
+		BUG_ON(memcmp(out, expected_out, expected_outlen));
+}
+#endif
+
+static void kite_deflate_decompress_test(const u8 *in, size_t inlen,
+					 u8 *out, size_t out_capacity,
+					 const u8 *expected_out,
+					 size_t expected_outlen)
+{
+#ifdef HAVE_ZLIB
+	kite_deflate_decompress_test_zlib(in, inlen, out, out_capacity,
+					  expected_out, expected_outlen);
+#endif
+}
+
+static void kite_deflate_test1(void)
+{
+	struct kite_deflate *s;
+	u8 enc[3], vb[10];
+
+	s = kite_deflate_init(1, 0);
+	BUG_ON(!s || IS_ERR(s));
+
+	s->out = enc;
+	s->outlen = sizeof(enc);
+
+	writebits(s, (kFixedHuffman << 1) + 1, 3);
+	writebits(s, kstaticHuff_mainCodes[kSymbolEndOfBlock],
+		  kstaticHuff_litLenLevels[kSymbolEndOfBlock]);
+	flushbits(s);
+
+	kite_deflate_decompress_test(enc, s->pos_out,
+				     vb, sizeof(vb), NULL, 0);
+}
+
 int main(int argc, char *argv[])
 {
-	int fd;
-	u64 filelength;
-	u8 out[1048576], *buf;
-	int dstsize = 4096;
-	unsigned int srcsize, outsize;
+	unsigned int srcsize, outsize, dstsize, level;
 	struct kite_deflate *s;
+	u8 out[1048576], *buf;
+	u64 filelength;
+	u8 *vbuf __maybe_unused;
+	int fd;
 
+	if (argc < 2) {
+		kite_deflate_test1();
+		fprintf(stdout, "PASS\n");
+		return 0;
+	}
+	dstsize = level = 0;
 	fd = open(argv[1], O_RDONLY);
-	if (fd < 0)
-		return -errno;
-	if (argc > 2)
+	BUG_ON(fd < 0);
+	if (argc > 2) {
 		dstsize = atoi(argv[2]);
-	filelength = lseek(fd, 0, SEEK_END);
+		if (argc > 3)
+			level = atoi(argv[3]);
+	}
+	if (!dstsize || dstsize > sizeof(out))
+		dstsize = 4096;
+	if (!level)
+		level = 9;
 
-	s = kite_deflate_init(9, 0);
-	if (IS_ERR(s))
-		return PTR_ERR(s);
+	s = kite_deflate_init(level, 0);
+	BUG_ON(IS_ERR(s));
 
 	filelength = lseek(fd, 0, SEEK_END);
 	buf = mmap(NULL, filelength, PROT_READ, MAP_SHARED, fd, 0);
-	if (buf == MAP_FAILED)
-		return -errno;
+	BUG_ON(buf == MAP_FAILED);
 	close(fd);
 
 	srcsize = filelength;
 	outsize = kite_deflate_destsize(s, buf, out, &srcsize, dstsize);
-	fd = open("out.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	write(fd, out, outsize);
-	close(fd);
 	kite_deflate_end(s);
+#ifdef HAVE_ZLIB
+	vbuf = malloc(srcsize);
+	if (!vbuf) {
+		fprintf(stderr, "failed to allocate test buffer\n");
+	} else {
+		BUG_ON(kite_deflate_decompress_zlib(out, outsize,
+						    vbuf, srcsize) != srcsize);
+		BUG_ON(memcmp(buf, vbuf, srcsize));
+		free(vbuf);
+	}
+#endif
+	BUG_ON(fwrite(out, outsize, 1, stdout) != 1);
 	return 0;
 }
 #endif
