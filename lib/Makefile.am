@@ -95,8 +95,15 @@ liberofs_la_LDFLAGS += ${json_c_LIBS}
 liberofs_la_SOURCES += gzran.c
 
 if ENABLE_S3
-noinst_PROGRAMS  = s3erofs_test
+noinst_PROGRAMS = s3erofs_test
 s3erofs_test_SOURCES = remotes/s3.c
 s3erofs_test_CFLAGS = -Wall -I$(top_srcdir)/include ${libxml2_CFLAGS} ${openssl_CFLAGS} -DTEST
 s3erofs_test_LDADD = liberofs.la
+endif
+
+if ENABLE_OCI
+noinst_PROGRAMS = ocierofs_test
+ocierofs_test_SOURCES = remotes/oci.c
+ocierofs_test_CFLAGS = -Wall -I$(top_srcdir)/include ${json_c_CFLAGS} -DTEST
+ocierofs_test_LDADD = liberofs.la
 endif

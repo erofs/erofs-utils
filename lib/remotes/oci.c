@@ -1038,7 +1038,9 @@ static int ocierofs_parse_ref(struct ocierofs_ctx *ctx, const char *ref_str)
 	slash = strchr(ref_str, '/');
 	if (slash) {
 		dot = strchr(ref_str, '.');
-		if (dot && dot < slash) {
+		colon = strchr(ref_str, ':');
+		/* a dot or colon before the slash indicating a registry */
+		if ((dot && dot < slash) || (colon && colon < slash)) {
 			len = slash - ref_str;
 			tmp = strndup(ref_str, len);
 			if (!tmp)
@@ -1057,48 +1059,32 @@ static int ocierofs_parse_ref(struct ocierofs_ctx *ctx, const char *ref_str)
 	if (colon) {
 		len = colon - repo_part;
 		tmp = strndup(repo_part, len);
-		if (!tmp)
-			return -ENOMEM;
+	} else {
+		tmp = strdup(repo_part);
+	}
+	if (!tmp)
+		return -ENOMEM;
 
-		if (!strchr(tmp, '/') &&
-		    (!strcmp(ctx->registry, DOCKER_API_REGISTRY) ||
-		     !strcmp(ctx->registry, DOCKER_REGISTRY))) {
-			char *full_repo;
+	if (!strchr(tmp, '/') &&
+	    (!strcmp(ctx->registry, DOCKER_API_REGISTRY) ||
+	     !strcmp(ctx->registry, DOCKER_REGISTRY))) {
+		char *full_repo;
 
-			if (asprintf(&full_repo, "library/%s", tmp) == -1) {
-				free(tmp);
-				return -ENOMEM;
-			}
+		if (asprintf(&full_repo, "library/%s", tmp) == -1) {
 			free(tmp);
-			tmp = full_repo;
+			return -ENOMEM;
 		}
-		free(ctx->repository);
-		ctx->repository = tmp;
+		free(tmp);
+		tmp = full_repo;
+	}
+	free(ctx->repository);
+	ctx->repository = tmp;
 
+	if (colon) {
 		free(ctx->tag);
 		ctx->tag = strdup(colon + 1);
 		if (!ctx->tag)
 			return -ENOMEM;
-	} else {
-		tmp = strdup(repo_part);
-		if (!tmp)
-			return -ENOMEM;
-
-		if (!strchr(tmp, '/') &&
-		    (!strcmp(ctx->registry, DOCKER_API_REGISTRY) ||
-		     !strcmp(ctx->registry, DOCKER_REGISTRY))) {
-
-			char *full_repo;
-
-			if (asprintf(&full_repo, "library/%s", tmp) == -1) {
-				free(tmp);
-				return -ENOMEM;
-			}
-			free(tmp);
-			tmp = full_repo;
-		}
-		free(ctx->repository);
-		ctx->repository = tmp;
 	}
 	return 0;
 }
@@ -1573,5 +1559,171 @@ int ocierofs_decode_userpass(const char *b64, char **out_user, char **out_pass)
 int ocierofs_io_open(struct erofs_vfile *vfile, const struct ocierofs_config *cfg)
 {
 	return -EOPNOTSUPP;
+}
+#endif
+
+#if defined(OCIEROFS_ENABLED) && defined(TEST)
+struct ocierofs_parse_ref_testcase {
+	const char *name;
+	const char *ref_str;
+	const char *expected_registry;
+	const char *expected_repository;
+	const char *expected_tag;
+};
+
+static bool run_ocierofs_parse_ref_test(const struct ocierofs_parse_ref_testcase *tc)
+{
+	struct ocierofs_ctx ctx = {};
+	int ret;
+
+	printf("Running test: %s\n", tc->name);
+
+	/* Initialize with default values */
+	ctx.registry = strdup(DOCKER_API_REGISTRY);
+	ctx.tag = strdup("latest");
+	if (!ctx.registry || !ctx.tag) {
+		printf("  FAILED: memory allocation error during setup\n");
+		free(ctx.registry);
+		free(ctx.tag);
+		return false;
+	}
+
+	ret = ocierofs_parse_ref(&ctx, tc->ref_str);
+	if (ret < 0) {
+		printf("  FAILED: ocierofs_parse_ref returned %d\n", ret);
+		goto cleanup;
+	}
+
+	if (tc->expected_registry && strcmp(ctx.registry, tc->expected_registry) != 0) {
+		printf("  FAILED: registry mismatch\n");
+		printf("    Expected: %s\n", tc->expected_registry);
+		printf("    Got:      %s\n", ctx.registry);
+		ret = -EINVAL;
+		goto cleanup;
+	}
+
+	if (tc->expected_repository && strcmp(ctx.repository, tc->expected_repository) != 0) {
+		printf("  FAILED: repository mismatch\n");
+		printf("    Expected: %s\n", tc->expected_repository);
+		printf("    Got:      %s\n", ctx.repository);
+		ret = -EINVAL;
+		goto cleanup;
+	}
+
+	if (tc->expected_tag && strcmp(ctx.tag, tc->expected_tag) != 0) {
+		printf("  FAILED: tag mismatch\n");
+		printf("    Expected: %s\n", tc->expected_tag);
+		printf("    Got:      %s\n", ctx.tag);
+		ret = -EINVAL;
+		goto cleanup;
+	}
+
+	printf("  PASSED\n");
+	printf("    Registry:   %s\n", ctx.registry);
+	printf("    Repository: %s\n", ctx.repository);
+	printf("    Tag:        %s\n", ctx.tag);
+
+cleanup:
+	free(ctx.registry);
+	free(ctx.repository);
+	free(ctx.tag);
+	return ret == 0;
+}
+
+static int test_ocierofs_parse_ref(void)
+{
+	struct ocierofs_parse_ref_testcase tests[] = {
+		{
+			.name = "Simple image name (Docker Hub library)",
+			.ref_str = "nginx",
+			.expected_registry = DOCKER_API_REGISTRY,
+			.expected_repository = "library/nginx",
+			.expected_tag = "latest",
+		},
+		{
+			.name = "Image with tag (Docker Hub library)",
+			.ref_str = "nginx:1.21",
+			.expected_registry = DOCKER_API_REGISTRY,
+			.expected_repository = "library/nginx",
+			.expected_tag = "1.21",
+		},
+		{
+			.name = "User repository without tag",
+			.ref_str = "user/myapp",
+			.expected_registry = DOCKER_API_REGISTRY,
+			.expected_repository = "user/myapp",
+			.expected_tag = "latest",
+		},
+		{
+			.name = "User repository with tag",
+			.ref_str = "user/myapp:v2.0",
+			.expected_registry = DOCKER_API_REGISTRY,
+			.expected_repository = "user/myapp",
+			.expected_tag = "v2.0",
+		},
+		{
+			.name = "Custom registry without tag",
+			.ref_str = "registry.example.com/myapp",
+			.expected_registry = "registry.example.com",
+			.expected_repository = "myapp",
+			.expected_tag = "latest",
+		},
+		{
+			.name = "Custom registry with tag",
+			.ref_str = "registry.example.com/myapp:v1.0",
+			.expected_registry = "registry.example.com",
+			.expected_repository = "myapp",
+			.expected_tag = "v1.0",
+		},
+		{
+			.name = "Custom registry with port",
+			.ref_str = "localhost:5000/myapp:latest",
+			.expected_registry = "localhost:5000",
+			.expected_repository = "myapp",
+			.expected_tag = "latest",
+		},
+		{
+			.name = "Custom registry with ip & port",
+			.ref_str = "127.0.0.1:5000/myapp:latest",
+			.expected_registry = "127.0.0.1:5000",
+			.expected_repository = "myapp",
+			.expected_tag = "latest",
+		},
+		{
+			.name = "Custom registry with nested repository",
+			.ref_str = "registry.example.com/org/project/app:dev",
+			.expected_registry = "registry.example.com",
+			.expected_repository = "org/project/app",
+			.expected_tag = "dev",
+		},
+		{
+			.name = "Tag with digest-like format",
+			.ref_str = "myapp:sha256-abc123",
+			.expected_registry = DOCKER_API_REGISTRY,
+			.expected_repository = "library/myapp",
+			.expected_tag = "sha256-abc123",
+		},
+		{
+			.name = "Multi-level path without registry",
+			.ref_str = "org/team/app:v1",
+			.expected_registry = DOCKER_API_REGISTRY,
+			.expected_repository = "org/team/app",
+			.expected_tag = "v1",
+		},
+	};
+	int i, pass = 0;
+
+	for (i = 0; i < ARRAY_SIZE(tests); ++i) {
+		pass += run_ocierofs_parse_ref_test(&tests[i]);
+		putc('\n', stdout);
+	}
+
+	printf("Run all %d tests with %d PASSED\n", i, pass);
+	return ARRAY_SIZE(tests) == pass;
+}
+
+int main(int argc, char *argv[])
+{
+	exit(test_ocierofs_parse_ref() ? EXIT_SUCCESS : EXIT_FAILURE);
 }
 #endif
