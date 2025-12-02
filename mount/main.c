@@ -82,6 +82,38 @@ static struct erofs_nbd_source {
 	};
 } nbdsrc;
 
+static void usage(int argc, char **argv)
+{
+	printf("Usage: %s [OPTIONS] SOURCE [MOUNTPOINT]\n"
+		"Manage EROFS filesystem.\n"
+		"\n"
+		"General options:\n"
+		" -V, --version		print the version number of mount.erofs and exit\n"
+		" -h, --help		display this help and exit\n"
+		" -o options		comma-separated list of mount options\n"
+		" -t type[.subtype]	filesystem type (and optional subtype)\n"
+		" 			subtypes: fuse, local, nbd\n"
+		" -u 			unmount the filesystem\n"
+		"    --reattach		reattach to an existing NBD device\n"
+#ifdef OCIEROFS_ENABLED
+		"\n"
+		"OCI-specific options (with -o):\n"
+		"   oci.blob=<digest>   specify OCI blob digest (sha256:...)\n"
+		"   oci.layer=<index>   specify OCI layer index\n"
+		"   oci.platform=<name> specify platform (default: linux/amd64)\n"
+		"   oci.username=<user> username for authentication (optional)\n"
+		"   oci.password=<pass> password for authentication (optional)\n"
+		"   oci.tarindex=<path> path to tarball index file (optional)\n"
+		"   oci.zinfo=<path>    path to gzip zinfo file (optional)\n"
+#endif
+		, argv[0]);
+}
+
+static void version(void)
+{
+	printf("mount.erofs (erofs-utils) %s\n", cfg.c_version);
+}
+
 #ifdef OCIEROFS_ENABLED
 static int erofsmount_parse_oci_option(const char *option)
 {
@@ -237,6 +269,7 @@ static int erofsmount_parse_options(int argc, char **argv)
 {
 	static const struct option long_options[] = {
 		{"help", no_argument, 0, 'h'},
+		{"version", no_argument, 0, 'V'},
 		{"reattach", no_argument, 0, 512},
 		{0, 0, 0, 0},
 	};
@@ -245,9 +278,15 @@ static int erofsmount_parse_options(int argc, char **argv)
 
 	nbdsrc.ocicfg.layer_index = -1;
 
-	while ((opt = getopt_long(argc, argv, "Nfno:st:uv",
+	while ((opt = getopt_long(argc, argv, "VNfhno:st:uv",
 				  long_options, NULL)) != -1) {
 		switch (opt) {
+		case 'h':
+			usage(argc, argv);
+			exit(0);
+		case 'V':
+			version();
+			exit(0);
 		case 'o':
 			mountcfg.full_options = optarg;
 			mountcfg.flags =

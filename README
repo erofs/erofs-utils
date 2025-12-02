@@ -4,6 +4,7 @@ erofs-utils
 Userspace tools for EROFS filesystem, currently including:
 
   mkfs.erofs    filesystem formatter
+  mount.erofs   mount helper for EROFS
   erofsfuse     FUSE daemon alternative
   dump.erofs    filesystem analyzer
   fsck.erofs    filesystem compatibility & consistency checker as well
@@ -204,6 +205,31 @@ which was replaced by the new erofs-utils implementation.
 git://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git -b obsoleted_mkfs
 
 PLEASE NOTE: This version is highly _NOT recommended_ now.
+
+
+mount.erofs
+-----------
+
+mount.erofs is a mount helper for EROFS filesystem, which can be used
+to mount EROFS images with various backends including direct kernel
+mount, FUSE-based mount, and NBD for remote sources like OCI images.
+
+How to mount an EROFS image
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To mount an EROFS image directly:
+ $ mount.erofs foo.erofs /mnt
+
+To mount with FUSE backend:
+ $ mount.erofs -t erofs.fuse foo.erofs /mnt
+
+To mount from OCI image with NBD backend:
+ $ mount.erofs -t erofs.nbd -o oci.blob=sha256:... <IMAGE>:<TAG> mnt
+
+To unmount an EROFS filesystem:
+ $ mount.erofs -u mnt
+
+For more details, see mount.erofs(8) manpage.
 
 
 erofsfuse

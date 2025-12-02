@@ -1,0 +1,142 @@
+.\" Copyright (c) 2025 Chengyu Zhu <hudsonzhu@tencent.com>
+.\"
+.TH MOUNT.EROFS 8
+.SH NAME
+mount.erofs \- manage EROFS filesystem
+.SH SYNOPSIS
+\fBmount.erofs\fR [\fIOPTIONS\fR] \fISOURCE\fR \fIMOUNTPOINT\fR
+.br
+\fBmount.erofs\fR \fB\-u\fR \fITARGET\fR
+.br
+\fBmount.erofs\fR \fB\-\-reattach\fR \fITARGET\fR
+.SH DESCRIPTION
+EROFS is an enhanced lightweight read-only filesystem with modern designs
+for scenarios which need high-performance read-only requirements.
+.PP
+\fBmount.erofs\fR is used to mount an EROFS filesystem from \fISOURCE\fR
+(which can be an image file or block device) to a \fIMOUNTPOINT\fR. It supports multiple backends including
+direct kernel mount, FUSE-based mount, and NBD (Network Block Device) for
+remote sources like OCI images.
+.SH OPTIONS
+.TP
+.B \-h, \-\-help
+Display help message and exit.
+.TP
+.B \-V, \-\-version
+Display version information and exit.
+.TP
+.BI "\-o " options
+Comma-separated list of mount options. See \fBMOUNT OPTIONS\fR below.
+.TP
+.BI "\-t " type[.subtype]
+Specify the filesystem type and optional subtype. The type should be
+\fBerofs\fR. Available subtypes are:
+.RS
+.TP
+.B fuse
+Use FUSE-based mount via \fBerofsfuse\fR.
+.TP
+.B local
+Force direct kernel mount (default if available).
+.TP
+.B nbd
+Use NBD backend for remote sources (e.g., OCI images).
+.RE
+.TP
+.B \-u
+Unmount the filesystem at the specified target.
+.TP
+.B \-\-reattach
+Reattach to an existing NBD device and restart the NBD service.
+.SH MOUNT OPTIONS
+Standard mount options:
+.TP
+.B ro
+Mount the filesystem read-only (default).
+.TP
+.B rw
+Mount the filesystem read-write (not supported for EROFS).
+.TP
+.B nosuid
+Do not honor set-user-ID and set-group-ID bits.
+.TP
+.B suid
+Honor set-user-ID and set-group-ID bits (default).
+.TP
+.B nodev
+Do not interpret character or block special devices.
+.TP
+.B dev
+Interpret character or block special devices (default).
+.TP
+.B noexec
+Do not allow direct execution of any binaries.
+.TP
+.B exec
+Allow execution of binaries (default).
+.TP
+.B noatime
+Do not update inode access times.
+.TP
+.B atime
+Update inode access times (default).
+.TP
+.B nodiratime
+Do not update directory inode access times.
+.TP
+.B diratime
+Update directory inode access times (default).
+.TP
+.B relatime
+Update inode access times relative to modify or change time.
+.TP
+.B norelatime
+Do not use relative atime updates.
+.SH OCI-SPECIFIC OPTIONS
+The following OCI-specific options are available:
+.TP
+.BI "oci.blob=" digest
+Specify the OCI blob digest to mount. The digest should be in the format
+\fBsha256:...\fR. Cannot be used together with \fBoci.layer\fR.
+.TP
+.BI "oci.layer=" index
+Specify the OCI layer index to mount (0-based). Cannot be used together
+with \fBoci.blob\fR.
+.TP
+.BI "oci.platform=" platform
+Specify the target platform (default: \fBlinux/amd64\fR).
+.TP
+.BI "oci.username=" username
+Username for OCI registry authentication.
+.TP
+.BI "oci.password=" password
+Password for OCI registry authentication.
+.TP
+.BI "oci.tarindex=" path
+Path to a tarball index file for hybrid tar+OCI mode.
+.TP
+.BI "oci.zinfo=" path
+Path to a gzip zinfo file for random access to gzip-compressed tar layers.
+.SH NOTES
+.IP \(bu 2
+EROFS filesystems are read-only by nature. The \fBrw\fR option will be ignored.
+.IP \(bu 2
+When mounting OCI images via NBD, the mount process creates a background
+daemon to serve the NBD device. The daemon will automatically clean up when
+the filesystem is unmounted.
+.IP \(bu 2
+The \fB\-\-reattach\fR option is useful for recovering NBD mounts after a
+system crash or when the NBD daemon was terminated unexpectedly.
+.IP \(bu 2
+Kernel direct mount is used when mounting a regular file without
+specifying a backend type. If file-based mounts is unsupported,
+loop devices will be set up automatically.
+.SH SEE ALSO
+.BR mkfs.erofs (1),
+.BR erofsfuse (1),
+.BR dump.erofs (1),
+.BR fsck.erofs (1),
+.BR mount (8),
+.BR umount (8)
+.SH AVAILABILITY
+\fBmount.erofs\fR is part of erofs-utils.
