@@ -496,8 +496,8 @@ static char *ocierofs_discover_auth_endpoint(struct ocierofs_ctx *ctx,
 
 	api_registry = ocierofs_get_api_registry(registry);
 
-	if (asprintf(&test_url, "https://%s/v2/%s/manifests/nonexistent",
-	     api_registry, repository) < 0)
+	if (asprintf(&test_url, "%s%s/v2/%s/manifests/nonexistent",
+	     ctx->schema, api_registry, repository) < 0)
 		return NULL;
 
 	curl_easy_reset(ctx->curl);
@@ -528,9 +528,9 @@ static char *ocierofs_get_auth_token(struct ocierofs_ctx *ctx, const char *regis
 				     const char *password)
 {
 	static const char * const auth_patterns[] = {
-		"https://%s/v2/auth",
-		"https://auth.%s/token",
-		"https://%s/token",
+		"%s%s/v2/auth",
+		"%sauth.%s/token",
+		"%s%s/token",
 		NULL,
 	};
 	char *auth_header = NULL;
@@ -561,8 +561,8 @@ static char *ocierofs_get_auth_token(struct ocierofs_ctx *ctx, const char *regis
 
 		api_registry = ocierofs_get_api_registry(registry);
 
-		if (asprintf(&test_url, "https://%s/v2/%s/manifests/nonexistent",
-		     api_registry, repository) >= 0) {
+		if (asprintf(&test_url, "%s%s/v2/%s/manifests/nonexistent",
+		     ctx->schema, api_registry, repository) >= 0) {
 			curl_easy_reset(ctx->curl);
 			ocierofs_curl_setup_common_options(ctx->curl);
 
@@ -598,7 +598,7 @@ static char *ocierofs_get_auth_token(struct ocierofs_ctx *ctx, const char *regis
 	for (i = 0; auth_patterns[i]; i++) {
 		char *auth_url;
 
-		if (asprintf(&auth_url, auth_patterns[i], registry) < 0)
+		if (asprintf(&auth_url, auth_patterns[i], ctx->schema, registry) < 0)
 			continue;
 
 		auth_header = ocierofs_get_auth_token_with_url(ctx, auth_url,
@@ -629,8 +629,8 @@ static char *ocierofs_get_manifest_digest(struct ocierofs_ctx *ctx,
 	int ret = 0, len, i;
 
 	api_registry = ocierofs_get_api_registry(registry);
-	if (asprintf(&req.url, "https://%s/v2/%s/manifests/%s",
-	     api_registry, repository, tag) < 0)
+	if (asprintf(&req.url, "%s%s/v2/%s/manifests/%s",
+	     ctx->schema, api_registry, repository, tag) < 0)
 		return ERR_PTR(-ENOMEM);
 
 	if (auth_header && strstr(auth_header, "Bearer"))
@@ -749,8 +749,8 @@ static int ocierofs_fetch_layers_info(struct ocierofs_ctx *ctx)
 	ctx->layer_count = 0;
 	api_registry = ocierofs_get_api_registry(registry);
 
-	if (asprintf(&req.url, "https://%s/v2/%s/manifests/%s",
-		     api_registry, repository, digest) < 0)
+	if (asprintf(&req.url, "%s%s/v2/%s/manifests/%s",
+		     ctx->schema, api_registry, repository, digest) < 0)
 		return -ENOMEM;
 
 	if (auth_header && strstr(auth_header, "Bearer"))
@@ -1124,9 +1124,17 @@ static int ocierofs_init(struct ocierofs_ctx *ctx, const struct ocierofs_config 
 	if (!ctx->registry || !ctx->tag || !ctx->platform)
 		return -ENOMEM;
 
+	ctx->schema = config->insecure ? "http://" : "https://";
+
 	ret = ocierofs_parse_ref(ctx, config->image_ref);
 	if (ret)
 		return ret;
+
+	if (config->insecure && (!strcmp(ctx->registry, DOCKER_API_REGISTRY) ||
+				 !strcmp(ctx->registry, DOCKER_REGISTRY))) {
+		erofs_err("Insecure connection to Docker registry is not allowed");
+		return -EINVAL;
+	}
 
 	ret = ocierofs_prepare_layers(ctx, config);
 	if (ret)
@@ -1152,8 +1160,8 @@ static int ocierofs_download_blob_to_fd(struct ocierofs_ctx *ctx,
 	};
 
 	api_registry = ocierofs_get_api_registry(ctx->registry);
-	if (asprintf(&req.url, "https://%s/v2/%s/blobs/%s",
-	     api_registry, ctx->repository, digest) == -1)
+	if (asprintf(&req.url, "%s%s/v2/%s/blobs/%s",
+	     ctx->schema, api_registry, ctx->repository, digest) == -1)
 		return -ENOMEM;
 
 	if (auth_header && strstr(auth_header, "Bearer"))
@@ -1344,8 +1352,8 @@ static int ocierofs_download_blob_range(struct ocierofs_ctx *ctx, off_t offset, 
 		length = (size_t)(blob_size - offset);
 
 	api_registry = ocierofs_get_api_registry(ctx->registry);
-	if (asprintf(&req.url, "https://%s/v2/%s/blobs/%s",
-	     api_registry, ctx->repository, digest) == -1)
+	if (asprintf(&req.url, "%s%s/v2/%s/blobs/%s",
+	     ctx->schema, api_registry, ctx->repository, digest) == -1)
 		return -ENOMEM;
 
 	if (length)

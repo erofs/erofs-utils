@@ -23,6 +23,7 @@ struct erofs_importer;
  * @password: password for authentication (optional)
  * @blob_digest: specific blob digest to extract (NULL for all layers)
  * @layer_index: specific layer index to extract (negative for all layers)
+ * @insecure: use HTTP for registry communication (optional)
  *
  * Configuration structure for OCI image parameters including registry
  * location, image identification, platform specification, and authentication
@@ -37,6 +38,7 @@ struct ocierofs_config {
 	int layer_index;
 	char *tarindex_path;
 	char *zinfo_path;
+	bool insecure;
 };
 
 struct ocierofs_layer_info {
@@ -57,6 +59,7 @@ struct ocierofs_ctx {
 	struct ocierofs_layer_info **layers;
 	char *blob_digest;
 	int layer_count;
+	const char *schema;
 };
 
 struct ocierofs_iostream {

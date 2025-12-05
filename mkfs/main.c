@@ -218,11 +218,12 @@ static void usage(int argc, char **argv)
 #endif
 #ifdef OCIEROFS_ENABLED
 		" --oci=[f|i]           generate a full (f) or index-only (i) image from OCI remote source\n"
-		"   [,=platform=X]      X=platform (default: linux/amd64)\n"
+		"   [,platform=X]       X=platform (default: linux/amd64)\n"
 		"   [,layer=#]          #=layer index to extract (0-based; omit to extract all layers)\n"
 		"   [,blob=Y]           Y=blob digest to extract (omit to extract all layers)\n"
 		"   [,username=Z]       Z=username for authentication (optional)\n"
 		"   [,password=W]       W=password for authentication (optional)\n"
+		"   [,insecure]         use HTTP instead of HTTPS (optional)\n"
 #endif
 		" --tar=X               generate a full or index-only image from a tarball(-ish) source\n"
 		"                       (X = f|i|headerball; f=full mode, i=index mode,\n"
@@ -744,7 +745,7 @@ static int mkfs_parse_s3_cfg(char *cfg_str)
  * Parse OCI options string containing comma-separated key=value pairs.
  *
  * Supported options include f|i, platform, blob|layer, username, password,
- * and zinfo.
+ * and insecure.
  *
  * Return: 0 on success, negative errno on failure
  */
@@ -774,67 +775,55 @@ static int mkfs_parse_oci_options(struct ocierofs_config *oci_cfg, char *options
 		if (q)
 			*q = '\0';
 
-
-		p = strstr(opt, "platform=");
-		if (p) {
+		if ((p = strstr(opt, "platform="))) {
 			p += strlen("platform=");
 			free(oci_cfg->platform);
 			oci_cfg->platform = strdup(p);
 			if (!oci_cfg->platform)
 				return -ENOMEM;
-		} else {
-			p = strstr(opt, "blob=");
-			if (p) {
-				p += strlen("blob=");
-				free(oci_cfg->blob_digest);
+		} else if ((p = strstr(opt, "blob="))) {
+			p += strlen("blob=");
+			free(oci_cfg->blob_digest);
 
-				if (oci_cfg->layer_index >= 0) {
-					erofs_err("invalid --oci: blob and layer cannot be set together");
-					return -EINVAL;
-				}
-
-				if (!strncmp(p, "sha256:", 7)) {
-					oci_cfg->blob_digest = strdup(p);
-					if (!oci_cfg->blob_digest)
-						return -ENOMEM;
-				} else if (asprintf(&oci_cfg->blob_digest, "sha256:%s", p) < 0) {
-					return -ENOMEM;
-				}
-			} else {
-				p = strstr(opt, "layer=");
-				if (p) {
-					p += strlen("layer=");
-					if (oci_cfg->blob_digest) {
-						erofs_err("invalid --oci: layer and blob cannot be set together");
-						return -EINVAL;
-					}
-					idx = strtol(p, NULL, 10);
-					if (idx < 0)
-						return -EINVAL;
-					oci_cfg->layer_index = (int)idx;
-				} else {
-					p = strstr(opt, "username=");
-					if (p) {
-						p += strlen("username=");
-						free(oci_cfg->username);
-						oci_cfg->username = strdup(p);
-						if (!oci_cfg->username)
-							return -ENOMEM;
-					} else {
-						p = strstr(opt, "password=");
-						if (p) {
-							p += strlen("password=");
-							free(oci_cfg->password);
-							oci_cfg->password = strdup(p);
-							if (!oci_cfg->password)
-								return -ENOMEM;
-						} else {
-							erofs_err("mkfs: invalid --oci value %s", opt);
-							return -EINVAL;
-						}
-					}
-				}
+			if (oci_cfg->layer_index >= 0) {
+				erofs_err("invalid --oci: blob and layer cannot be set together");
+				return -EINVAL;
 			}
+
+			if (!strncmp(p, "sha256:", 7)) {
+				oci_cfg->blob_digest = strdup(p);
+				if (!oci_cfg->blob_digest)
+					return -ENOMEM;
+			} else if (asprintf(&oci_cfg->blob_digest, "sha256:%s", p) < 0) {
+				return -ENOMEM;
+			}
+		} else if ((p = strstr(opt, "layer="))) {
+			p += strlen("layer=");
+			if (oci_cfg->blob_digest) {
+				erofs_err("invalid --oci: layer and blob cannot be set together");
+				return -EINVAL;
+			}
+			idx = strtol(p, NULL, 10);
+			if (idx < 0)
+				return -EINVAL;
+			oci_cfg->layer_index = (int)idx;
+		} else if ((p = strstr(opt, "username="))) {
+			p += strlen("username=");
+			free(oci_cfg->username);
+			oci_cfg->username = strdup(p);
+			if (!oci_cfg->username)
+				return -ENOMEM;
+		} else if ((p = strstr(opt, "password="))) {
+			p += strlen("password=");
+			free(oci_cfg->password);
+			oci_cfg->password = strdup(p);
+			if (!oci_cfg->password)
+				return -ENOMEM;
+		} else if ((p = strstr(opt, "insecure"))) {
+			oci_cfg->insecure = true;
+		} else {
+			erofs_err("mkfs: invalid --oci value %s", opt);
+			return -EINVAL;
 		}
 
 		opt = q ? q + 1 : NULL;

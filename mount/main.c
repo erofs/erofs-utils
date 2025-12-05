@@ -89,8 +89,7 @@ static int erofsmount_parse_oci_option(const char *option)
 	char *p;
 	long idx;
 
-	p = strstr(option, "oci.blob=");
-	if (p != NULL) {
+	if ((p = strstr(option, "oci.blob=")) != NULL) {
 		p += strlen("oci.blob=");
 		free(oci_cfg->blob_digest);
 
@@ -104,68 +103,52 @@ static int erofsmount_parse_oci_option(const char *option)
 			if (!oci_cfg->blob_digest)
 				return -ENOMEM;
 		} else if (asprintf(&oci_cfg->blob_digest, "sha256:%s", p) < 0) {
-				return -ENOMEM;
+			return -ENOMEM;
 		}
+	} else if ((p = strstr(option, "oci.layer=")) != NULL) {
+		p += strlen("oci.layer=");
+		if (oci_cfg->blob_digest) {
+			erofs_err("invalid options: oci.layer and oci.blob cannot be set together");
+			return -EINVAL;
+		}
+		idx = strtol(p, NULL, 10);
+		if (idx < 0)
+			return -EINVAL;
+		oci_cfg->layer_index = (int)idx;
+	} else if ((p = strstr(option, "oci.platform=")) != NULL) {
+		p += strlen("oci.platform=");
+		free(oci_cfg->platform);
+		oci_cfg->platform = strdup(p);
+		if (!oci_cfg->platform)
+			return -ENOMEM;
+	} else if ((p = strstr(option, "oci.username=")) != NULL) {
+		p += strlen("oci.username=");
+		free(oci_cfg->username);
+		oci_cfg->username = strdup(p);
+		if (!oci_cfg->username)
+			return -ENOMEM;
+	} else if ((p = strstr(option, "oci.password=")) != NULL) {
+		p += strlen("oci.password=");
+		free(oci_cfg->password);
+		oci_cfg->password = strdup(p);
+		if (!oci_cfg->password)
+			return -ENOMEM;
+	} else if ((p = strstr(option, "oci.tarindex=")) != NULL) {
+		p += strlen("oci.tarindex=");
+		free(oci_cfg->tarindex_path);
+		oci_cfg->tarindex_path = strdup(p);
+		if (!oci_cfg->tarindex_path)
+			return -ENOMEM;
+	} else if ((p = strstr(option, "oci.zinfo=")) != NULL) {
+		p += strlen("oci.zinfo=");
+		free(oci_cfg->zinfo_path);
+		oci_cfg->zinfo_path = strdup(p);
+		if (!oci_cfg->zinfo_path)
+			return -ENOMEM;
+	} else if ((p = strstr(option, "oci.insecure")) != NULL) {
+		oci_cfg->insecure = true;
 	} else {
-		p = strstr(option, "oci.layer=");
-		if (p != NULL) {
-			p += strlen("oci.layer=");
-			if (oci_cfg->blob_digest) {
-				erofs_err("invalid options: oci.layer and oci.blob cannot be set together");
-				return -EINVAL;
-			}
-			idx = strtol(p, NULL, 10);
-			if (idx < 0)
-				return -EINVAL;
-			oci_cfg->layer_index = (int)idx;
-		} else {
-			p = strstr(option, "oci.platform=");
-			if (p != NULL) {
-				p += strlen("oci.platform=");
-				free(oci_cfg->platform);
-				oci_cfg->platform = strdup(p);
-				if (!oci_cfg->platform)
-					return -ENOMEM;
-			} else {
-				p = strstr(option, "oci.username=");
-				if (p != NULL) {
-					p += strlen("oci.username=");
-					free(oci_cfg->username);
-					oci_cfg->username = strdup(p);
-					if (!oci_cfg->username)
-						return -ENOMEM;
-				} else {
-					p = strstr(option, "oci.password=");
-					if (p != NULL) {
-						p += strlen("oci.password=");
-						free(oci_cfg->password);
-						oci_cfg->password = strdup(p);
-						if (!oci_cfg->password)
-							return -ENOMEM;
-					} else {
-						p = strstr(option, "oci.tarindex=");
-						if (p != NULL) {
-							p += strlen("oci.tarindex=");
-							free(oci_cfg->tarindex_path);
-							oci_cfg->tarindex_path = strdup(p);
-							if (!oci_cfg->tarindex_path)
-								return -ENOMEM;
-						} else {
-							p = strstr(option, "oci.zinfo=");
-							if (p != NULL) {
-								p += strlen("oci.zinfo=");
-								free(oci_cfg->zinfo_path);
-								oci_cfg->zinfo_path = strdup(p);
-								if (!oci_cfg->zinfo_path)
-									return -ENOMEM;
-							} else {
-								return -EINVAL;
-							}
-						}
-					}
-				}
-			}
-		}
+		return -EINVAL;
 	}
 	return 0;
 }
