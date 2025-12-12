@@ -8,6 +8,7 @@
 #include <signal.h>
 #include <sys/mount.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <pthread.h>
 #include <unistd.h>
 #include "erofs/config.h"
@@ -1190,6 +1191,14 @@ static int erofsmount_nbd(struct erofs_nbd_source *source,
 	while (1) {
 		err = erofs_nbd_in_service(num);
 		if (err == -ENOENT || err == -ENOTCONN) {
+			int status;
+
+			err = waitpid(pid, &status, WNOHANG);
+			if (err < 0)
+				return -errno;
+			else if (err > 0)
+				return status ? -EIO : 0;
+
 			usleep(50000);
 			continue;
 		}
