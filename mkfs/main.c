@@ -756,6 +756,8 @@ static int mkfs_parse_oci_options(struct ocierofs_config *oci_cfg, char *options
 	if (!options_str)
 		return 0;
 
+	oci_cfg->layer_index = -1;
+
 	opt = options_str;
 	q = strchr(opt, ',');
 	if (q)
