@@ -152,10 +152,11 @@ static int s3erofs_prepare_url(struct s3erofs_curl_request *req,
 	const char *schema, *host;
 	/* an additional slash is added, which wasn't specified by user inputs */
 	bool slash = false;
+	bool bucket_domain = false;
 	char *url = req->url;
 	int pos, canonical_uri_pos, i, ret = 0;
 
-	if (!endpoint || !path)
+	if (!endpoint)
 		return -EINVAL;
 
 	host = s3erofs_parse_host(endpoint, &schema);
@@ -164,14 +165,27 @@ static int s3erofs_prepare_url(struct s3erofs_curl_request *req,
 	if (!schema)
 		schema = https;
 
+	if (__erofs_unlikely(!path))
+		path = "/";
+	if (__erofs_unlikely(path[0] == '/')) {
+		path++;
+		bucket_domain = true;
+		if (url_style != S3EROFS_URL_STYLE_VIRTUAL_HOST)
+			return -EINVAL;
+	}
+
 	if (url_style == S3EROFS_URL_STYLE_PATH) {
 		pos = snprintf(url, S3EROFS_URL_LEN, "%s%s/%s", schema,
 			       host, path);
 		canonical_uri_pos = pos - strlen(path) - 1;
 	} else {
-		const char * split = strchr(path, '/');
+		const char *split = strchr(path, '/');
 
-		if (!split) {
+		if (bucket_domain) {
+			pos = snprintf(url, S3EROFS_URL_LEN, "%s%s/%s",
+				       schema, host, path);
+			canonical_uri_pos = pos - 1;
+		} else if (!split) {
 			pos = snprintf(url, S3EROFS_URL_LEN, "%s%s.%s/",
 				       schema, path, host);
 			canonical_uri_pos = pos - 1;
@@ -191,12 +205,26 @@ static int s3erofs_prepare_url(struct s3erofs_curl_request *req,
 		pos += snprintf(url + pos, S3EROFS_URL_LEN - pos, "/%s", key);
 	}
 
-	if (sig == S3EROFS_SIGNATURE_VERSION_2)
-		i = snprintf(req->canonical_uri, S3EROFS_CANONICAL_URI_LEN,
-			     "/%s%s%s", path, slash ? "/" : "", key ? key : "");
-	else
+	if (sig == S3EROFS_SIGNATURE_VERSION_2) {
+		if (bucket_domain) {
+			const char *bucket = strchr(host, '.');
+
+			if (!bucket) {
+				ret = -EINVAL;
+				goto err;
+			}
+			i = snprintf(req->canonical_uri, S3EROFS_CANONICAL_URI_LEN,
+				     "/%.*s/", (int)(bucket - host), host);
+		} else {
+			req->canonical_uri[0] = '/';
+			i = 1;
+		}
+		i += snprintf(req->canonical_uri + i, S3EROFS_CANONICAL_URI_LEN - i,
+			      "%s%s%s", path, slash ? "/" : "", key ? key : "");
+	} else {
 		i = snprintf(req->canonical_uri, S3EROFS_CANONICAL_URI_LEN,
 			     "%s", url + canonical_uri_pos);
+	}
 	req->canonical_uri[i] = '\0';
 
 	if (params) {
@@ -841,14 +869,17 @@ s3erofs_create_object_iterator(struct erofs_s3 *s3, const char *path,
 		return ERR_PTR(-ENOMEM);
 	iter->s3 = s3;
 	prefix = strchr(path, '/');
-	if (prefix) {
+	if (!prefix) {
+		iter->bucket = strdup(path);
+		iter->prefix = NULL;
+	} else if (prefix == path) {
+		iter->bucket = NULL;
+		iter->prefix = strdup(path + 1);
+	} else {
 		if (++prefix - path > S3EROFS_PATH_MAX)
 			return ERR_PTR(-EINVAL);
 		iter->bucket = strndup(path, prefix - path);
 		iter->prefix = strdup(prefix);
-	} else {
-		iter->bucket = strdup(path);
-		iter->prefix = NULL;
 	}
 	iter->delimiter = delimiter;
 	iter->is_truncated = true;
@@ -1041,8 +1072,8 @@ int s3erofs_build_trees(struct erofs_importer *im, struct erofs_s3 *s3,
 		if (!obj) {
 			break;
 		} else if (IS_ERR(obj)) {
-			erofs_err("failed to get next object");
 			ret = PTR_ERR(obj);
+			erofs_err("failed to get next object: %s", erofs_strerror(ret));
 			goto err_iter;
 		}
 
@@ -1356,7 +1387,32 @@ static bool test_s3erofs_prepare_url(void)
 			.expected_canonical_v2 = "/bucket/path/to/file-name_v2.0.txt",
 			.expected_canonical_v4 = "/path/to/file-name_v2.0.txt",
 			.expected_ret = 0,
+		},
+		{
+			.name = "S3 Bucket domain name (1)",
+			.endpoint = "bucket.s3.amazonaws.com",
+			.path = "/",
+			.key = "object.txt",
+			.url_style = S3EROFS_URL_STYLE_VIRTUAL_HOST,
+			.expected_url =
+				"https://bucket.s3.amazonaws.com/object.txt",
+			.expected_canonical_v2 = "/bucket/object.txt",
+			.expected_canonical_v4 = "/object.txt",
+			.expected_ret = 0,
+		},
+		{
+			.name = "S3 Bucket domain name (2)",
+			.endpoint = "bucket.s3.amazonaws.com",
+			.path = NULL,
+			.key = "object.txt",
+			.url_style = S3EROFS_URL_STYLE_VIRTUAL_HOST,
+			.expected_url =
+				"https://bucket.s3.amazonaws.com/object.txt",
+			.expected_canonical_v2 = "/bucket/object.txt",
+			.expected_canonical_v4 = "/object.txt",
+			.expected_ret = 0,
 		}
+
 	};
 	int i;
 	int pass = 0;
