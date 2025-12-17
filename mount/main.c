@@ -377,7 +377,7 @@ static ssize_t erofsmount_tarindex_pread(struct erofs_vfile *vf, void *buf,
 		remote_offset = offset - tp->tarindex_size;
 		index_part = 0;
 	} else {
-		index_part = min(count, tp->tarindex_size - offset);
+		index_part = min_t(u64, count, tp->tarindex_size - offset);
 		remote_offset = 0;
 	}
 	tardata_part = count - index_part;
