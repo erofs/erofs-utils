@@ -105,6 +105,7 @@ static void usage(int argc, char **argv)
 		"   oci.password=<pass> password for authentication (optional)\n"
 		"   oci.tarindex=<path> path to tarball index file (optional)\n"
 		"   oci.zinfo=<path>    path to gzip zinfo file (optional)\n"
+		"   oci.insecure        use HTTP instead of HTTPS (optional)\n"
 #endif
 		, argv[0]);
 }

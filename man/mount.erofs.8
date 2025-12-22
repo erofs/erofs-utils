@@ -117,6 +117,9 @@ Path to a tarball index file for hybrid tar+OCI mode.
 .TP
 .BI "oci.zinfo=" path
 Path to a gzip zinfo file for random access to gzip-compressed tar layers.
+.TP
+.BI "oci.insecure"
+Use HTTP instead of HTTPS to access the image registry.
 .SH NOTES
 .IP \(bu 2
 EROFS filesystems are read-only by nature. The \fBrw\fR option will be ignored.
