@@ -51,6 +51,7 @@ enum erofs_backend_drv {
 enum erofsmount_mode {
 	EROFSMOUNT_MODE_MOUNT,
 	EROFSMOUNT_MODE_UMOUNT,
+	EROFSMOUNT_MODE_DISCONNECT,
 	EROFSMOUNT_MODE_REATTACH,
 };
 
@@ -88,13 +89,14 @@ static void usage(int argc, char **argv)
 		"Manage EROFS filesystem.\n"
 		"\n"
 		"General options:\n"
-		" -V, --version		print the version number of mount.erofs and exit\n"
-		" -h, --help		display this help and exit\n"
-		" -o options		comma-separated list of mount options\n"
-		" -t type[.subtype]	filesystem type (and optional subtype)\n"
-		" 			subtypes: fuse, local, nbd\n"
-		" -u 			unmount the filesystem\n"
-		"    --reattach		reattach to an existing NBD device\n"
+		" -V, --version         print the version number of mount.erofs and exit\n"
+		" -h, --help            display this help and exit\n"
+		" -o options            comma-separated list of mount options\n"
+		" -t type[.subtype]     filesystem type (and optional subtype)\n"
+		"                       subtypes: fuse, local, nbd\n"
+		" -u                    unmount the filesystem\n"
+		"    --disconnect       abort an existing NBD device forcibly\n"
+		"    --reattach         reattach to an existing NBD device\n"
 #ifdef OCIEROFS_ENABLED
 		"\n"
 		"OCI-specific options (with -o):\n"
@@ -272,6 +274,7 @@ static int erofsmount_parse_options(int argc, char **argv)
 		{"help", no_argument, 0, 'h'},
 		{"version", no_argument, 0, 'V'},
 		{"reattach", no_argument, 0, 512},
+		{"disconnect", no_argument, 0, 513},
 		{0, 0, 0, 0},
 	};
 	char *dot;
@@ -316,6 +319,9 @@ static int erofsmount_parse_options(int argc, char **argv)
 			break;
 		case 512:
 			mountcfg.mountmode = EROFSMOUNT_MODE_REATTACH;
+			break;
+		case 513:
+			mountcfg.mountmode = EROFSMOUNT_MODE_DISCONNECT;
 			break;
 		default:
 			return -EINVAL;
@@ -1416,6 +1422,33 @@ err_out:
 	return err < 0 ? err : 0;
 }
 
+static int erofsmount_disconnect(const char *target)
+{
+	int nbdnum, err, fd;
+	struct stat st;
+
+	err = lstat(target, &st);
+	if (err < 0)
+		return -errno;
+
+	if (!S_ISBLK(st.st_mode) || major(st.st_rdev) != EROFS_NBD_MAJOR)
+		return -ENOTBLK;
+
+	nbdnum = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
+	err = erofs_nbd_nl_disconnect(nbdnum);
+	if (err == -EOPNOTSUPP) {
+		fd = open(target, O_RDWR);
+		if (fd < 0) {
+			err = -errno;
+			goto err_out;
+		}
+		err = erofs_nbd_disconnect(fd);
+		close(fd);
+	}
+err_out:
+	return err < 0 ? err : 0;
+}
+
 int main(int argc, char *argv[])
 {
 	int err;
@@ -1440,6 +1473,14 @@ int main(int argc, char *argv[])
 		err = erofsmount_reattach(mountcfg.target);
 		if (err < 0)
 			fprintf(stderr, "Failed to reattach %s: %s\n",
+				mountcfg.target, erofs_strerror(err));
+		return err ? EXIT_FAILURE : EXIT_SUCCESS;
+	}
+
+	if (mountcfg.mountmode == EROFSMOUNT_MODE_DISCONNECT) {
+		err = erofsmount_disconnect(mountcfg.target);
+		if (err < 0)
+			fprintf(stderr, "Failed to disconnect %s: %s\n",
 				mountcfg.target, erofs_strerror(err));
 		return err ? EXIT_FAILURE : EXIT_SUCCESS;
 	}
