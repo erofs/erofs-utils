@@ -1307,9 +1307,9 @@ out_err:
 int erofsmount_umount(char *target)
 {
 	char *device = NULL, *mountpoint = NULL;
+	int err, fd, nbdnum;
 	struct stat st;
 	FILE *mounts;
-	int err, fd;
 	size_t n;
 	char *s;
 	bool isblk;
@@ -1377,6 +1377,14 @@ int erofsmount_umount(char *target)
 		goto err_out;
 	}
 
+	if (isblk && !mountpoint &&
+	    S_ISBLK(st.st_mode) && major(st.st_rdev) == EROFS_NBD_MAJOR) {
+		nbdnum = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
+		err = erofs_nbd_nl_disconnect(nbdnum);
+		if (err != -EOPNOTSUPP)
+			return err;
+	}
+
 	/* Avoid TOCTOU issue with NBD_CFLAG_DISCONNECT_ON_CLOSE */
 	fd = open(isblk ? target : device, O_RDWR);
 	if (fd < 0) {
@@ -1394,8 +1402,12 @@ int erofsmount_umount(char *target)
 	err = fstat(fd, &st);
 	if (err < 0)
 		err = -errno;
-	else if (S_ISBLK(st.st_mode) && major(st.st_rdev) == EROFS_NBD_MAJOR)
-		err = erofs_nbd_disconnect(fd);
+	else if (S_ISBLK(st.st_mode) && major(st.st_rdev) == EROFS_NBD_MAJOR) {
+		nbdnum = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
+		err = erofs_nbd_nl_disconnect(nbdnum);
+		if (err == -EOPNOTSUPP)
+			err = erofs_nbd_disconnect(fd);
+	}
 	close(fd);
 err_out:
 	free(device);

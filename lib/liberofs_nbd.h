@@ -49,4 +49,5 @@ int erofs_nbd_nl_connect(int *index, int blkbits, u64 blocks,
 int erofs_nbd_nl_reconnect(int index, const char *identifier);
 int erofs_nbd_nl_reconfigure(int index, const char *identifier,
 			     bool autoclear);
+int erofs_nbd_nl_disconnect(int index);
 #endif
