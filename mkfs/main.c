@@ -1997,7 +1997,6 @@ exit:
 	blklst = erofs_blocklist_close();
 	if (blklst)
 		fclose(blklst);
-	erofs_dev_close(&g_sbi);
 	erofs_cleanup_compress_hints();
 	erofs_cleanup_exclude_rules();
 	if (cfg.c_chunkbits || source_mode == EROFS_MKFS_SOURCE_REBUILD)
@@ -2033,6 +2032,7 @@ exit:
 		erofs_mkfs_showsummaries();
 	}
 	erofs_put_super(&g_sbi);
+	erofs_dev_close(&g_sbi);
 	liberofs_global_exit();
 	return err;
 }

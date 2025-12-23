@@ -448,8 +448,8 @@ static void erofs_bfree(struct erofs_buffer_block *bb)
 	free(bb);
 }
 
-int erofs_bflush(struct erofs_bufmgr *bmgr,
-		 struct erofs_buffer_block *bb)
+static int __erofs_bflush(struct erofs_bufmgr *bmgr,
+			  struct erofs_buffer_block *bb, bool forget)
 {
 	struct erofs_sb_info *sbi = bmgr->sbi;
 	const unsigned int blksiz = erofs_blksiz(sbi);
@@ -470,8 +470,11 @@ int erofs_bflush(struct erofs_bufmgr *bmgr,
 
 		list_for_each_entry_safe(bh, nbh, &p->buffers.list, list) {
 			if (bh->op == &erofs_skip_write_bhops) {
-				skip = true;
-				continue;
+				if (!forget) {
+					skip = true;
+					continue;
+				}
+				bh->op = &erofs_drop_directly_bhops;
 			}
 
 			/* flush and remove bh */
@@ -499,6 +502,11 @@ int erofs_bflush(struct erofs_bufmgr *bmgr,
 		erofs_bfree(p);
 	}
 	return 0;
+}
+
+int erofs_bflush(struct erofs_bufmgr *bmgr, struct erofs_buffer_block *bb)
+{
+	return __erofs_bflush(bmgr, bb, false);
 }
 
 void erofs_bdrop(struct erofs_buffer_head *bh, bool tryrevoke)
@@ -533,6 +541,7 @@ erofs_blk_t erofs_total_metablocks(struct erofs_bufmgr *bmgr)
 
 void erofs_buffer_exit(struct erofs_bufmgr *bmgr)
 {
+	DBG_BUGON(__erofs_bflush(bmgr, NULL, true));
 	DBG_BUGON(!list_empty(&bmgr->blkh.list));
 	free(bmgr);
 }
