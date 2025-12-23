@@ -91,6 +91,7 @@ static void usage(int argc, char **argv)
 		"General options:\n"
 		" -V, --version         print the version number of mount.erofs and exit\n"
 		" -h, --help            display this help and exit\n"
+		" -d <0-9>              set output verbosity; 0=quiet, 9=verbose (default=%i)\n"
 		" -o options            comma-separated list of mount options\n"
 		" -t type[.subtype]     filesystem type (and optional subtype)\n"
 		"                       subtypes: fuse, local, nbd\n"
@@ -109,7 +110,7 @@ static void usage(int argc, char **argv)
 		"   oci.zinfo=<path>    path to gzip zinfo file (optional)\n"
 		"   oci.insecure        use HTTP instead of HTTPS (optional)\n"
 #endif
-		, argv[0]);
+		, argv[0], EROFS_WARN);
 }
 
 static void version(void)
@@ -279,10 +280,11 @@ static int erofsmount_parse_options(int argc, char **argv)
 	};
 	char *dot;
 	int opt;
+	int i;
 
 	nbdsrc.ocicfg.layer_index = -1;
 
-	while ((opt = getopt_long(argc, argv, "VNfhno:st:uv",
+	while ((opt = getopt_long(argc, argv, "VNfhd:no:st:uv",
 				  long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'h':
@@ -291,6 +293,14 @@ static int erofsmount_parse_options(int argc, char **argv)
 		case 'V':
 			version();
 			exit(0);
+		case 'd':
+			i = atoi(optarg);
+			if (i < EROFS_MSG_MIN || i > EROFS_MSG_MAX) {
+				erofs_err("invalid debug level %d", i);
+				return -EINVAL;
+			}
+			cfg.c_dbg_lvl = i;
+			break;
 		case 'o':
 			mountcfg.full_options = optarg;
 			mountcfg.flags =

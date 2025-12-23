@@ -321,7 +321,7 @@ static int erofs_nbd_nl_cfg_cb(struct nl_msg *msg, void *arg)
 		ctx->errcode = -EBADMSG;
 	}
 	*ctx->index = nla_get_u32(msg_attr[NBD_ATTR_INDEX]);
-	erofs_dbg("Connected /dev/nbd%d\n", *ctx->index);
+	erofs_dbg("Connected /dev/nbd%d", *ctx->index);
 	ctx->errcode = 0;
 	return NL_OK;
 }
