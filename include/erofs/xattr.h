@@ -1,9 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0+ OR Apache-2.0 */
-/*
- * Originally contributed by an anonymous person,
- * heavily changed by Li Guifu <blucerlee@gmail.com>
- *                and Gao Xiang <xiang@kernel.org>
- */
 #ifndef __EROFS_XATTR_H
 #define __EROFS_XATTR_H
 
@@ -22,19 +17,6 @@ static inline unsigned int inlinexattr_header_size(struct erofs_inode *vi)
 {
 	return sizeof(struct erofs_xattr_ibody_header) +
 		sizeof(u32) * vi->xattr_shared_count;
-}
-
-static inline erofs_blk_t xattrblock_addr(struct erofs_inode *vi,
-					  unsigned int xattr_id)
-{
-	return vi->sbi->xattr_blkaddr +
-		erofs_blknr(vi->sbi, xattr_id * sizeof(__u32));
-}
-
-static inline unsigned int xattrblock_offset(struct erofs_inode *vi,
-					     unsigned int xattr_id)
-{
-	return erofs_blkoff(vi->sbi, xattr_id * sizeof(__u32));
 }
 
 #define EROFS_INODE_XATTR_ICOUNT(_size)	({\
