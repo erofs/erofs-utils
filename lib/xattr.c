@@ -1369,7 +1369,7 @@ static int xattr_checkbuffer(struct erofs_xattr_iter *it,
 {
 	int err = it->buffer_size < value_sz ? -ERANGE : 0;
 
-	it->buffer_size = value_sz;
+	it->buffer_ofs = value_sz;
 	return !it->buffer ? 1 : err;
 }
 
@@ -1403,7 +1403,7 @@ static int inline_getxattr(struct erofs_inode *vi, struct erofs_xattr_iter *it)
 			break;
 	}
 
-	return ret ? ret : it->buffer_size;
+	return ret ? ret : it->buffer_ofs;
 }
 
 static int shared_getxattr(struct erofs_inode *vi, struct erofs_xattr_iter *it)
@@ -1426,7 +1426,7 @@ static int shared_getxattr(struct erofs_inode *vi, struct erofs_xattr_iter *it)
 			break;
 	}
 
-	return ret ? ret : it->buffer_size;
+	return ret ? ret : it->buffer_ofs;
 }
 
 int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
