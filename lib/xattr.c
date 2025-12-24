@@ -99,6 +99,24 @@ static ssize_t erofs_sys_lgetxattr(const char *path, const char *name,
 	return -1;
 }
 
+ssize_t erofs_sys_lsetxattr(const char *path, const char *name,
+			    void *value, size_t size)
+{
+	int ret;
+
+#ifdef HAVE_LSETXATTR
+	ret = lsetxattr(path, name, value, size, 0);
+#elif defined(__APPLE__)
+	ret = setxattr(path, name, value, size, 0, XATTR_NOFOLLOW);
+#else
+	ret = -1;
+	errno = ENODATA;
+#endif
+	if (ret < 0)
+		return errno;
+	return ret;
+}
+
 /* one extra byte for the trailing `\0` of attribute name */
 #define EROFS_XATTR_KSIZE(kvlen)	(kvlen[0] + 1)
 #define EROFS_XATTR_KVSIZE(kvlen)	(EROFS_XATTR_KSIZE(kvlen) + kvlen[1])

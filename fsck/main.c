@@ -9,7 +9,6 @@
 #include <utime.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <sys/xattr.h>
 #include "erofs/print.h"
 #include "erofs/decompress.h"
 #include "erofs/dir.h"
@@ -457,15 +456,8 @@ static int erofsfsck_dump_xattrs(struct erofs_inode *inode)
 			break;
 		}
 		if (fsckcfg.extract_path)
-#ifdef HAVE_LSETXATTR
-			ret = lsetxattr(fsckcfg.extract_path, key, value, size,
-					0);
-#elif defined(__APPLE__)
-			ret = setxattr(fsckcfg.extract_path, key, value, size,
-				       0, XATTR_NOFOLLOW);
-#else
-			ret = -EOPNOTSUPP;
-#endif
+			ret = erofs_sys_lsetxattr(fsckcfg.extract_path, key,
+						  value, size);
 		else
 			ret = 0;
 		free(value);

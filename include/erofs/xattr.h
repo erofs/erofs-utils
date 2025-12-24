@@ -45,6 +45,9 @@ static inline unsigned int xattrblock_offset(struct erofs_inode *vi,
 
 struct erofs_importer;
 
+ssize_t erofs_sys_lsetxattr(const char *path, const char *name,
+			    void *value, size_t size);
+
 int erofs_xattr_init(struct erofs_sb_info *sbi);
 int erofs_scan_file_xattrs(struct erofs_inode *inode);
 int erofs_prepare_xattr_ibody(struct erofs_inode *inode, bool noroom);
