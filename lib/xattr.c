@@ -1108,7 +1108,6 @@ struct erofs_xattr_iter {
 static int erofs_init_inode_xattrs(struct erofs_inode *vi)
 {
 	struct erofs_sb_info *sbi = vi->sbi;
-	int blkmask = erofs_blksiz(sbi) - 1;
 	struct erofs_xattr_iter it;
 	unsigned int i;
 	struct erofs_xattr_ibody_header *ih;
@@ -1144,12 +1143,11 @@ static int erofs_init_inode_xattrs(struct erofs_inode *vi)
 	it.pos = erofs_iloc(vi) + vi->inode_isize;
 
 	/* read in shared xattr array (non-atomic, see kmalloc below) */
-	it.kaddr = erofs_bread(&it.buf, it.pos & ~blkmask, true);
+	it.kaddr = erofs_bread(&it.buf, it.pos, true);
 	if (IS_ERR(it.kaddr))
 		return PTR_ERR(it.kaddr);
 
-	ih = it.kaddr + erofs_blkoff(sbi, it.pos);
-
+	ih = it.kaddr;
 	vi->xattr_shared_count = ih->h_shared_count;
 	vi->xattr_shared_xattrs = malloc(vi->xattr_shared_count * sizeof(uint));
 	if (!vi->xattr_shared_xattrs) {
@@ -1161,14 +1159,13 @@ static int erofs_init_inode_xattrs(struct erofs_inode *vi)
 	it.pos += sizeof(struct erofs_xattr_ibody_header);
 
 	for (i = 0; i < vi->xattr_shared_count; ++i) {
-		it.kaddr = erofs_bread(&it.buf, it.pos & ~blkmask, true);
+		it.kaddr = erofs_bread(&it.buf, it.pos, true);
 		if (IS_ERR(it.kaddr)) {
 			free(vi->xattr_shared_xattrs);
 			vi->xattr_shared_xattrs = NULL;
 			return PTR_ERR(it.kaddr);
 		}
-		vi->xattr_shared_xattrs[i] = le32_to_cpu(*(__le32 *)
-			(it.kaddr + erofs_blkoff(sbi, it.pos)));
+		vi->xattr_shared_xattrs[i] = le32_to_cpu(*(__le32 *)it.kaddr);
 		it.pos += sizeof(__le32);
 	}
 	erofs_put_metabuf(&it.buf);
@@ -1181,15 +1178,14 @@ static int erofs_xattr_copy_to_buffer(struct erofs_xattr_iter *it,
 {
 	unsigned int slice, processed;
 	struct erofs_sb_info *sbi = it->sbi;
-	int blkmask = erofs_blksiz(sbi) - 1;
 	void *src;
 
 	for (processed = 0; processed < len; processed += slice) {
-		it->kaddr = erofs_bread(&it->buf, it->pos & ~blkmask, true);
+		it->kaddr = erofs_bread(&it->buf, it->pos, true);
 		if (IS_ERR(it->kaddr))
 			return PTR_ERR(it->kaddr);
 
-		src = it->kaddr + erofs_blkoff(sbi, it->pos);
+		src = it->kaddr;
 		slice = min_t(unsigned int, erofs_blksiz(sbi) -
 				erofs_blkoff(sbi, it->pos), len - processed);
 		memcpy(it->buffer + it->buffer_ofs, src, slice);
@@ -1207,8 +1203,7 @@ static int erofs_listxattr_foreach(struct erofs_xattr_iter *it)
 	int err;
 
 	/* 1. handle xattr entry */
-	entry = *(struct erofs_xattr_entry *)
-		(it->kaddr + erofs_blkoff(it->sbi, it->pos));
+	entry = *(struct erofs_xattr_entry *)it->kaddr;
 	it->pos += sizeof(struct erofs_xattr_entry);
 
 	base_index = entry.e_name_index;
@@ -1254,13 +1249,11 @@ static int erofs_listxattr_foreach(struct erofs_xattr_iter *it)
 static int erofs_getxattr_foreach(struct erofs_xattr_iter *it)
 {
 	struct erofs_sb_info *sbi = it->sbi;
-	int blkmask = erofs_blksiz(sbi) - 1;
 	struct erofs_xattr_entry entry;
 	unsigned int slice, processed, value_sz;
 
 	/* 1. handle xattr entry */
-	entry = *(struct erofs_xattr_entry *)
-		(it->kaddr + erofs_blkoff(sbi, it->pos));
+	entry = *(struct erofs_xattr_entry *)it->kaddr;
 	it->pos += sizeof(struct erofs_xattr_entry);
 	value_sz = le16_to_cpu(entry.e_value_size);
 
@@ -1290,7 +1283,7 @@ static int erofs_getxattr_foreach(struct erofs_xattr_iter *it)
 
 	/* 2. handle xattr name */
 	for (processed = 0; processed < entry.e_name_len; processed += slice) {
-		it->kaddr = erofs_bread(&it->buf, it->pos & ~blkmask, true);
+		it->kaddr = erofs_bread(&it->buf, it->pos, true);
 		if (IS_ERR(it->kaddr))
 			return PTR_ERR(it->kaddr);
 
@@ -1298,7 +1291,7 @@ static int erofs_getxattr_foreach(struct erofs_xattr_iter *it)
 			      erofs_blksiz(sbi) - erofs_blkoff(sbi, it->pos),
 			      entry.e_name_len - processed);
 		if (memcmp(it->name + it->infix_len + processed,
-			   it->kaddr + erofs_blkoff(sbi, it->pos), slice))
+			   it->kaddr, slice))
 			return -ENOATTR;
 		it->pos += slice;
 	}
@@ -1318,8 +1311,6 @@ static int erofs_getxattr_foreach(struct erofs_xattr_iter *it)
 static int erofs_xattr_iter_inline(struct erofs_xattr_iter *it,
 				   struct erofs_inode *vi, bool getxattr)
 {
-	struct erofs_sb_info *sbi = vi->sbi;
-	int blkmask = erofs_blksiz(sbi) - 1;
 	unsigned int xattr_header_sz, remaining, entry_sz;
 	erofs_off_t next_pos;
 	int ret;
@@ -1334,12 +1325,11 @@ static int erofs_xattr_iter_inline(struct erofs_xattr_iter *it,
 	remaining = vi->xattr_isize - xattr_header_sz;
 	it->pos = erofs_iloc(vi) + vi->inode_isize + xattr_header_sz;
 	while (remaining) {
-		it->kaddr = erofs_bread(&it->buf, it->pos & ~blkmask, true);
+		it->kaddr = erofs_bread(&it->buf, it->pos, true);
 		if (IS_ERR(it->kaddr))
 			return PTR_ERR(it->kaddr);
 
-		entry_sz = erofs_xattr_entry_size(it->kaddr +
-				erofs_blkoff(it->sbi, it->pos));
+		entry_sz = erofs_xattr_entry_size(it->kaddr);
 		/* xattr on-disk corruption: xattr entry beyond xattr_isize */
 		if (remaining < entry_sz) {
 			DBG_BUGON(1);
@@ -1370,8 +1360,7 @@ static int erofs_xattr_iter_shared(struct erofs_xattr_iter *it,
 	for (i = 0; i < vi->xattr_shared_count; ++i) {
 		it->pos = erofs_pos(sbi, sbi->xattr_blkaddr) +
 				vi->xattr_shared_xattrs[i] * sizeof(__le32);
-		it->kaddr = erofs_bread(&it->buf,
-				it->pos & ~(erofs_blksiz(sbi) - 1), true);
+		it->kaddr = erofs_bread(&it->buf, it->pos, true);
 		if (IS_ERR(it->kaddr))
 			return PTR_ERR(it->kaddr);
 
