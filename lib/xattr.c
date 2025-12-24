@@ -1099,7 +1099,7 @@ struct xattr_iter {
 	unsigned int ofs;
 };
 
-static int init_inode_xattrs(struct erofs_inode *vi)
+static int erofs_init_inode_xattrs(struct erofs_inode *vi)
 {
 	struct erofs_sb_info *sbi = vi->sbi;
 	struct xattr_iter it;
@@ -1133,11 +1133,12 @@ static int init_inode_xattrs(struct erofs_inode *vi)
 	}
 
 	it.buf = __EROFS_BUF_INITIALIZER;
+	erofs_init_metabuf(&it.buf, sbi, false);
 	it.blkaddr = erofs_blknr(sbi, erofs_iloc(vi) + vi->inode_isize);
 	it.ofs = erofs_blkoff(sbi, erofs_iloc(vi) + vi->inode_isize);
 
 	/* read in shared xattr array (non-atomic, see kmalloc below) */
-	it.kaddr = erofs_read_metabuf(&it.buf, sbi, erofs_pos(sbi, it.blkaddr), false);
+	it.kaddr = erofs_bread(&it.buf, erofs_pos(sbi, it.blkaddr), true);
 	if (IS_ERR(it.kaddr))
 		return PTR_ERR(it.kaddr);
 
@@ -1158,8 +1159,8 @@ static int init_inode_xattrs(struct erofs_inode *vi)
 			/* cannot be unaligned */
 			DBG_BUGON(it.ofs != erofs_blksiz(sbi));
 
-			it.kaddr = erofs_read_metabuf(&it.buf, sbi,
-					erofs_pos(sbi, ++it.blkaddr), false);
+			it.kaddr = erofs_bread(&it.buf,
+					erofs_pos(sbi, ++it.blkaddr), true);
 			if (IS_ERR(it.kaddr)) {
 				free(vi->xattr_shared_xattrs);
 				vi->xattr_shared_xattrs = NULL;
@@ -1200,8 +1201,7 @@ static inline int xattr_iter_fixup(struct xattr_iter *it)
 		return 0;
 
 	it->blkaddr += erofs_blknr(sbi, it->ofs);
-	it->kaddr = erofs_read_metabuf(&it->buf, sbi,
-				       erofs_pos(sbi, it->blkaddr), false);
+	it->kaddr = erofs_bread(&it->buf, erofs_pos(sbi, it->blkaddr), true);
 	if (IS_ERR(it->kaddr))
 		return PTR_ERR(it->kaddr);
 	it->ofs = erofs_blkoff(sbi, it->ofs);
@@ -1225,8 +1225,7 @@ static int inline_xattr_iter_begin(struct xattr_iter *it,
 	it->blkaddr = erofs_blknr(sbi, erofs_iloc(vi) + inline_xattr_ofs);
 	it->ofs = erofs_blkoff(sbi, erofs_iloc(vi) + inline_xattr_ofs);
 
-	it->kaddr = erofs_read_metabuf(&it->buf, sbi,
-				       erofs_pos(sbi, it->blkaddr), false);
+	it->kaddr = erofs_bread(&it->buf, erofs_pos(sbi, it->blkaddr), true);
 	if (IS_ERR(it->kaddr))
 		return PTR_ERR(it->kaddr);
 	return vi->xattr_isize - xattr_header_sz;
@@ -1450,8 +1449,8 @@ static int shared_getxattr(struct erofs_inode *vi, struct getxattr_iter *it)
 			xattrblock_addr(vi, vi->xattr_shared_xattrs[i]);
 
 		it->it.ofs = xattrblock_offset(vi, vi->xattr_shared_xattrs[i]);
-		it->it.kaddr = erofs_read_metabuf(&it->it.buf, sbi,
-						  erofs_pos(sbi, blkaddr), false);
+		it->it.kaddr = erofs_bread(&it->it.buf,
+					   erofs_pos(sbi, blkaddr), true);
 		if (IS_ERR(it->it.kaddr))
 			return PTR_ERR(it->it.kaddr);
 		it->it.blkaddr = blkaddr;
@@ -1474,20 +1473,21 @@ int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
 	if (!name)
 		return -EINVAL;
 
-	ret = init_inode_xattrs(vi);
+	ret = erofs_init_inode_xattrs(vi);
 	if (ret)
 		return ret;
 
 	if (!erofs_xattr_prefix_matches(name, &prefix, &prefixlen))
 		return -ENODATA;
-	it.it.sbi = vi->sbi;
 	it.index = prefix;
 	it.name = name + prefixlen;
 	it.len = strlen(it.name);
 	if (it.len > EROFS_NAME_LEN)
 		return -ERANGE;
 
+	it.it.sbi = vi->sbi;
 	it.it.buf = __EROFS_BUF_INITIALIZER;
+	erofs_init_metabuf(&it.it.buf, it.it.sbi, false);
 	it.buffer = buffer;
 	it.buffer_size = buffer_size;
 
@@ -1605,8 +1605,8 @@ static int shared_listxattr(struct erofs_inode *vi, struct listxattr_iter *it)
 			xattrblock_addr(vi, vi->xattr_shared_xattrs[i]);
 
 		it->it.ofs = xattrblock_offset(vi, vi->xattr_shared_xattrs[i]);
-		it->it.kaddr = erofs_read_metabuf(&it->it.buf, sbi,
-						  erofs_pos(sbi, blkaddr), false);
+		it->it.kaddr = erofs_bread(&it->it.buf,
+					   erofs_pos(sbi, blkaddr), true);
 		if (IS_ERR(it->it.kaddr))
 			return PTR_ERR(it->it.kaddr);
 		it->it.blkaddr = blkaddr;
@@ -1624,7 +1624,7 @@ int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size)
 	int ret;
 	struct listxattr_iter it;
 
-	ret = init_inode_xattrs(vi);
+	ret = erofs_init_inode_xattrs(vi);
 	if (ret == -ENOATTR)
 		return 0;
 	if (ret)
@@ -1632,6 +1632,7 @@ int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size)
 
 	it.it.sbi = vi->sbi;
 	it.it.buf = __EROFS_BUF_INITIALIZER;
+	erofs_init_metabuf(&it.it.buf, it.it.sbi, false);
 	it.buffer = buffer;
 	it.buffer_size = buffer_size;
 	it.buffer_ofs = 0;
