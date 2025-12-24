@@ -9,10 +9,6 @@ extern "C"
 
 #include "internal.h"
 
-#ifndef ENOATTR
-#define ENOATTR	ENODATA
-#endif
-
 static inline unsigned int inlinexattr_header_size(struct erofs_inode *vi)
 {
 	return sizeof(struct erofs_xattr_ibody_header) +

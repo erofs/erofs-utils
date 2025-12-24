@@ -1135,7 +1135,7 @@ static int erofs_init_inode_xattrs(struct erofs_inode *vi)
 			DBG_BUGON(1);
 			return -EFSCORRUPTED;	/* xattr ondisk layout error */
 		}
-		return -ENOATTR;
+		return -ENODATA;
 	}
 
 	it.buf = __EROFS_BUF_INITIALIZER;
@@ -1263,20 +1263,20 @@ static int erofs_getxattr_foreach(struct erofs_xattr_iter *it)
 			(entry.e_name_index & EROFS_XATTR_LONG_PREFIX_MASK);
 
 		if (pf >= sbi->xattr_prefixes + sbi->xattr_prefix_count)
-			return -ENOATTR;
+			return -ENODATA;
 
 		if (it->index != pf->prefix->base_index ||
 		    it->len != entry.e_name_len + pf->infix_len)
-			return -ENOATTR;
+			return -ENODATA;
 
 		if (memcmp(it->name, pf->prefix->infix, pf->infix_len))
-			return -ENOATTR;
+			return -ENODATA;
 
 		it->infix_len = pf->infix_len;
 	} else {
 		if (it->index != entry.e_name_index ||
 		    it->len != entry.e_name_len)
-			return -ENOATTR;
+			return -ENODATA;
 
 		it->infix_len = 0;
 	}
@@ -1292,7 +1292,7 @@ static int erofs_getxattr_foreach(struct erofs_xattr_iter *it)
 			      entry.e_name_len - processed);
 		if (memcmp(it->name + it->infix_len + processed,
 			   it->kaddr, slice))
-			return -ENOATTR;
+			return -ENODATA;
 		it->pos += slice;
 	}
 
@@ -1319,7 +1319,7 @@ static int erofs_xattr_iter_inline(struct erofs_xattr_iter *it,
 			sizeof(u32) * vi->xattr_shared_count;
 	if (xattr_header_sz >= vi->xattr_isize) {
 		DBG_BUGON(xattr_header_sz > vi->xattr_isize);
-		return -ENOATTR;
+		return -ENODATA;
 	}
 
 	remaining = vi->xattr_isize - xattr_header_sz;
@@ -1342,7 +1342,7 @@ static int erofs_xattr_iter_inline(struct erofs_xattr_iter *it,
 			ret = erofs_getxattr_foreach(it);
 		else
 			ret = erofs_listxattr_foreach(it);
-		if ((getxattr && ret != -ENOATTR) || (!getxattr && ret))
+		if ((getxattr && ret != -ENODATA) || (!getxattr && ret))
 			break;
 
 		it->pos = next_pos;
@@ -1355,7 +1355,7 @@ static int erofs_xattr_iter_shared(struct erofs_xattr_iter *it,
 {
 	struct erofs_sb_info *sbi = vi->sbi;
 	unsigned int i;
-	int ret = -ENOATTR;
+	int ret = -ENODATA;
 
 	for (i = 0; i < vi->xattr_shared_count; ++i) {
 		it->pos = erofs_pos(sbi, sbi->xattr_blkaddr) +
@@ -1368,7 +1368,7 @@ static int erofs_xattr_iter_shared(struct erofs_xattr_iter *it,
 			ret = erofs_getxattr_foreach(it);
 		else
 			ret = erofs_listxattr_foreach(it);
-		if ((getxattr && ret != -ENOATTR) || (!getxattr && ret))
+		if ((getxattr && ret != -ENODATA) || (!getxattr && ret))
 			break;
 	}
 	return ret;
@@ -1404,7 +1404,7 @@ int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
 	it.buffer_ofs = 0;
 
 	ret = erofs_xattr_iter_inline(&it, vi, true);
-	if (ret == -ENOATTR)
+	if (ret == -ENODATA)
 		ret = erofs_xattr_iter_shared(&it, vi, true);
 	erofs_put_metabuf(&it.buf);
 	return ret ? ret : it.buffer_ofs;
@@ -1416,7 +1416,7 @@ int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size)
 	struct erofs_xattr_iter it;
 
 	ret = erofs_init_inode_xattrs(vi);
-	if (ret == -ENOATTR)
+	if (ret == -ENODATA)
 		return 0;
 	if (ret)
 		return ret;
@@ -1429,9 +1429,9 @@ int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size)
 	it.buffer_ofs = 0;
 
 	ret = erofs_xattr_iter_inline(&it, vi, false);
-	if (!ret || ret == -ENOATTR)
+	if (!ret || ret == -ENODATA)
 		ret = erofs_xattr_iter_shared(&it, vi, false);
-	if (ret == -ENOATTR)
+	if (ret == -ENODATA)
 		ret = 0;
 	erofs_put_metabuf(&it.buf);
 	return ret ? ret : it.buffer_ofs;
