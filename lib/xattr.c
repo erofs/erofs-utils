@@ -1637,7 +1637,7 @@ int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size)
 	it.buffer_ofs = 0;
 
 	ret = inline_listxattr(vi, &it);
-	if (ret < 0 && ret != -ENOATTR)
+	if (ret >= 0 || ret == -ENOATTR)
 		ret = shared_listxattr(vi, &it);
 	erofs_put_metabuf(&it.it.buf);
 	return ret;
