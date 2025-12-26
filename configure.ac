@@ -248,6 +248,7 @@ AC_CHECK_HEADERS(m4_flatten([
 	sys/sysmacros.h
 	sys/time.h
 	sys/uio.h
+	sys/xattr.h
 	unistd.h
 ]))
 

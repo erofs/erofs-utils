@@ -16,6 +16,10 @@ extern "C"
 #include <string.h>
 #include <stdio.h>
 
+#ifndef ENODATA
+#define ENODATA ENOATTR
+#endif
+
 static inline const char *erofs_strerror(int err)
 {
 	static char msg[256];

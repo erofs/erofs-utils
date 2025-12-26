@@ -6,10 +6,6 @@
  */
 #define _GNU_SOURCE
 #include <stdlib.h>
-#include <sys/xattr.h>
-#ifdef HAVE_LINUX_XATTR_H
-#include <linux/xattr.h>
-#endif
 #include <sys/stat.h>
 #include <dirent.h>
 #include "erofs/print.h"
@@ -21,6 +17,12 @@
 #include "liberofs_metabox.h"
 #include "liberofs_xxhash.h"
 #include "liberofs_private.h"
+#ifdef HAVE_SYS_XATTR_H
+#include <sys/xattr.h>
+#endif
+#ifdef HAVE_LINUX_XATTR_H
+#include <linux/xattr.h>
+#endif
 
 #ifndef XATTR_SYSTEM_PREFIX
 #define XATTR_SYSTEM_PREFIX	"system."
@@ -90,13 +92,21 @@ static ssize_t erofs_sys_llistxattr(const char *path, char *list, size_t size)
 static ssize_t erofs_sys_lgetxattr(const char *path, const char *name,
 				   void *value, size_t size)
 {
+	int ret = -ENODATA;
+
 #ifdef HAVE_LGETXATTR
-	return lgetxattr(path, name, value, size);
+	ret = lgetxattr(path, name, value, size);
+	if (ret < 0)
+		ret = -errno;
 #elif defined(__APPLE__)
-	return getxattr(path, name, value, size, 0, XATTR_NOFOLLOW);
+	ret = getxattr(path, name, value, size, 0, XATTR_NOFOLLOW);
+	if (ret < 0) {
+		ret = -errno;
+		if (ret == -ENOATTR)
+			ret = -ENODATA;
+	}
 #endif
-	errno = ENODATA;
-	return -1;
+	return ret;
 }
 
 ssize_t erofs_sys_lsetxattr(const char *path, const char *name,
@@ -305,7 +315,7 @@ static struct erofs_xattritem *parse_one_xattr(struct erofs_sb_info *sbi,
 	/* determine length of the value */
 	ret = erofs_sys_lgetxattr(path, key, NULL, 0);
 	if (ret < 0)
-		return ERR_PTR(-errno);
+		return ERR_PTR(ret);
 	len[1] = ret;
 
 	/* allocate key-value buffer */
@@ -318,10 +328,8 @@ static struct erofs_xattritem *parse_one_xattr(struct erofs_sb_info *sbi,
 		ret = erofs_sys_lgetxattr(path, key,
 					  kvbuf + EROFS_XATTR_KSIZE(len),
 					  len[1]);
-		if (ret < 0) {
-			ret = -errno;
+		if (ret < 0)
 			goto out;
-		}
 		if (len[1] != ret) {
 			erofs_warn("size of xattr value got changed just now (%u-> %ld)",
 				  len[1], (long)ret);
@@ -424,7 +432,7 @@ static int read_xattrs_from_file(struct erofs_sb_info *sbi, const char *path,
 	struct erofs_xattritem *item;
 	int ret;
 
-	if (kllen < 0 && errno != ENODATA && errno != EOPNOTSUPP) {
+	if (kllen < 0 && errno != ENODATA && errno != ENOTSUP) {
 		erofs_err("failed to get the size of the xattr list for %s: %s",
 			  path, strerror(errno));
 		return -errno;
