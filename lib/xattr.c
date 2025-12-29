@@ -179,7 +179,7 @@ static struct erofs_xattr_prefix {
 	const char *prefix;
 	unsigned int prefix_len;
 } xattr_types[] = {
-	[EROFS_XATTR_INDEX_USER] = {
+	[0] = {""}, [EROFS_XATTR_INDEX_USER] = {
 		XATTR_USER_PREFIX,
 		XATTR_USER_PREFIX_LEN
 	}, [EROFS_XATTR_INDEX_POSIX_ACL_ACCESS] = {
@@ -501,22 +501,41 @@ err:
 	return ret;
 }
 
-int erofs_setxattr(struct erofs_inode *inode, char *key,
-		   const void *value, size_t size)
+int erofs_setxattr(struct erofs_inode *inode, int index,
+		   const char *name, const void *value, size_t size)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
-	char *kvbuf;
-	unsigned int len[2];
 	struct erofs_xattritem *item;
+	struct erofs_xattr_prefix *prefix = NULL;
+	struct ea_type_node *tnode;
+	unsigned int len[2];
+	int prefix_len;
+	char *kvbuf;
 
-	len[0] = strlen(key);
+	if (index & EROFS_XATTR_LONG_PREFIX) {
+		list_for_each_entry(tnode, &ea_name_prefixes, list) {
+			if (index == tnode->index) {
+				prefix = &tnode->type;
+				break;
+			}
+		}
+	} else if (index < ARRAY_SIZE(xattr_types)) {
+		prefix = &xattr_types[index];
+	}
+
+	if (!prefix)
+		return -EINVAL;
+
+	prefix_len = prefix->prefix_len;
+	len[0] = prefix_len + strlen(name);
 	len[1] = size;
 
 	kvbuf = malloc(EROFS_XATTR_KVSIZE(len));
 	if (!kvbuf)
 		return -ENOMEM;
 
-	memcpy(kvbuf, key, EROFS_XATTR_KSIZE(len));
+	memcpy(kvbuf, prefix->prefix, prefix_len);
+	memcpy(kvbuf + prefix_len, name, EROFS_XATTR_KSIZE(len) - prefix_len);
 	memcpy(kvbuf + EROFS_XATTR_KSIZE(len), value, size);
 
 	item = get_xattritem(sbi, kvbuf, len);
@@ -526,6 +545,12 @@ int erofs_setxattr(struct erofs_inode *inode, char *key,
 	}
 	DBG_BUGON(!item);
 	return erofs_inode_xattr_add(&inode->i_xattrs, item);
+}
+
+int erofs_vfs_setxattr(struct erofs_inode *inode, const char *name,
+		       const void *value, size_t size)
+{
+	return erofs_setxattr(inode, 0, name, value, size);
 }
 
 static void erofs_removexattr(struct erofs_inode *inode, const char *key)
@@ -543,7 +568,7 @@ static void erofs_removexattr(struct erofs_inode *inode, const char *key)
 
 int erofs_set_opaque_xattr(struct erofs_inode *inode)
 {
-	return erofs_setxattr(inode, OVL_XATTR_OPAQUE, "y", 1);
+	return erofs_vfs_setxattr(inode, OVL_XATTR_OPAQUE, "y", 1);
 }
 
 void erofs_clear_opaque_xattr(struct erofs_inode *inode)
@@ -553,7 +578,7 @@ void erofs_clear_opaque_xattr(struct erofs_inode *inode)
 
 int erofs_set_origin_xattr(struct erofs_inode *inode)
 {
-	return erofs_setxattr(inode, OVL_XATTR_ORIGIN, NULL, 0);
+	return erofs_vfs_setxattr(inode, OVL_XATTR_ORIGIN, NULL, 0);
 }
 
 #ifdef WITH_ANDROID
@@ -671,7 +696,7 @@ int erofs_read_xattrs_from_disk(struct erofs_inode *inode)
 			continue;
 		}
 
-		ret = erofs_setxattr(inode, key, value, size);
+		ret = erofs_vfs_setxattr(inode, key, value, size);
 		free(value);
 		if (ret)
 			break;

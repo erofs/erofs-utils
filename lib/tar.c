@@ -411,7 +411,7 @@ int tarerofs_apply_xattrs(struct erofs_inode *inode, struct list_head *xattrs)
 		item->kv[item->namelen] = '\0';
 		erofs_dbg("Recording xattr(%s)=\"%s\" (of %u bytes) to file %s",
 			  item->kv, v, vsz, inode->i_srcpath);
-		ret = erofs_setxattr(inode, item->kv, v, vsz);
+		ret = erofs_vfs_setxattr(inode, item->kv, v, vsz);
 		if (ret == -ENODATA)
 			erofs_err("Failed to set xattr(%s)=%s to file %s",
 				  item->kv, v, inode->i_srcpath);
