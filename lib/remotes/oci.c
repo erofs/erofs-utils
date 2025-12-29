@@ -1479,16 +1479,18 @@ int ocierofs_io_open(struct erofs_vfile *vfile, const struct ocierofs_config *cf
 		return -ENOMEM;
 
 	err = ocierofs_init(ctx, cfg);
-	if (err) {
-		free(ctx);
-		return err;
+	if (err)
+		goto out;
+
+	if (!ctx->blob_digest) {
+		err = -EINVAL;
+		goto out;
 	}
 
 	oci_iostream = calloc(1, sizeof(*oci_iostream));
 	if (!oci_iostream) {
-		ocierofs_ctx_cleanup(ctx);
-		free(ctx);
-		return -ENOMEM;
+		err = -ENOMEM;
+		goto out;
 	}
 
 	oci_iostream->ctx = ctx;
@@ -1496,6 +1498,11 @@ int ocierofs_io_open(struct erofs_vfile *vfile, const struct ocierofs_config *cf
 	*vfile = (struct erofs_vfile){.ops = &ocierofs_io_vfops};
 	*(struct ocierofs_iostream **)vfile->payload = oci_iostream;
 	return 0;
+
+out:
+	ocierofs_ctx_cleanup(ctx);
+	free(ctx);
+	return err;
 }
 
 char *ocierofs_encode_userpass(const char *username, const char *password)
