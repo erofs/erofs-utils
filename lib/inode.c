@@ -1459,7 +1459,12 @@ static int erofs_mkfs_handle_nondirectory(const struct erofs_mkfs_btctx *btctx,
 					  struct erofs_mkfs_job_ndir_ctx *ctx)
 {
 	struct erofs_inode *inode = ctx->inode;
-	int ret = 0;
+	int ret;
+
+	ret = erofs_prepare_xattr_ibody(inode,
+					btctx->incremental && IS_ROOT(inode));
+	if (ret < 0)
+		return ret;
 
 	if (S_ISLNK(inode->i_mode)) {
 		char *symlink = inode->i_link;
@@ -1487,6 +1492,42 @@ static int erofs_mkfs_handle_nondirectory(const struct erofs_mkfs_btctx *btctx,
 		return ret;
 	erofs_prepare_inode_buffer(btctx->im, inode);
 	erofs_write_tail_end(inode);
+	return 0;
+}
+
+static int erofs_mkfs_create_directory(const struct erofs_mkfs_btctx *ctx,
+				       struct erofs_inode *inode)
+{
+	unsigned int bsz = erofs_blksiz(inode->sbi);
+	int ret;
+
+	ret = erofs_prepare_xattr_ibody(inode, ctx->incremental && IS_ROOT(inode));
+	if (ret < 0)
+		return ret;
+
+	if (inode->datalayout == EROFS_INODE_DATALAYOUT_MAX) {
+		inode->datalayout = EROFS_INODE_FLAT_INLINE;
+
+		ret = erofs_begin_compress_dir(ctx->im, inode);
+		if (ret && ret != -ENOSPC)
+			return ret;
+	} else {
+		DBG_BUGON(inode->datalayout != EROFS_INODE_FLAT_PLAIN);
+	}
+
+	/* it will be used in erofs_prepare_inode_buffer */
+	if (inode->datalayout == EROFS_INODE_FLAT_INLINE)
+		inode->idata_size = inode->i_size & (bsz - 1);
+
+	/*
+	 * Directory on-disk inodes should be close to other inodes
+	 * in the parent directory since parent directories should
+	 * generally be prioritized.
+	 */
+	ret = erofs_prepare_inode_buffer(ctx->im, inode);
+	if (ret)
+		return ret;
+	inode->bh->op = &erofs_skip_write_bhops;
 	return 0;
 }
 
@@ -1518,34 +1559,8 @@ static int erofs_mkfs_jobfn(const struct erofs_mkfs_btctx *ctx,
 	if (item->type == EROFS_MKFS_JOB_NDIR)
 		return erofs_mkfs_handle_nondirectory(ctx, &item->u.ndir);
 
-	if (item->type == EROFS_MKFS_JOB_DIR) {
-		unsigned int bsz = erofs_blksiz(inode->sbi);
-
-		if (inode->datalayout == EROFS_INODE_DATALAYOUT_MAX) {
-			inode->datalayout = EROFS_INODE_FLAT_INLINE;
-
-			ret = erofs_begin_compress_dir(ctx->im, inode);
-			if (ret && ret != -ENOSPC)
-				return ret;
-		} else {
-			DBG_BUGON(inode->datalayout != EROFS_INODE_FLAT_PLAIN);
-		}
-
-		/* it will be used in erofs_prepare_inode_buffer */
-		if (inode->datalayout == EROFS_INODE_FLAT_INLINE)
-			inode->idata_size = inode->i_size & (bsz - 1);
-
-		/*
-		 * Directory on-disk inodes should be close to other inodes
-		 * in the parent directory since parent directories should
-		 * generally be prioritized.
-		 */
-		ret = erofs_prepare_inode_buffer(ctx->im, inode);
-		if (ret)
-			return ret;
-		inode->bh->op = &erofs_skip_write_bhops;
-		return 0;
-	}
+	if (item->type == EROFS_MKFS_JOB_DIR)
+		return erofs_mkfs_create_directory(ctx, inode);
 
 	if (item->type == EROFS_MKFS_JOB_DIR_BH) {
 		ret = erofs_write_dir_file(inode);
@@ -1963,10 +1978,6 @@ static int erofs_mkfs_handle_inode(const struct erofs_mkfs_btctx *ctx,
 		erofs_clear_opaque_xattr(inode);
 	else if (inode->whiteouts)
 		erofs_set_origin_xattr(inode);
-
-	ret = erofs_prepare_xattr_ibody(inode, ctx->incremental && IS_ROOT(inode));
-	if (ret < 0)
-		return ret;
 
 	if (!S_ISDIR(inode->i_mode)) {
 		ret = erofs_mkfs_begin_nondirectory(ctx, inode);
