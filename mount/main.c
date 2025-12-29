@@ -1194,7 +1194,7 @@ static int erofsmount_nbd(struct erofs_nbd_source *source,
 {
 	bool is_netlink = false;
 	char nbdpath[32], *id;
-	int num, nbdfd;
+	int num, nbdfd = -1;
 	pid_t pid = 0;
 	long err;
 
@@ -1220,7 +1220,6 @@ static int erofsmount_nbd(struct erofs_nbd_source *source,
 		if ((pid = fork()) == 0)
 			return erofsmount_startnbd(nbdfd, source) ?
 				EXIT_FAILURE : EXIT_SUCCESS;
-		close(nbdfd);
 	} else {
 		num = err;
 		(void)snprintf(nbdpath, sizeof(nbdpath), "/dev/nbd%d", num);
@@ -1230,13 +1229,15 @@ static int erofsmount_nbd(struct erofs_nbd_source *source,
 	while (1) {
 		err = erofs_nbd_in_service(num);
 		if (err == -ENOENT || err == -ENOTCONN) {
-			int status;
-
-			err = waitpid(pid, &status, WNOHANG);
-			if (err < 0)
-				return -errno;
-			else if (err > 0)
-				return status ? -EIO : 0;
+			err = waitpid(pid, NULL, WNOHANG);
+			if (err < 0) {
+				err = -errno;
+				break;
+			} else if (err > 0) {
+				/* child process exited unexpectedly */
+				err = -EIO;
+				break;
+			}
 
 			usleep(50000);
 			continue;
@@ -1246,9 +1247,13 @@ static int erofsmount_nbd(struct erofs_nbd_source *source,
 		break;
 	}
 	if (!err) {
-		err = mount(nbdpath, mountpoint, fstype, flags, options);
-		if (err < 0)
+		if (mount(nbdpath, mountpoint, fstype, flags, options) < 0) {
 			err = -errno;
+			if (is_netlink)
+				erofs_nbd_nl_disconnect(num);
+			else
+				erofs_nbd_disconnect(nbdfd);
+		}
 
 		if (!err && is_netlink) {
 			id = erofs_nbd_get_identifier(num);
@@ -1261,6 +1266,10 @@ static int erofsmount_nbd(struct erofs_nbd_source *source,
 			if (!IS_ERR(id))
 				free(id);
 		}
+	}
+	if (!is_netlink) {
+		DBG_BUGON(nbdfd < 0);
+		close(nbdfd);
 	}
 	return err;
 }
