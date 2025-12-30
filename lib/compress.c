@@ -2186,8 +2186,7 @@ int z_erofs_compress_init(struct erofs_importer *im)
 	} else {
 		sbi->available_compr_algs = available_compr_algs;
 
-		if (!params->no_lz4_0padding)
-			erofs_sb_set_lz4_0padding(sbi);
+		erofs_sb_set_lz4_0padding(sbi);
 		if (available_compr_algs & ~(1 << Z_EROFS_COMPRESSION_LZ4))
 			erofs_sb_set_compr_cfgs(sbi);
 	}

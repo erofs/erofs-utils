@@ -325,9 +325,9 @@ static int erofs_mkfs_feat_set_legacy_compress(struct erofs_importer_params *par
 {
 	if (vallen)
 		return -EINVAL;
-	/* disable compacted indexes and 0padding */
-	params->no_zcompact = true;
-	params->no_lz4_0padding = true;
+	if (en)
+		erofs_warn("ancient !lz4_0padding layout (< Linux 5.4) is no longer supported");
+	params->no_zcompact = en;
 	return 0;
 }
 

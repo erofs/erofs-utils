@@ -51,7 +51,6 @@ struct erofs_importer_params {
 	bool dot_omitted;
 	bool no_xattrs;			/* don't store extended attributes */
 	bool no_zcompact;
-	bool no_lz4_0padding;
 	bool ztailpacking;
 	char dedupe;
 	bool fragments;
