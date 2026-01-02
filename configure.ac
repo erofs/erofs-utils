@@ -264,29 +264,6 @@ AC_CHECK_MEMBERS([struct stat.st_atim])
 AC_CHECK_MEMBERS([struct stat.st_atimensec])
 AC_TYPE_UINT64_T
 
-#
-# Check to see if llseek() is declared in unistd.h.  On some libc's
-# it is, and on others it isn't..... Thank you glibc developers....
-#
-AC_CHECK_DECL(llseek,
-  [AC_DEFINE(HAVE_LLSEEK_PROTOTYPE, 1,
-    [Define to 1 if llseek declared in unistd.h])],,
-  [#include <unistd.h>])
-
-#
-# Check to see if lseek64() is declared in unistd.h.  Glibc's header files
-# are so convoluted that I can't tell whether it will always be defined,
-# and if it isn't defined while lseek64 is defined in the library,
-# disaster will strike.
-#
-# Warning!  Use of --enable-gcc-wall may throw off this test.
-#
-AC_CHECK_DECL(lseek64,[AC_DEFINE(HAVE_LSEEK64_PROTOTYPE, 1,
-  [Define to 1 if lseek64 declared in unistd.h])],,
-  [#define _LARGEFILE_SOURCE
-   #define _LARGEFILE64_SOURCE
-   #include <unistd.h>])
-
 AC_CHECK_DECL(memrchr,[AC_DEFINE(HAVE_MEMRCHR, 1,
   [Define to 1 if memrchr declared in string.h])],,
   [#define _GNU_SOURCE
@@ -305,8 +282,6 @@ AC_CHECK_FUNCS(m4_flatten([
 	lsetxattr
 	memset
 	realpath
-	lseek64
-	ftello64
 	pread64
 	pwrite64
 	pwritev
