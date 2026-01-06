@@ -24,6 +24,17 @@ extern "C"
 #define O_BINARY	0
 #endif
 
+/*
+ * seek stuff
+ */
+#ifndef SEEK_DATA
+#define SEEK_DATA	3
+#endif
+
+#ifndef SEEK_HOLE
+#define SEEK_HOLE	4
+#endif
+
 struct erofs_vfile;
 
 struct erofs_vfops {
