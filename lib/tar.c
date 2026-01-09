@@ -995,12 +995,6 @@ out_eot:
 			goto out;
 		}
 
-		if (d->type != EROFS_FT_UNKNOWN) {
-			tarerofs_remove_inode(d->inode);
-			erofs_iput(d->inode);
-		}
-		d->inode = NULL;
-
 		d2 = erofs_rebuild_get_dentry(root, eh.link, tar->aufs,
 					      &dumb, &dumb, false);
 		if (IS_ERR(d2)) {
@@ -1011,14 +1005,23 @@ out_eot:
 			ret = -ENOENT;
 			goto out;
 		}
+		if (d == d2) {
+			ret = 0;
+			goto out;
+		}
 		if (S_ISDIR(d2->inode->i_mode)) {
 			ret = -EISDIR;
 			goto out;
 		}
+
 		inode = erofs_igrab(d2->inode);
+		++inode->i_nlink;
+		if (d->type != EROFS_FT_UNKNOWN) {
+			tarerofs_remove_inode(d->inode);
+			erofs_iput(d->inode);
+		}
 		d->inode = inode;
 		d->type = d2->type;
-		++inode->i_nlink;
 		ret = 0;
 		goto out;
 	} else if (d->type != EROFS_FT_UNKNOWN) {
