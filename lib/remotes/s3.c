@@ -61,11 +61,17 @@ static const char *s3erofs_parse_host(const char *endpoint, const char **schema)
 	return host;
 }
 
-static void *s3erofs_urlencode(const char *input)
+enum s3erofs_urlencode_mode {
+	S3EROFS_URLENCODE_QUERY_PARAM,
+	S3EROFS_URLENCODE_S3_KEY,
+};
+
+static void *s3erofs_urlencode(const char *input, enum s3erofs_urlencode_mode mode)
 {
 	static const char hex[] = "0123456789ABCDEF";
 	char *p, *url;
 	int i, c;
+	bool safe;
 
 	url = malloc(strlen(input) * 3 + 1);
 	if (!url)
@@ -73,13 +79,31 @@ static void *s3erofs_urlencode(const char *input)
 
 	p = url;
 	for (i = 0; i < strlen(input); ++i) {
-		c = input[i];
+		c = (unsigned char)input[i];
 
-		// Unreserved characters: A-Z a-z 0-9 - . _ ~
-		if (isalpha(c) || isdigit(c) || c == '-' || c == '.' ||
-		    c == '_' || c == '~') {
+		if (mode == S3EROFS_URLENCODE_S3_KEY)
+			/*
+			 * AWS S3 safe characters for object key names:
+			 * - Alphanumeric: 0-9 a-z A-Z
+			 * - Special: ! - _ . * ' ( )
+			 * - Forward slash (/) for hierarchy
+			 * See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
+			 */
+			safe = isalpha(c) || isdigit(c) || c == '!' || c == '-' ||
+			       c == '_' || c == '.' || c == '*' || c == '(' || c == ')' ||
+			       c == '\'' || c == '/';
+		else
+			/*
+			 * URL encode query parameters
+			 * See: https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html#create-signature-presign-entire-payload
+			 */
+			safe = isalpha(c) || isdigit(c) || c == '-' || c == '.' ||
+			       c == '_' || c == '~';
+
+		if (safe) {
 			*p++ = c;
 		} else {
+			/* URL encode this character */
 			*p++ = '%';
 			*p++ = hex[c >> 4];
 			*p++ = hex[c & 0x0F];
@@ -111,13 +135,13 @@ static int s3erofs_prepare_canonical_query(struct s3erofs_curl_request *req,
 
 	pairs = calloc(1, sizeof(struct s3erofs_qsort_kv) * params->num);
 	for (i = 0; i < params->num; i++) {
-		pairs[i].key = s3erofs_urlencode(params->key[i]);
+		pairs[i].key = s3erofs_urlencode(params->key[i], S3EROFS_URLENCODE_QUERY_PARAM);
 		if (IS_ERR(pairs[i].key)) {
 			ret = PTR_ERR(pairs[i].key);
 			pairs[i].key = NULL;
 			goto out;
 		}
-		pairs[i].value = s3erofs_urlencode(params->value[i]);
+		pairs[i].value = s3erofs_urlencode(params->value[i], S3EROFS_URLENCODE_QUERY_PARAM);
 		if (IS_ERR(pairs[i].value)) {
 			ret = PTR_ERR(pairs[i].value);
 			pairs[i].value = NULL;
@@ -154,6 +178,7 @@ static int s3erofs_prepare_url(struct s3erofs_curl_request *req,
 	bool slash = false;
 	bool bucket_domain = false;
 	char *url = req->url;
+	char *encoded_key = NULL;
 	int pos, canonical_uri_pos, i, ret = 0;
 
 	if (!endpoint)
@@ -198,11 +223,18 @@ static int s3erofs_prepare_url(struct s3erofs_curl_request *req,
 		}
 	}
 	if (key) {
+		encoded_key = s3erofs_urlencode(key, S3EROFS_URLENCODE_S3_KEY);
+		if (IS_ERR(encoded_key)) {
+			ret = PTR_ERR(encoded_key);
+			encoded_key = NULL;
+			goto err;
+		}
+
 		if (url[pos - 1] == '/')
 			--pos;
 		else
 			slash = true;
-		pos += snprintf(url + pos, S3EROFS_URL_LEN - pos, "/%s", key);
+		pos += snprintf(url + pos, S3EROFS_URL_LEN - pos, "/%s", encoded_key);
 	}
 
 	if (sig == S3EROFS_SIGNATURE_VERSION_2) {
@@ -220,7 +252,8 @@ static int s3erofs_prepare_url(struct s3erofs_curl_request *req,
 			i = 1;
 		}
 		i += snprintf(req->canonical_uri + i, S3EROFS_CANONICAL_URI_LEN - i,
-			      "%s%s%s", path, slash ? "/" : "", key ? key : "");
+			      "%s%s%s", path, slash ? "/" : "",
+			      encoded_key ? encoded_key : "");
 	} else {
 		i = snprintf(req->canonical_uri, S3EROFS_CANONICAL_URI_LEN,
 			     "%s", url + canonical_uri_pos);
@@ -241,6 +274,8 @@ static int s3erofs_prepare_url(struct s3erofs_curl_request *req,
 	erofs_dbg("Request canonical_uri %s", req->canonical_uri);
 
 err:
+	if (encoded_key)
+		free(encoded_key);
 	if (schema != https)
 		free((void *)schema);
 	return ret;
@@ -1409,6 +1444,66 @@ static bool test_s3erofs_prepare_url(void)
 				"https://bucket.s3.amazonaws.com/object.txt",
 			.expected_canonical_v2 = "/bucket/object.txt",
 			.expected_canonical_v4 = "/object.txt",
+			.expected_ret = 0,
+		},
+		{
+			.name = "Key with spaces",
+			.endpoint = "s3.amazonaws.com",
+			.path = "bucket",
+			.key = "my folder/my file.txt",
+			.url_style = S3EROFS_URL_STYLE_VIRTUAL_HOST,
+			.expected_url =
+				"https://bucket.s3.amazonaws.com/my%20folder/my%20file.txt",
+			.expected_canonical_v2 = "/bucket/my%20folder/my%20file.txt",
+			.expected_canonical_v4 = "/my%20folder/my%20file.txt",
+			.expected_ret = 0,
+		},
+		{
+			.name = "Key with special characters (&, $, @, =)",
+			.endpoint = "s3.amazonaws.com",
+			.path = "bucket",
+			.key = "file&name$test@sign=value.txt",
+			.url_style = S3EROFS_URL_STYLE_PATH,
+			.expected_url =
+				"https://s3.amazonaws.com/bucket/file%26name%24test%40sign%3Dvalue.txt",
+			.expected_canonical_v2 = "/bucket/file%26name%24test%40sign%3Dvalue.txt",
+			.expected_canonical_v4 = "/bucket/file%26name%24test%40sign%3Dvalue.txt",
+			.expected_ret = 0,
+		},
+		{
+			.name = "Key with semicolon, colon, and plus",
+			.endpoint = "s3.amazonaws.com",
+			.path = "bucket",
+			.key = "file;name:test+data.txt",
+			.url_style = S3EROFS_URL_STYLE_VIRTUAL_HOST,
+			.expected_url =
+				"https://bucket.s3.amazonaws.com/file%3Bname%3Atest%2Bdata.txt",
+			.expected_canonical_v2 = "/bucket/file%3Bname%3Atest%2Bdata.txt",
+			.expected_canonical_v4 = "/file%3Bname%3Atest%2Bdata.txt",
+			.expected_ret = 0,
+		},
+		{
+			.name = "Key with comma and question mark",
+			.endpoint = "s3.amazonaws.com",
+			.path = "bucket",
+			.key = "file,name?query.txt",
+			.url_style = S3EROFS_URL_STYLE_PATH,
+			.expected_url =
+				"https://s3.amazonaws.com/bucket/file%2Cname%3Fquery.txt",
+			.expected_canonical_v2 = "/bucket/file%2Cname%3Fquery.txt",
+			.expected_canonical_v4 = "/bucket/file%2Cname%3Fquery.txt",
+			.expected_ret = 0,
+		},
+		{
+			.name = "Key with multiple special characters",
+			.endpoint = "s3.amazonaws.com",
+			.path = "bucket",
+			.key = "path/to/file name & data@2024.txt",
+			.url_style = S3EROFS_URL_STYLE_VIRTUAL_HOST,
+			.expected_url =
+				"https://bucket.s3.amazonaws.com/path/to/file%20name%20%26%20data%402024.txt",
+			.expected_canonical_v2 = "/bucket/path/to/file%20name%20%26%20data%402024.txt",
+			.expected_canonical_v4 = "/path/to/file%20name%20%26%20data%402024.txt",
 			.expected_ret = 0,
 		}
 
