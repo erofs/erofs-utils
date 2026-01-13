@@ -752,7 +752,7 @@ out:
 		return -ENOSPC;
 	}
 	inode->xattr_isize = ret;
-	return ret;
+	return 0;
 }
 
 static int erofs_count_all_xattrs_from_path(struct erofs_sb_info *sbi,

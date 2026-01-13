@@ -1463,7 +1463,7 @@ static int erofs_mkfs_handle_nondirectory(const struct erofs_mkfs_btctx *btctx,
 
 	ret = erofs_prepare_xattr_ibody(inode,
 					btctx->incremental && IS_ROOT(inode));
-	if (ret < 0)
+	if (ret)
 		return ret;
 
 	if (S_ISLNK(inode->i_mode)) {
@@ -1502,7 +1502,7 @@ static int erofs_mkfs_create_directory(const struct erofs_mkfs_btctx *ctx,
 	int ret;
 
 	ret = erofs_prepare_xattr_ibody(inode, ctx->incremental && IS_ROOT(inode));
-	if (ret < 0)
+	if (ret)
 		return ret;
 
 	if (inode->datalayout == EROFS_INODE_DATALAYOUT_MAX) {
