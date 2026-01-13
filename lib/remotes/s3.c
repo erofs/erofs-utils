@@ -980,6 +980,7 @@ static int s3erofs_remote_getobject(struct erofs_importer *im,
 	struct s3erofs_curl_request req = {};
 	struct s3erofs_curl_getobject_resp resp;
 	struct erofs_vfile vf;
+	u64 diskbuf_off;
 	int ret;
 
 	ret = s3erofs_prepare_url(&req, s3->endpoint, bucket, key, NULL,
@@ -1003,8 +1004,6 @@ static int s3erofs_remote_getobject(struct erofs_importer *im,
 		resp.pos = erofs_pos(inode->sbi, inode->u.i_blkaddr);
 		inode->datasource = EROFS_INODE_DATA_SOURCE_NONE;
 	} else {
-		u64 off;
-
 		if (!inode->i_diskbuf) {
 			inode->i_diskbuf = calloc(1, sizeof(*inode->i_diskbuf));
 			if (!inode->i_diskbuf)
@@ -1014,10 +1013,10 @@ static int s3erofs_remote_getobject(struct erofs_importer *im,
 		}
 
 		vf = (struct erofs_vfile) {.fd =
-			erofs_diskbuf_reserve(inode->i_diskbuf, 0, &off)};
+			erofs_diskbuf_reserve(inode->i_diskbuf, 0, &diskbuf_off)};
 		if (vf.fd < 0)
 			return -EBADF;
-		resp.pos = off;
+		resp.pos = diskbuf_off;
 		resp.vf = &vf;
 		inode->datasource = EROFS_INODE_DATA_SOURCE_DISKBUF;
 	}
@@ -1025,7 +1024,7 @@ static int s3erofs_remote_getobject(struct erofs_importer *im,
 
 	ret = s3erofs_request_perform(s3, &req, &resp);
 	if (resp.vf == &vf) {
-		erofs_diskbuf_commit(inode->i_diskbuf, resp.end - resp.pos);
+		erofs_diskbuf_commit(inode->i_diskbuf, resp.pos - diskbuf_off);
 		if (ret) {
 			erofs_diskbuf_close(inode->i_diskbuf);
 			inode->i_diskbuf = NULL;
