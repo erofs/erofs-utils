@@ -213,7 +213,8 @@ bool erofs_xattr_prefix_matches(const char *key, unsigned int *index,
 
 	*index = 0;
 	*len = 0;
-	for (p = xattr_types; p < xattr_types + ARRAY_SIZE(xattr_types); ++p) {
+	for (p = xattr_types + 1;
+	     p < xattr_types + ARRAY_SIZE(xattr_types); ++p) {
 		if (p->prefix && !strncmp(p->prefix, key, p->prefix_len)) {
 			*len = p->prefix_len;
 			*index = p - xattr_types;
@@ -506,10 +507,9 @@ int erofs_setxattr(struct erofs_inode *inode, int index,
 {
 	struct erofs_sb_info *sbi = inode->sbi;
 	struct erofs_xattritem *item;
-	struct erofs_xattr_prefix *prefix = NULL;
+	const struct erofs_xattr_prefix *prefix = NULL;
 	struct ea_type_node *tnode;
 	unsigned int len[2];
-	int prefix_len;
 	char *kvbuf;
 
 	if (index & EROFS_XATTR_LONG_PREFIX) {
@@ -526,16 +526,16 @@ int erofs_setxattr(struct erofs_inode *inode, int index,
 	if (!prefix)
 		return -EINVAL;
 
-	prefix_len = prefix->prefix_len;
-	len[0] = prefix_len + strlen(name);
+	len[0] = prefix->prefix_len + strlen(name);
 	len[1] = size;
 
 	kvbuf = malloc(EROFS_XATTR_KVSIZE(len));
 	if (!kvbuf)
 		return -ENOMEM;
 
-	memcpy(kvbuf, prefix->prefix, prefix_len);
-	memcpy(kvbuf + prefix_len, name, EROFS_XATTR_KSIZE(len) - prefix_len);
+	memcpy(kvbuf, prefix->prefix, prefix->prefix_len);
+	memcpy(kvbuf + prefix->prefix_len, name,
+	       EROFS_XATTR_KSIZE(len) - prefix->prefix_len);
 	memcpy(kvbuf + EROFS_XATTR_KSIZE(len), value, size);
 
 	item = get_xattritem(sbi, kvbuf, len);
