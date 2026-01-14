@@ -499,6 +499,16 @@ int tarerofs_write_chunkes(struct erofs_inode *inode, erofs_off_t data_offset)
 		blkaddr += erofs_blknr(sbi, len);
 		data_offset += len;
 	}
+
+	/*
+	 * XXX: it's safe for now, but we really need to refactor blobchunk
+	 * after 1.9 is out.
+	 */
+	if (blkaddr > UINT32_MAX) {
+		inode->u.chunkformat |= EROFS_CHUNK_FORMAT_48BIT;
+		erofs_info("48-bit block addressin enabled for indexing larger tar");
+		erofs_sb_set_48bit(sbi);
+	}
 	inode->datalayout = EROFS_INODE_CHUNK_BASED;
 	return 0;
 }
