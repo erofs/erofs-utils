@@ -1888,7 +1888,7 @@ int main(int argc, char **argv)
 			goto exit;
 		}
 	} else {
-		root = erofs_rebuild_make_root(&g_sbi);
+		root = erofs_make_empty_root_inode(&importer, &g_sbi);
 		if (IS_ERR(root)) {
 			err = PTR_ERR(root);
 			goto exit;

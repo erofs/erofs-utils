@@ -2335,8 +2335,10 @@ int erofs_fixup_root_inode(struct erofs_inode *root)
 	return err;
 }
 
-struct erofs_inode *erofs_rebuild_make_root(struct erofs_sb_info *sbi)
+struct erofs_inode *erofs_make_empty_root_inode(struct erofs_importer *im,
+						struct erofs_sb_info *sbi)
 {
+	struct erofs_importer_params *params = im ? im->params : NULL;
 	struct erofs_inode *root;
 
 	root = erofs_new_inode(sbi);
@@ -2344,6 +2346,10 @@ struct erofs_inode *erofs_rebuild_make_root(struct erofs_sb_info *sbi)
 		return root;
 	root->i_srcpath = strdup("/");
 	root->i_mode = S_IFDIR | 0777;
+	root->i_uid = (!params || params->fixed_uid == -1) ? getuid() :
+							     params->fixed_uid;
+	root->i_gid = (!params || params->fixed_gid == -1) ? getgid() :
+							     params->fixed_gid;
 	root->i_parent = root;
 	root->i_mtime = root->sbi->epoch + root->sbi->build_time;
 	root->i_mtime_nsec = root->sbi->fixed_nsec;
