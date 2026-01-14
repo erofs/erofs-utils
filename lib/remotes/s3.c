@@ -315,11 +315,10 @@ enum s3erofs_date_format {
 	S3EROFS_DATE_YYYYMMDD
 };
 
-static void s3erofs_now(char *buf, size_t maxlen, enum s3erofs_date_format fmt)
+static void s3erofs_format_time(time_t t, char *buf, size_t maxlen, enum s3erofs_date_format fmt)
 {
 	const char *format;
-	time_t now = time(NULL);
-	struct tm *ptm = gmtime(&now);
+	struct tm *ptm = gmtime(&t);
 
 	switch (fmt) {
 	case S3EROFS_DATE_RFC1123:
@@ -402,10 +401,9 @@ free_string:
 
 // See: https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 static char *s3erofs_sigv4_header(const struct curl_slist *headers,
-				  const char *canonical_uri,
-				  const char *canonical_query,
-				  const char *region, const char *ak,
-				  const char *sk)
+				  time_t request_time, const char *canonical_uri,
+				  const char *canonical_query, const char *region,
+				  const char *ak, const char *sk)
 {
 	u8 ping_buf[EVP_MAX_MD_SIZE], pong_buf[EVP_MAX_MD_SIZE];
 	char hex_buf[EVP_MAX_MD_SIZE * 2 + 1];
@@ -423,10 +421,12 @@ static char *s3erofs_sigv4_header(const struct curl_slist *headers,
 		canonical_query = "";
 
 	canonical_headers = get_canonical_headers(headers);
+	if (!canonical_headers)
+		return ERR_PTR(-ENOMEM);
 
 	// Get current time in required formats
-	s3erofs_now(date_str, sizeof(date_str), S3EROFS_DATE_YYYYMMDD);
-	s3erofs_now(timestamp, sizeof(timestamp), S3EROFS_DATE_ISO8601);
+	s3erofs_format_time(request_time, date_str, sizeof(date_str), S3EROFS_DATE_YYYYMMDD);
+	s3erofs_format_time(request_time, timestamp, sizeof(timestamp), S3EROFS_DATE_ISO8601);
 
 	// Task 1: Create canonical request
 	if (asprintf(&canonical_request,
@@ -530,9 +530,8 @@ static int s3erofs_request_insert_auth_v2(struct curl_slist **request_headers,
 	char date[64], *sigv2;
 
 	memcpy(date, date_prefix, sizeof(date_prefix) - 1);
-	s3erofs_now(date + sizeof(date_prefix) - 1,
-		    sizeof(date) - sizeof(date_prefix) + 1,
-		    S3EROFS_DATE_RFC1123);
+	s3erofs_format_time(time(NULL), date + sizeof(date_prefix) - 1,
+			    sizeof(date) - sizeof(date_prefix) + 1, S3EROFS_DATE_RFC1123);
 
 	sigv2 = s3erofs_sigv2_header(*request_headers, NULL, NULL,
 				     date + sizeof(date_prefix) - 1, req->canonical_uri,
@@ -553,6 +552,7 @@ static int s3erofs_request_insert_auth_v4(struct curl_slist **request_headers,
 {
 	char timestamp[32], *sigv4, *tmp;
 	const char *host, *host_end;
+	time_t request_time = time(NULL);
 
 	/* Add following headers for SigV4 in alphabetical order: */
 	/* 1. host */
@@ -570,15 +570,15 @@ static int s3erofs_request_insert_auth_v4(struct curl_slist **request_headers,
 		*request_headers, "x-amz-content-sha256:UNSIGNED-PAYLOAD");
 
 	/* 3. x-amz-date */
-	s3erofs_now(timestamp, sizeof(timestamp), S3EROFS_DATE_ISO8601);
+	s3erofs_format_time(request_time, timestamp, sizeof(timestamp), S3EROFS_DATE_ISO8601);
 	if (asprintf(&tmp, "x-amz-date:%s", timestamp) < 0)
 		return -ENOMEM;
 	*request_headers = curl_slist_append(*request_headers, tmp);
 	free(tmp);
 
-	sigv4 = s3erofs_sigv4_header(*request_headers, req->canonical_uri,
-				     req->canonical_query, s3->region, s3->access_key,
-				     s3->secret_key);
+	sigv4 = s3erofs_sigv4_header(*request_headers, request_time,
+				     req->canonical_uri, req->canonical_query,
+				     s3->region, s3->access_key, s3->secret_key);
 	if (IS_ERR(sigv4))
 		return PTR_ERR(sigv4);
 	*request_headers = curl_slist_append(*request_headers, sigv4);
