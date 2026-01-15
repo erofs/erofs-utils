@@ -694,10 +694,20 @@ static char *ocierofs_get_manifest_digest(struct ocierofs_ctx *ctx,
 		    json_object_object_get_ex(manifest, "digest", &digest_obj)) {
 			const char *arch = json_object_get_string(arch_obj);
 			const char *os = json_object_get_string(os_obj);
+			json_object *variant_obj;
+			const char *variant = NULL;
 			char manifest_platform[64];
 
-			snprintf(manifest_platform, sizeof(manifest_platform),
-				 "%s/%s", os, arch);
+			if (json_object_object_get_ex(platform_obj, "variant", &variant_obj))
+				variant = json_object_get_string(variant_obj);
+
+			if (variant)
+				snprintf(manifest_platform, sizeof(manifest_platform),
+					 "%s/%s/%s", os, arch, variant);
+			else
+				snprintf(manifest_platform, sizeof(manifest_platform),
+					 "%s/%s", os, arch);
+
 			if (!strcmp(manifest_platform, platform)) {
 				digest = strdup(json_object_get_string(digest_obj));
 				break;
@@ -1089,13 +1099,63 @@ static int ocierofs_parse_ref(struct ocierofs_ctx *ctx, const char *ref_str)
 	return 0;
 }
 
+static char *ocierofs_get_platform_spec(void)
+{
+	const char *os = NULL, *arch = NULL, *variant = NULL;
+	char *platform;
+
+#if defined(__linux__)
+	os = "linux";
+#elif defined(__APPLE__)
+	os = "darwin";
+#elif defined(_WIN32)
+	os = "windows";
+#elif defined(__FreeBSD__)
+	os = "freebsd";
+#endif
+
+#if defined(__x86_64__) || defined(__amd64__)
+	arch = "amd64";
+#elif defined(__aarch64__) || defined(__arm64__)
+	arch = "arm64";
+	variant = "v8";
+#elif defined(__i386__)
+	arch = "386";
+#elif defined(__arm__)
+	arch = "arm";
+	variant = "v7";
+#elif defined(__riscv) && (__riscv_xlen == 64)
+	arch = "riscv64";
+#elif defined(__ppc64__)
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+	arch = "ppc64le";
+#else
+	arch = "ppc64";
+#endif
+#elif defined(__s390x__)
+	arch = "s390x";
+#endif
+
+	if (!os || !arch)
+		return NULL;
+
+	if (variant) {
+		if (asprintf(&platform, "%s/%s/%s", os, arch, variant) < 0)
+			return NULL;
+	} else {
+		if (asprintf(&platform, "%s/%s", os, arch) < 0)
+			return NULL;
+	}
+	return platform;
+}
+
 /**
  * ocierofs_init - Initialize OCI context
  * @ctx: OCI context structure to initialize
  * @config: OCI configuration
  *
  * Initialize OCI context structure, set up CURL handle, and configure
- * default parameters including platform (linux/amd64), registry
+ * default parameters including platform (host platform), registry
  * (registry-1.docker.io), and tag (latest).
  *
  * Return: 0 on success, negative errno on failure
@@ -1120,7 +1180,7 @@ static int ocierofs_init(struct ocierofs_ctx *ctx, const struct ocierofs_config 
 	if (config->platform)
 		ctx->platform = strdup(config->platform);
 	else
-		ctx->platform = strdup("linux/amd64");
+		ctx->platform = ocierofs_get_platform_spec();
 	if (!ctx->registry || !ctx->tag || !ctx->platform)
 		return -ENOMEM;
 
