@@ -101,7 +101,7 @@ static struct option long_options[] = {
 	{"oci", optional_argument, NULL, 534},
 #endif
 	{"zD", optional_argument, NULL, 536},
-	{"ZI", optional_argument, NULL, 537},
+	{"MZ", optional_argument, NULL, 537},
 	{0, 0, 0, 0},
 };
 
@@ -177,7 +177,7 @@ static void usage(int argc, char **argv)
 		"    --mkfs-time        the timestamp is applied as build time only\n"
 		" -UX                   use a given filesystem UUID\n"
 		" --zD[=<0|1>]          specify directory compression: 0=disable [default], 1=enable\n"
-		" --ZI[=<0|1>]          specify the separate inode metadata zone availability: 0=disable [default], 1=enable\n"
+		" --MZ[=<0|[id]>]       put inode metadata ('i') and/or directory data ('d') into the separate metadata zone.\n"
 		" --all-root            make all files owned by root\n"
 #ifdef EROFS_MT_ENABLED
 		" --async-queue-limit=# specify the maximum number of entries in the multi-threaded job queue\n"
@@ -1419,10 +1419,28 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			}
 			break;
 		case 537:
-			if (!optarg || strcmp(optarg, "1"))
+			if (!optarg) {
 				mkfscfg.inode_metazone = true;
-			else
+				params->dirdata_in_metazone = true;
+			} else if (!strcmp(optarg, "0")) {
 				mkfscfg.inode_metazone = false;
+				params->dirdata_in_metazone = false;
+			} else {
+				for (i = 0; optarg[i]; ++i) {
+					if (optarg[i] == 'i') {
+						mkfscfg.inode_metazone = true;
+					} else if (optarg[i] == 'd') {
+						params->dirdata_in_metazone = true;
+					} else {
+						erofs_err("invalid metazone flags `%s`", optarg);
+						return -EINVAL;
+					}
+				}
+				if (params->dirdata_in_metazone && !mkfscfg.inode_metazone) {
+					erofs_err("inode metadata must be in the metadata zone if directory data is stored there");
+					return -EINVAL;
+				}
+			}
 			break;
 		case 'V':
 			version();

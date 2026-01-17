@@ -156,6 +156,7 @@ struct erofs_sb_info {
 	struct erofs_buffer_head *bh_devt;
 	bool useqpl;
 	bool sb_valid;
+	u32 metazone_startblk;
 };
 
 /* make sure that any user of the erofs headers has atleast 64bit off_t type */
@@ -202,6 +203,8 @@ struct erofs_diskbuf;
 #define EROFS_INODE_DATA_SOURCE_LOCALPATH	1
 #define EROFS_INODE_DATA_SOURCE_DISKBUF		2
 #define EROFS_INODE_DATA_SOURCE_RESVSP		3
+
+#define EROFS_I_BLKADDR_DEV_ID_BIT		48
 
 struct erofs_inode {
 	struct list_head i_hash, i_subdirs, i_xattrs;
@@ -304,6 +307,11 @@ struct erofs_inode {
 static inline bool erofs_inode_in_metabox(struct erofs_inode *inode)
 {
 	return inode->nid >> EROFS_DIRENT_NID_METABOX_BIT;
+}
+
+static inline erofs_blk_t erofs_inode_dev_baddr(struct erofs_inode *inode)
+{
+	return inode->u.i_blkaddr & (BIT_ULL(EROFS_I_BLKADDR_DEV_ID_BIT) - 1);
 }
 
 static inline erofs_off_t erofs_iloc(struct erofs_inode *inode)

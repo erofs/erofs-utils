@@ -479,6 +479,10 @@ static int __erofs_bflush(struct erofs_bufmgr *bmgr,
 
 			/* flush and remove bh */
 			ret = bh->op->flush(bh);
+			if (__erofs_unlikely(ret == -EBUSY && !forget)) {
+				skip = true;
+				continue;
+			}
 			if (ret < 0)
 				return ret;
 		}

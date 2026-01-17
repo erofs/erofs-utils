@@ -436,9 +436,9 @@ int erofs_mkfs_format_fs(struct erofs_sb_info *sbi, unsigned int blkszbits,
 	sbi->bmgr = bmgr;
 	bmgr->dsunit = dsunit;
 	if (metazone)
-		sbi->meta_blkaddr = EROFS_META_NEW_ADDR;
+		sbi->metazone_startblk = EROFS_META_NEW_ADDR;
 	else
-		sbi->meta_blkaddr = 0;
+		sbi->metazone_startblk = 0;
 	bh = erofs_reserve_sb(bmgr);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);

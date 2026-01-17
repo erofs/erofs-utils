@@ -46,6 +46,7 @@ struct erofs_importer_params {
 	bool no_datainline;
 	/* Issue directory data (except inline data) separately from regular inodes */
 	bool grouped_dirdata;
+	bool dirdata_in_metazone;
 	bool hard_dereference;
 	bool ovlfs_strip;
 	bool dot_omitted;

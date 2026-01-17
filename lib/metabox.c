@@ -54,7 +54,7 @@ int erofs_metadata_init(struct erofs_sb_info *sbi)
 	struct erofs_metamgr *m2gr;
 	int ret;
 
-	if (!sbi->m2gr && sbi->meta_blkaddr == EROFS_META_NEW_ADDR) {
+	if (!sbi->m2gr && sbi->metazone_startblk == EROFS_META_NEW_ADDR) {
 		m2gr = malloc(sizeof(*m2gr));
 		if (!m2gr)
 			return -ENOMEM;
@@ -62,6 +62,8 @@ int erofs_metadata_init(struct erofs_sb_info *sbi)
 		if (ret)
 			goto err_free;
 		sbi->m2gr = m2gr;
+		/* FIXME: sbi->meta_blkaddr should be 0 for 48-bit layouts */
+		sbi->meta_blkaddr = EROFS_META_NEW_ADDR;
 	}
 
 	if (!sbi->mxgr && erofs_sb_has_metabox(sbi)) {
@@ -124,20 +126,24 @@ int erofs_metazone_flush(struct erofs_sb_info *sbi)
 
 	if (!m2gr)
 		return 0;
-	m2bgr = m2gr->bmgr;
+	bh = erofs_balloc(sbi->bmgr, DATA, 0, 0);
+	if (!bh)
+		return PTR_ERR(bh);
+	erofs_mapbh(NULL, bh->block);
+	pos_out = erofs_btell(bh, false);
+	meta_blkaddr = pos_out >> sbi->blkszbits;
+	sbi->metazone_startblk = meta_blkaddr;
 
+	m2bgr = m2gr->bmgr;
 	ret = erofs_bflush(m2bgr, NULL);
 	if (ret)
 		return ret;
 
 	length = erofs_mapbh(m2bgr, NULL) << sbi->blkszbits;
-	bh = erofs_balloc(sbi->bmgr, DATA, length, 0);
-	if (!bh)
-		return PTR_ERR(bh);
+	ret = erofs_bh_balloon(bh, length);
+	if (ret < 0)
+		return ret;
 
-	erofs_mapbh(NULL, bh->block);
-	pos_out = erofs_btell(bh, false);
-	meta_blkaddr = pos_out >> sbi->blkszbits;
 	do {
 		count = min_t(erofs_off_t, length, INT_MAX);
 		ret = erofs_io_xcopy(sbi->bmgr->vf, pos_out,

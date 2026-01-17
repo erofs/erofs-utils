@@ -38,7 +38,8 @@ erofs_nid_t erofs_lookupnid(struct erofs_inode *inode);
 int erofs_iflush(struct erofs_inode *inode);
 struct erofs_dentry *erofs_d_alloc(struct erofs_inode *parent,
 				   const char *name);
-int erofs_allocate_inode_bh_data(struct erofs_inode *inode, erofs_blk_t nblocks);
+int erofs_allocate_inode_bh_data(struct erofs_inode *inode, erofs_blk_t nblocks,
+				 bool in_metazone);
 bool erofs_dentry_is_wht(struct erofs_sb_info *sbi, struct erofs_dentry *d);
 int __erofs_fill_inode(struct erofs_importer *im, struct erofs_inode *inode,
 		       struct stat *st, const char *path);

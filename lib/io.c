@@ -571,10 +571,13 @@ ssize_t erofs_io_write(struct erofs_vfile *vf, void *buf, size_t len)
 
 off_t erofs_io_lseek(struct erofs_vfile *vf, u64 offset, int whence)
 {
+	off_t ret;
+
 	if (vf->ops)
 		return vf->ops->lseek(vf, offset, whence);
 
-	return lseek(vf->fd, offset, whence);
+	ret = lseek(vf->fd, offset, whence);
+	return ret < 0 ? -errno : ret;
 }
 
 ssize_t erofs_io_sendfile(struct erofs_vfile *vout, struct erofs_vfile *vin,
