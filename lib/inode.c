@@ -634,6 +634,7 @@ static int erofs_write_unencoded_data(struct erofs_inode *inode,
 				      bool noseek, bool in_metazone)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
+	struct erofs_buffer_head *bh;
 	struct erofs_bufmgr *bmgr;
 	erofs_off_t remaining, pos;
 	unsigned int len;
@@ -662,16 +663,19 @@ static int erofs_write_unencoded_data(struct erofs_inode *inode,
 	if (ret)
 		return ret;
 
-	bmgr = in_metazone ? erofs_metadata_bmgr(sbi, false) : sbi->bmgr;
-	pos = erofs_pos(sbi, erofs_inode_dev_baddr(inode));
-	while (remaining) {
-		len = min_t(u64, round_down(UINT_MAX, 1U << sbi->blkszbits),
-			    remaining);
-		ret = erofs_io_xcopy(bmgr->vf, pos, vf, len, noseek);
-		if (ret)
-			return ret;
-		pos += len;
-		remaining -= len;
+	bh = inode->bh_data;
+	if (bh) {
+		bmgr = (struct erofs_bufmgr *)bh->block->buffers.fsprivate;
+		pos = erofs_btell(bh, false);
+		do {
+			len = min_t(u64, remaining,
+				    round_down(UINT_MAX, 1U << sbi->blkszbits));
+			ret = erofs_io_xcopy(bmgr->vf, pos, vf, len, noseek);
+			if (ret)
+				return ret;
+			pos += len;
+			remaining -= len;
+		} while (remaining);
 	}
 
 	/* read the tail-end data */
@@ -1070,9 +1074,11 @@ static struct erofs_bhops erofs_write_inline_bhops = {
 	.flush = erofs_bh_flush_write_inline,
 };
 
-static int erofs_write_tail_end(struct erofs_inode *inode)
+static int erofs_write_tail_end(struct erofs_importer *im,
+				struct erofs_inode *inode)
 {
 	static const u8 zeroed[EROFS_MAX_BLOCK_SIZE];
+	const struct erofs_importer_params *params = im->params;
 	struct erofs_sb_info *sbi = inode->sbi;
 	struct erofs_buffer_head *bh, *ibh;
 
@@ -1093,20 +1099,17 @@ static int erofs_write_tail_end(struct erofs_inode *inode)
 		struct iovec iov[2];
 		erofs_off_t pos;
 		int ret;
-		bool h0;
+		bool h0, in_metazone;
 
 		if (!bh) {
-			bh = erofs_balloc(sbi->bmgr,
-					  S_ISDIR(inode->i_mode) ? DIRA: DATA,
-					  erofs_blksiz(sbi), 0);
-			if (IS_ERR(bh))
-				return PTR_ERR(bh);
-			bh->op = &erofs_skip_write_bhops;
+			in_metazone = S_ISDIR(inode->i_mode) &&
+				params->dirdata_in_metazone;
 
-			/* get blkaddr of bh */
-			ret = erofs_mapbh(NULL, bh->block);
-			inode->u.i_blkaddr = bh->block->blkaddr;
-			inode->bh_data = bh;
+			ret = erofs_allocate_inode_bh_data(inode, 1,
+							   in_metazone);
+			if (ret)
+				return ret;
+			bh = inode->bh_data;
 		} else {
 			if (inode->lazy_tailblock) {
 				/* expend a tail block (should be successful) */
@@ -1544,7 +1547,7 @@ static int erofs_mkfs_handle_nondirectory(const struct erofs_mkfs_btctx *btctx,
 	if (ret)
 		return ret;
 	erofs_prepare_inode_buffer(btctx->im, inode);
-	erofs_write_tail_end(inode);
+	erofs_write_tail_end(btctx->im, inode);
 	return 0;
 }
 
@@ -1619,7 +1622,7 @@ static int erofs_mkfs_jobfn(const struct erofs_mkfs_btctx *ctx,
 		ret = erofs_write_dir_file(ctx->im, inode);
 		if (ret)
 			return ret;
-		erofs_write_tail_end(inode);
+		erofs_write_tail_end(ctx->im, inode);
 		inode->bh->op = &erofs_write_inode_bhops;
 		erofs_iput(inode);
 		return 0;
@@ -2332,7 +2335,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_importer *im,
 		return ERR_PTR(ret);
 out:
 	erofs_prepare_inode_buffer(im, inode);
-	erofs_write_tail_end(inode);
+	erofs_write_tail_end(im, inode);
 	return inode;
 }
 
