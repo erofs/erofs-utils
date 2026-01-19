@@ -41,6 +41,7 @@ struct erofs_importer_params {
 	u32 pclusterblks_def;
 	u32 pclusterblks_packed;
 	s32 pclusterblks_metabox;
+	s64 build_time;
 	char force_inodeversion;
 	bool ignore_mtime;
 	bool no_datainline;

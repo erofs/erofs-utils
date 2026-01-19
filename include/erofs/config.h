@@ -58,7 +58,6 @@ struct erofs_configure {
 	char c_force_chunkformat;
 	u8 c_mkfs_metabox_algid;
 	u32 c_max_decompressed_extent_bytes;
-	u64 c_unix_timestamp;
 	const char *mount_point;
 	u32 c_root_xattr_isize;
 #ifdef EROFS_MT_ENABLED

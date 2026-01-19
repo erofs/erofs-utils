@@ -274,8 +274,10 @@ static struct erofsmkfs_cfg {
 	/* < 0, xattr disabled and >= INT_MAX, always use inline xattrs */
 	long inlinexattr_tolerance;
 	bool inode_metazone;
+	u64 unix_timestamp;
 } mkfscfg = {
 	.inlinexattr_tolerance = 2,
+	.unix_timestamp = -1,
 };
 
 static unsigned int pclustersize_packed, pclustersize_max;
@@ -1096,8 +1098,8 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			break;
 
 		case 'T':
-			cfg.c_unix_timestamp = strtoull(optarg, &endptr, 0);
-			if (cfg.c_unix_timestamp == -1 || *endptr != '\0') {
+			mkfscfg.unix_timestamp = strtoull(optarg, &endptr, 0);
+			if (mkfscfg.unix_timestamp == -1 || *endptr != '\0') {
 				erofs_err("invalid UNIX timestamp %s", optarg);
 				return -EINVAL;
 			}
@@ -1594,7 +1596,7 @@ int parse_source_date_epoch(void)
 			  source_date_epoch);
 		return -EINVAL;
 	}
-	cfg.c_unix_timestamp = epoch;
+	mkfscfg.unix_timestamp = epoch;
 	cfg.c_timeinherit = TIMESTAMP_CLAMPING;
 	return 0;
 }
@@ -1720,7 +1722,6 @@ int main(int argc, char **argv)
 	bool tar_index_512b = false;
 	struct timeval t;
 	FILE *blklst = NULL;
-	s64 mkfs_time = 0;
 	int err;
 	u32 crc;
 
@@ -1745,17 +1746,12 @@ int main(int argc, char **argv)
 	}
 
 	g_sbi.fixed_nsec = 0;
-	if (cfg.c_unix_timestamp != -1) {
-		mkfs_time = cfg.c_unix_timestamp;
-	} else if (!gettimeofday(&t, NULL)) {
-		mkfs_time = t.tv_sec;
-	}
-	if (erofs_sb_has_48bit(&g_sbi)) {
-		g_sbi.epoch = max_t(s64, 0, mkfs_time - UINT32_MAX);
-		g_sbi.build_time = mkfs_time - g_sbi.epoch;
-	} else {
-		g_sbi.epoch = mkfs_time;
-	}
+	if (mkfscfg.unix_timestamp != -1)
+		importer_params.build_time = mkfscfg.unix_timestamp;
+	else if (!gettimeofday(&t, NULL))
+		importer_params.build_time = t.tv_sec;
+	else
+		importer_params.build_time = 0;
 
 	err = erofs_dev_open(&g_sbi, cfg.c_img_path, O_RDWR |
 				(incremental_mode ? 0 : O_TRUNC));
