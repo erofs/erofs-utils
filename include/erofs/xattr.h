@@ -33,6 +33,8 @@ char *erofs_export_xattr_ibody(struct erofs_inode *inode);
 int erofs_load_shared_xattrs_from_path(struct erofs_sb_info *sbi, const char *path,
 				       long inlinexattr_tolerance);
 int erofs_xattr_insert_name_prefix(const char *prefix);
+int erofs_xattr_set_ishare_prefix(struct erofs_sb_info *sbi,
+				  const char *prefix);
 void erofs_xattr_cleanup_name_prefixes(void);
 int erofs_xattr_flush_name_prefixes(struct erofs_importer *im, bool plain);
 int erofs_xattr_prefixes_init(struct erofs_sb_info *sbi);

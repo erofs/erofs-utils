@@ -146,7 +146,15 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 	sbi->build_time = le32_to_cpu(dsb->build_time);
 
 	memcpy(&sbi->uuid, dsb->uuid, sizeof(dsb->uuid));
-
+	if (erofs_sb_has_ishare_xattrs(sbi)) {
+		if (dsb->ishare_xattr_prefix_id >= sbi->xattr_prefix_count) {
+			erofs_err("invalid ishare xattr prefix id %d",
+				  dsb->ishare_xattr_prefix_id);
+			return -EFSCORRUPTED;
+		}
+		sbi->ishare_xattr_prefix_id =
+			dsb->ishare_xattr_prefix_id | EROFS_XATTR_LONG_PREFIX;
+	}
 	ret = z_erofs_parse_cfgs(sbi, dsb);
 	if (ret)
 		return ret;
@@ -160,7 +168,6 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 		free(sbi->devs);
 		sbi->devs = NULL;
 	}
-
 	sbi->sb_valid = !ret;
 	return ret;
 }
@@ -206,6 +213,8 @@ int erofs_writesb(struct erofs_sb_info *sbi)
 		.extra_devices = cpu_to_le16(sbi->extra_devices),
 		.devt_slotoff = cpu_to_le16(sbi->devt_slotoff),
 		.packed_nid = cpu_to_le64(sbi->packed_nid),
+		.ishare_xattr_prefix_id = sbi->ishare_xattr_prefix_id &
+			EROFS_XATTR_LONG_PREFIX_MASK,
 	};
 	char *buf;
 	int ret;

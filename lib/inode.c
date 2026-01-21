@@ -31,6 +31,7 @@
 #include "liberofs_metabox.h"
 #include "liberofs_private.h"
 #include "liberofs_rebuild.h"
+#include "sha256.h"
 
 static inline bool erofs_is_special_identifier(const char *path)
 {
@@ -1961,6 +1962,37 @@ static int erofs_prepare_dir_inode(const struct erofs_mkfs_btctx *ctx,
 	return 0;
 }
 
+static int erofs_set_inode_fingerprint(struct erofs_inode *inode, int fd,
+				       erofs_off_t pos)
+{
+	u8 ishare_xattr_prefix_id = inode->sbi->ishare_xattr_prefix_id;
+	erofs_off_t remaining = inode->i_size;
+	struct erofs_vfile vf = { .fd = fd };
+	struct sha256_state md;
+	u8 out[32 + sizeof("sha256:") - 1];
+	int ret;
+
+	if (!ishare_xattr_prefix_id)
+		return 0;
+	erofs_sha256_init(&md);
+	do {
+		u8 buf[32768];
+
+		ret = erofs_io_pread(&vf, buf,
+				     min_t(u64, remaining, sizeof(buf)), pos);
+		if (ret < 0)
+			return ret;
+		if (ret > 0)
+			erofs_sha256_process(&md, buf, ret);
+		remaining -= ret;
+		pos += ret;
+	} while (remaining);
+	erofs_sha256_done(&md, out + sizeof("sha256:") - 1);
+	memcpy(out, "sha256:", sizeof("sha256:") - 1);
+	return erofs_setxattr(inode, ishare_xattr_prefix_id, "",
+			      out, sizeof(out));
+}
+
 static int erofs_mkfs_begin_nondirectory(const struct erofs_mkfs_btctx *btctx,
 					 struct erofs_inode *inode)
 {
@@ -1980,11 +2012,18 @@ static int erofs_mkfs_begin_nondirectory(const struct erofs_mkfs_btctx *btctx,
 			ctx.fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
 			if (ctx.fd < 0)
 				return -errno;
-			__erofs_fallthrough;
-		default:
 			break;
+		default:
+			goto out;
 		}
-		if (ctx.fd >= 0 && cfg.c_compr_opts[0].alg &&
+
+		if (S_ISREG(inode->i_mode) && inode->i_size) {
+			ret = erofs_set_inode_fingerprint(inode, ctx.fd, ctx.fpos);
+			if (ret < 0)
+				return ret;
+		}
+
+		if (cfg.c_compr_opts[0].alg &&
 		    erofs_file_is_compressible(im, inode)) {
 			ctx.ictx = erofs_prepare_compressed_file(im, inode);
 			if (IS_ERR(ctx.ictx))
@@ -1996,6 +2035,7 @@ static int erofs_mkfs_begin_nondirectory(const struct erofs_mkfs_btctx *btctx,
 				return ret;
 		}
 	}
+out:
 	return erofs_mkfs_go(btctx, EROFS_MKFS_JOB_NDIR, &ctx, sizeof(ctx));
 }
 

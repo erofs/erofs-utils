@@ -1483,8 +1483,9 @@ int erofs_xattr_insert_name_prefix(const char *prefix)
 
 	if (!erofs_xattr_prefix_matches(prefix, &tnode->base_index,
 					&tnode->base_len)) {
-		free(tnode);
-		return -ENODATA;
+		/* Use internal hidden xattrs */
+		tnode->base_index = 0;
+		tnode->base_len = 0;
 	}
 
 	tnode->type.prefix_len = strlen(prefix);
@@ -1495,9 +1496,21 @@ int erofs_xattr_insert_name_prefix(const char *prefix)
 	}
 
 	tnode->index = EROFS_XATTR_LONG_PREFIX | ea_prefix_count;
-	ea_prefix_count++;
 	init_list_head(&tnode->list);
 	list_add_tail(&tnode->list, &ea_name_prefixes);
+	return ea_prefix_count++;
+}
+
+int erofs_xattr_set_ishare_prefix(struct erofs_sb_info *sbi,
+				  const char *prefix)
+{
+	int err;
+
+	err = erofs_xattr_insert_name_prefix(prefix);
+	if (err < 0)
+		return err;
+	sbi->ishare_xattr_prefix_id = EROFS_XATTR_LONG_PREFIX | err;
+	erofs_sb_set_ishare_xattrs(sbi);
 	return 0;
 }
 

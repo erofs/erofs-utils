@@ -61,7 +61,6 @@ static struct option long_options[] = {
 	{"tar", optional_argument, NULL, 20},
 	{"aufs", no_argument, NULL, 21},
 	{"mount-point", required_argument, NULL, 512},
-	{"xattr-prefix", required_argument, NULL, 19},
 #ifdef WITH_ANDROID
 	{"product-out", required_argument, NULL, 513},
 	{"fs-config-file", required_argument, NULL, 514},
@@ -102,6 +101,8 @@ static struct option long_options[] = {
 #endif
 	{"zD", optional_argument, NULL, 536},
 	{"MZ", optional_argument, NULL, 537},
+	{"xattr-prefix", required_argument, NULL, 538},
+	{"xattr-inode-digest", required_argument, NULL, 539},
 	{0, 0, 0, 0},
 };
 
@@ -167,95 +168,96 @@ static void usage(int argc, char **argv)
 		}
 	}
 	printf(
-		" -C#                   specify the size of compress physical cluster in bytes\n"
-		" -EX[,...]             X=extended options\n"
-		" -L volume-label       set the volume label (maximum 15 bytes)\n"
-		" -m#[:X]               enable metadata compression (# = physical cluster size in bytes;\n"
-		"                                                    X = another compression algorithm for metadata)\n"
-		" -T#                   specify a fixed UNIX timestamp # as build time\n"
-		"    --all-time         the timestamp is also applied to all files (default)\n"
-		"    --mkfs-time        the timestamp is applied as build time only\n"
-		" -UX                   use a given filesystem UUID\n"
-		" --zD[=<0|1>]          specify directory compression: 0=disable [default], 1=enable\n"
-		" --MZ[=<0|[id]>]       put inode metadata ('i') and/or directory data ('d') into the separate metadata zone.\n"
-		" --all-root            make all files owned by root\n"
+		" -C#                    specify the size of compress physical cluster in bytes\n"
+		" -EX[,...]              X=extended options\n"
+		" -L volume-label        set the volume label (maximum 15 bytes)\n"
+		" -m#[:X]                enable metadata compression (# = physical cluster size in bytes;\n"
+		"                                                     X = another compression algorithm for metadata)\n"
+		" -T#                    specify a fixed UNIX timestamp # as build time\n"
+		"    --all-time          the timestamp is also applied to all files (default)\n"
+		"    --mkfs-time         the timestamp is applied as build time only\n"
+		" -UX                    use a given filesystem UUID\n"
+		" --zD[=<0|1>]           specify directory compression: 0=disable [default], 1=enable\n"
+		" --MZ[=<0|[id]>]        put inode metadata ('i') and/or directory data ('d') into the separate metadata zone.\n"
+		" --all-root             make all files owned by root\n"
 #ifdef EROFS_MT_ENABLED
-		" --async-queue-limit=# specify the maximum number of entries in the multi-threaded job queue\n"
+		" --async-queue-limit=#  specify the maximum number of entries in the multi-threaded job queue\n"
 #endif
-		" --blobdev=X           specify an extra device X to store chunked data\n"
-		" --chunksize=#         generate chunk-based files with #-byte chunks\n"
-		" --clean=X             run full clean build (default) or:\n"
-		" --incremental=X       run incremental build\n"
-		"                       X = data|rvsp|0 (data: full data, rvsp: space fallocated\n"
-		"                                        0: inodes zeroed)\n"
-		" --compress-hints=X    specify a file to configure per-file compression strategy\n"
-		" --dsunit=#            align all data block addresses to multiples of #\n"
-		" --exclude-path=X      avoid including file X (X = exact literal path)\n"
-		" --exclude-regex=X     avoid including files that match X (X = regular expression)\n"
+		" --blobdev=X            specify an extra device X to store chunked data\n"
+		" --chunksize=#          generate chunk-based files with #-byte chunks\n"
+		" --clean=X              run full clean build (default) or:\n"
+		" --incremental=X        run incremental build\n"
+		"                        X = data|rvsp|0 (data: full data, rvsp: space fallocated\n"
+		"                                         0: inodes zeroed)\n"
+		" --compress-hints=X     specify a file to configure per-file compression strategy\n"
+		" --dsunit=#             align all data block addresses to multiples of #\n"
+		" --exclude-path=X       avoid including file X (X = exact literal path)\n"
+		" --exclude-regex=X      avoid including files that match X (X = regular expression)\n"
 #ifdef HAVE_LIBSELINUX
-		" --file-contexts=X     specify a file contexts file to setup selinux labels\n"
+		" --file-contexts=X      specify a file contexts file to setup selinux labels\n"
 #endif
-		" --force-uid=#         set all file uids to # (# = UID)\n"
-		" --force-gid=#         set all file gids to # (# = GID)\n"
-		" --fsalignblks=#       specify the alignment of the primary device size in blocks\n"
-		" --uid-offset=#        add offset # to all file uids (# = id offset)\n"
-		" --gid-offset=#        add offset # to all file gids (# = id offset)\n"
-		" --hard-dereference    dereference hardlinks, add links as separate inodes\n"
-		" --ignore-mtime        use build time instead of strict per-file modification time\n"
-		" --max-extent-bytes=#  set maximum decompressed extent size # in bytes\n"
-		" --mount-point=X       X=prefix of target fs path (default: /)\n"
-		" --preserve-mtime      keep per-file modification time strictly\n"
-		" --offset=#            skip # bytes at the beginning of IMAGE.\n"
-		" --root-xattr-isize=#  ensure the inline xattr size of the root directory is # bytes at least\n"
-		" --aufs                replace aufs special files with overlayfs metadata\n"
-		" --sort=<path,none>    data sorting order for tarballs as input (default: path)\n"
+		" --force-uid=#          set all file uids to # (# = UID)\n"
+		" --force-gid=#          set all file gids to # (# = GID)\n"
+		" --fsalignblks=#        specify the alignment of the primary device size in blocks\n"
+		" --uid-offset=#         add offset # to all file uids (# = id offset)\n"
+		" --gid-offset=#         add offset # to all file gids (# = id offset)\n"
+		" --hard-dereference     dereference hardlinks, add links as separate inodes\n"
+		" --ignore-mtime         use build time instead of strict per-file modification time\n"
+		" --max-extent-bytes=#   set maximum decompressed extent size # in bytes\n"
+		" --mount-point=X        X=prefix of target fs path (default: /)\n"
+		" --preserve-mtime       keep per-file modification time strictly\n"
+		" --offset=#             skip # bytes at the beginning of IMAGE.\n"
+		" --root-xattr-isize=#   ensure the inline xattr size of the root directory is # bytes at least\n"
+		" --aufs                 replace aufs special files with overlayfs metadata\n"
+		" --sort=<path,none>     data sorting order for tarballs as input (default: path)\n"
 #ifdef S3EROFS_ENABLED
-		" --s3=X                generate an image from S3-compatible object store\n"
-		"   [,passwd_file=Y]    X=endpoint, Y=s3fs-compatible password file\n"
-		"   [,urlstyle=Z]       S3 API calling style (Z = vhost|path) (default: vhost)\n"
-		"   [,sig=<2,4>]        S3 API signature version (default: 2)\n"
-		"   [,region=W]         W=region code in which endpoint belongs to (required for sig=4)\n"
+		" --s3=X                 generate an image from S3-compatible object store\n"
+		"   [,passwd_file=Y]     X=endpoint, Y=s3fs-compatible password file\n"
+		"   [,urlstyle=Z]        S3 API calling style (Z = vhost|path) (default: vhost)\n"
+		"   [,sig=<2,4>]         S3 API signature version (default: 2)\n"
+		"   [,region=W]          W=region code in which endpoint belongs to (required for sig=4)\n"
 #endif
 #ifdef OCIEROFS_ENABLED
-		" --oci=[f|i]           generate a full (f) or index-only (i) image from OCI remote source\n"
-		"   [,platform=X]       X=platform (default: linux/amd64)\n"
-		"   [,layer=#]          #=layer index to extract (0-based; omit to extract all layers)\n"
-		"   [,blob=Y]           Y=blob digest to extract (omit to extract all layers)\n"
-		"   [,username=Z]       Z=username for authentication (optional)\n"
-		"   [,password=W]       W=password for authentication (optional)\n"
-		"   [,insecure]         use HTTP instead of HTTPS (optional)\n"
+		" --oci=[f|i]            generate a full (f) or index-only (i) image from OCI remote source\n"
+		"   [,platform=X]        X=platform (default: linux/amd64)\n"
+		"   [,layer=#]           #=layer index to extract (0-based; omit to extract all layers)\n"
+		"   [,blob=Y]            Y=blob digest to extract (omit to extract all layers)\n"
+		"   [,username=Z]        Z=username for authentication (optional)\n"
+		"   [,password=W]        W=password for authentication (optional)\n"
+		"   [,insecure]          use HTTP instead of HTTPS (optional)\n"
 #endif
-		" --tar=X               generate a full or index-only image from a tarball(-ish) source\n"
-		"                       (X = f|i|headerball; f=full mode, i=index mode,\n"
-		"                                            headerball=file data is omited in the source stream)\n"
-		" --ovlfs-strip=<0,1>   strip overlayfs metadata in the target image (e.g. whiteouts)\n"
-		" --quiet               quiet execution (do not write anything to standard output.)\n"
+		" --tar=X                generate a full or index-only image from a tarball(-ish) source\n"
+		"                        (X = f|i|headerball; f=full mode, i=index mode,\n"
+		"                                             headerball=file data is omitted in the source stream)\n"
+		" --ovlfs-strip=<0,1>    strip overlayfs metadata in the target image (e.g. whiteouts)\n"
+		" --quiet                quiet execution (do not write anything to standard output.)\n"
 #ifndef NDEBUG
-		" --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
-		" --random-algorithms   randomize per-file algorithms (debugging only)\n"
+		" --random-pclusterblks  randomize pclusterblks for big pcluster (debugging only)\n"
+		" --random-algorithms    randomize per-file algorithms (debugging only)\n"
 #endif
 #ifdef HAVE_ZLIB
-		" --ungzip[=X]          try to filter the tarball stream through gzip\n"
-		"                       (and optionally dump the raw stream to X together)\n"
+		" --ungzip[=X]           try to filter the tarball stream through gzip\n"
+		"                        (and optionally dump the raw stream to X together)\n"
 #endif
 #ifdef HAVE_LIBLZMA
-		" --unxz[=X]            try to filter the tarball stream through xz/lzma/lzip\n"
-		"                       (and optionally dump the raw stream to X together)\n"
+		" --unxz[=X]             try to filter the tarball stream through xz/lzma/lzip\n"
+		"                        (and optionally dump the raw stream to X together)\n"
 #endif
 #ifdef HAVE_ZLIB
-		" --gzinfo[=X]          generate AWS SOCI-compatible zinfo in order to support random gzip access\n"
+		" --gzinfo[=X]           generate AWS SOCI-compatible zinfo in order to support random gzip access\n"
 #endif
-		" --vmdk-desc=X         generate a VMDK descriptor file to merge sub-filesystems\n"
+		" --vmdk-desc=X          generate a VMDK descriptor file to merge sub-filesystems\n"
 #ifdef EROFS_MT_ENABLED
-		" --workers=#           set the number of worker threads to # (default: %u)\n"
+		" --workers=#            set the number of worker threads to # (default: %u)\n"
 #endif
-		" --xattr-prefix=X      X=extra xattr name prefix\n"
-		" --zfeature-bits=#     toggle filesystem compression features according to given bits #\n"
+		" --xattr-inode-digest=X specify extended attribute name X to record inode digests\n"
+		" --xattr-prefix=X       X=extra xattr name prefix\n"
+		" --zfeature-bits=#      toggle filesystem compression features according to given bits #\n"
 #ifdef WITH_ANDROID
 		"\n"
 		"Android-specific options:\n"
-		" --product-out=X       X=product_out directory\n"
-		" --fs-config-file=X    X=fs_config file\n"
+		" --product-out=X        X=product_out directory\n"
+		" --fs-config-file=X     X=fs_config file\n"
 #endif
 #ifdef EROFS_MT_ENABLED
 		, erofs_get_available_processors() /* --workers= */
@@ -1261,16 +1263,6 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 				return -EINVAL;
 			}
 			break;
-		case 19:
-			errno = 0;
-			opt = erofs_xattr_insert_name_prefix(optarg);
-			if (opt) {
-				erofs_err("failed to parse xattr name prefix: %s",
-					  erofs_strerror(opt));
-				return opt;
-			}
-			cfg.c_extra_ea_name_prefixes = true;
-			break;
 		case 20:
 			mkfs_parse_tar_cfg(optarg);
 			break;
@@ -1442,6 +1434,24 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 					erofs_err("inode metadata must be in the metadata zone if directory data is stored there");
 					return -EINVAL;
 				}
+			}
+			break;
+		case 538:
+			errno = 0;
+			opt = erofs_xattr_insert_name_prefix(optarg);
+			if (opt < 0) {
+				erofs_err("failed to parse xattr name prefix: %s",
+					  erofs_strerror(opt));
+				return opt;
+			}
+			cfg.c_extra_ea_name_prefixes = true;
+			break;
+		case 539:
+			err = erofs_xattr_set_ishare_prefix(&g_sbi, optarg);
+			if (err < 0) {
+				erofs_err("failed to parse ishare name: %s",
+					  erofs_strerror(err));
+				return err;
 			}
 			break;
 		case 'V':
@@ -1892,9 +1902,13 @@ int main(int argc, char **argv)
 			goto exit;
 		}
 
-		if (cfg.c_extra_ea_name_prefixes)
-			erofs_xattr_flush_name_prefixes(&importer,
-							mkfs_plain_xattr_pfx);
+		err = erofs_xattr_flush_name_prefixes(&importer,
+						      mkfs_plain_xattr_pfx);
+		if (err) {
+			erofs_err("failed to flush long xattr prefixes: %s",
+				  erofs_strerror(err));
+			goto exit;
+		}
 
 		root = erofs_new_inode(&g_sbi);
 		if (IS_ERR(root)) {
@@ -1902,6 +1916,14 @@ int main(int argc, char **argv)
 			goto exit;
 		}
 	} else {
+		err = erofs_xattr_flush_name_prefixes(&importer,
+						      mkfs_plain_xattr_pfx);
+		if (err) {
+			erofs_err("failed to flush long xattr prefixes: %s",
+				  erofs_strerror(err));
+			goto exit;
+		}
+
 		root = erofs_make_empty_root_inode(&importer, &g_sbi);
 		if (IS_ERR(root)) {
 			err = PTR_ERR(root);
