@@ -1338,8 +1338,11 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 
 	if (inode->fragment_size) {
 		ret = erofs_fragment_commit(inode, ictx->tofh);
-		if (ret)
+		if (ret) {
+			erofs_err("failed to commit fragment for %s: %s",
+				  inode->i_srcpath, erofs_strerror(ret));
 			goto err_free_idata;
+		}
 		inode->z_advise |= Z_EROFS_ADVISE_FRAGMENT_PCLUSTER;
 		erofs_sb_set_fragments(sbi);
 	}
@@ -1822,8 +1825,13 @@ void *erofs_prepare_compressed_file(struct erofs_importer *im,
 	if (!z_erofs_mt_enabled || all_fragments) {
 #ifdef EROFS_MT_ENABLED
 		pthread_mutex_lock(&g_ictx.mutex);
-		if (g_ictx.seg_num)
+		while (g_ictx.seg_num) {
+			if (g_ictx.seg_num == INT_MAX) {
+				pthread_mutex_unlock(&g_ictx.mutex);
+				return ERR_PTR(-ECHILD);
+			}
 			pthread_cond_wait(&g_ictx.cond, &g_ictx.mutex);
+		}
 		g_ictx.seg_num = 1;
 		pthread_mutex_unlock(&g_ictx.mutex);
 #endif
@@ -1974,7 +1982,7 @@ err_free_idata:
 out:
 #ifdef EROFS_MT_ENABLED
 	pthread_mutex_lock(&ictx->mutex);
-	ictx->seg_num = 0;
+	ictx->seg_num = ret < 0 ? INT_MAX : 0;
 	pthread_cond_signal(&ictx->cond);
 	pthread_mutex_unlock(&ictx->mutex);
 #endif

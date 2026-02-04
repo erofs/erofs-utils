@@ -785,6 +785,7 @@ int erofs_iflush(struct erofs_inode *inode)
 	bool nlink_1 = true;
 	int ret, fmt;
 
+	DBG_BUGON(inode->nid == EROFS_NID_UNALLOCATED);
 	DBG_BUGON(bh && erofs_btell(bh, false) != off);
 	if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode) ||
 	    S_ISFIFO(inode->i_mode) || S_ISSOCK(inode->i_mode)) {
