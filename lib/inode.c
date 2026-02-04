@@ -896,20 +896,23 @@ int erofs_iflush(struct erofs_inode *inode)
 		if (ret != inode->extent_isize)
 			return ret < 0 ? ret : -EIO;
 	}
-	if (bh) {
-		inode->bh = NULL;
-		erofs_iput(inode);
-		return erofs_bh_flush_generic_end(bh);
-	}
 	return 0;
 }
 
-static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
+static int erofs_bh_flush_write_inode(struct erofs_buffer_head *bh, bool abort)
 {
 	struct erofs_inode *inode = bh->fsprivate;
+	int ret;
 
 	DBG_BUGON(inode->bh != bh);
-	return erofs_iflush(inode);
+	if (!abort) {
+		ret = erofs_iflush(inode);
+		if (ret)
+			return ret;
+	}
+	inode->bh = NULL;
+	erofs_iput(inode);
+	return erofs_bh_flush_generic_end(bh);
 }
 
 static struct erofs_bhops erofs_write_inode_bhops = {
@@ -1049,7 +1052,7 @@ noinline:
 	return 0;
 }
 
-static int erofs_bh_flush_write_inline(struct erofs_buffer_head *bh)
+static int erofs_bh_flush_write_inline(struct erofs_buffer_head *bh, bool abort)
 {
 	struct erofs_inode *const inode = bh->fsprivate;
 	struct erofs_sb_info *sbi = inode->sbi;
@@ -1058,11 +1061,14 @@ static int erofs_bh_flush_write_inline(struct erofs_buffer_head *bh)
 	const erofs_off_t off = erofs_btell(bh, false);
 	int ret;
 
-	ret = erofs_io_pwrite(ibmgr->vf, inode->idata, off, inode->idata_size);
-	if (ret < 0)
-		return ret;
-	if (ret != inode->idata_size)
-		return -EIO;
+	if (!abort) {
+		ret = erofs_io_pwrite(ibmgr->vf, inode->idata, off,
+				      inode->idata_size);
+		if (ret < 0)
+			return ret;
+		if (ret != inode->idata_size)
+			return -EIO;
+	}
 	free(inode->idata);
 	inode->idata = NULL;
 

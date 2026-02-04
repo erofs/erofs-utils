@@ -30,7 +30,7 @@ struct erofs_buffer_block;
 #define DEVT		5
 
 struct erofs_bhops {
-	int (*flush)(struct erofs_buffer_head *bh);
+	int (*flush)(struct erofs_buffer_head *bh, bool abort);
 };
 
 struct erofs_buffer_head {
