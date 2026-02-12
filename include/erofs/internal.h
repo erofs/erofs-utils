@@ -25,6 +25,8 @@ typedef unsigned short umode_t;
 #ifdef HAVE_PTHREAD_H
 #include <pthread.h>
 #endif
+#include <stdlib.h>
+#include <string.h>
 #include "atomic.h"
 #include "io.h"
 
@@ -540,6 +542,14 @@ static inline int erofs_blk_read(struct erofs_sb_info *sbi, int device_id,
 {
 	return erofs_dev_read(sbi, device_id, buf, erofs_pos(sbi, start),
 			      erofs_pos(sbi, nblocks));
+}
+
+static inline void erofs_free_sensitive(void *ptr, size_t len)
+{
+	if (!ptr)
+		return;
+	memset(ptr, 0, len);
+	free(ptr);
 }
 
 /* vmdk.c */

@@ -26,13 +26,11 @@
 #include "erofs/tar.h"
 #include "liberofs_base64.h"
 #include "liberofs_oci.h"
+#include "liberofs_dockerconfig.h"
 #include "liberofs_private.h"
 #include "liberofs_gzran.h"
 
 #ifdef OCIEROFS_ENABLED
-
-#define DOCKER_REGISTRY "docker.io"
-#define DOCKER_API_REGISTRY "registry-1.docker.io"
 
 #define DOCKER_MEDIATYPE_MANIFEST_V2 \
 	"application/vnd.docker.distribution.manifest.v2+json"
@@ -964,9 +962,21 @@ static int ocierofs_find_layer_by_digest(struct ocierofs_ctx *ctx, const char *d
 static int ocierofs_prepare_layers(struct ocierofs_ctx *ctx,
 				   const struct ocierofs_config *config)
 {
+	struct erofs_docker_credential dcred = { NULL, NULL };
+	const char *username = config->username;
+	const char *password = config->password;
 	int ret;
 
-	ret = ocierofs_prepare_auth(ctx, config->username, config->password);
+	/* Fallback to Docker config.json if no CLI credentials provided */
+	if ((!username || !*username) && (!password || !*password)) {
+		if (!erofs_docker_config_lookup(ctx->registry, &dcred)) {
+			username = dcred.username;
+			password = dcred.password;
+		}
+	}
+
+	ret = ocierofs_prepare_auth(ctx, username, password);
+	erofs_docker_credential_free(&dcred);
 	if (ret)
 		return ret;
 

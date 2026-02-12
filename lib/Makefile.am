@@ -89,7 +89,7 @@ liberofs_la_CFLAGS += ${libnl3_CFLAGS}
 liberofs_la_LDFLAGS += ${libnl3_LIBS}
 liberofs_la_SOURCES += backends/nbd.c
 endif
-liberofs_la_SOURCES += remotes/oci.c
+liberofs_la_SOURCES += remotes/oci.c remotes/docker_config.c
 liberofs_la_CFLAGS += ${json_c_CFLAGS}
 liberofs_la_LDFLAGS += ${json_c_LIBS}
 liberofs_la_SOURCES += gzran.c
