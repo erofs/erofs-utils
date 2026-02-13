@@ -400,8 +400,11 @@ int erofs_write_device_table(struct erofs_sb_info *sbi)
 
 	if (!sbi->extra_devices)
 		goto out;
-	if (!bh)
+	if (!bh) {
+		if (erofs_sb_has_device_table(sbi))
+			return 0;
 		return -EINVAL;
+	}
 
 	pos = erofs_btell(bh, false);
 	if (pos == EROFS_NULL_ADDR) {
