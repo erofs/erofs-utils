@@ -17,8 +17,42 @@ achieve high performance for embedded devices with limited memory since it has
 unnoticable memory overhead and page cache thrashing.
 .PP
 mkfs.erofs is used to create such EROFS filesystem \fIDESTINATION\fR image file
-from \fISOURCE\fR directory or tarball.
+from various \fISOURCE\fR, where \fISOURCE\fR can be:
+.RS
+.IP \(bu 2
+a local directory
+.IP \(bu 2
+a (compressed) tarball
+.IP \(bu 2
+an S3 bucket or a prefix within it
+.IP \(bu 2
+an OCI image reference
+.IP \(bu 2
+other EROFS image(s), see \fIREBUILD MODE\fR below
+.RE
 .SH OPTIONS
+.TP
+.BI "\-b " block-size
+Set the fundamental block size of the filesystem in bytes.  In other words,
+specify the smallest amount of data that can be accessed at a time.  The
+default is the system page size.  It cannot be less than 512 bytes.
+.TP
+.BI "\-C " max-pcluster-size
+Specify the maximum size of compress physical cluster in bytes.
+This may cause the big pcluster feature to be enabled (Linux 5.13+).
+.TP
+.BI "\-m " "#\fR[:\fIcompression-algorithm\fR]"
+Enable metadata compression with #-byte clusters in a metabox inode (Linux
+6.17+); optionally specify a compression algorithm (defaults to data
+compression algorithm if omitted).
+.TP
+.BI "\-\-MZ\fR[\fP=<0|[id]>\fR]\fP"
+Put inode metadata ('i') and/or directory data ('d') into the separate metadata
+zone.  This improves spatial locality of metadata layout within the image, which
+is beneficial for metadata access if the storage has long I/O latencies.
+.TP
+.BI "\-x " #
+Limit how many xattrs will be inlined. The default is 2.
 .TP
 .BI "\-z " compression-algorithm \fR[\fP, # \fR][\fP: ... \fR]\fP
 Set a primary algorithm for data compression, which can be set with an
@@ -28,21 +62,13 @@ and separated by colons.  See the output of
 for a listing of the algorithms that \fBmkfs.erofs\fR is compiled with
 and what their respective level ranges are.
 .TP
-.BI "\-b " block-size
-Set the fundamental block size of the filesystem in bytes.  In other words,
-specify the smallest amount of data that can be accessed at a time.  The
-default is the system page size.  It cannot be less than 512 bytes.
-.TP
-.BI "\-C " max-pcluster-size
-Specify the maximum size of compress physical cluster in bytes.
-This may cause the big pcluster feature to be enabled (Linux v5.13+).
+.BI "\-\-zD\fR[\fP=<0|1>\fR]\fP"
+Used to enable directory compression: 0=disable, 1=enable. If the optional
+argument is omitted, directory compression is enabled by default.
 .TP
 .BI "\-d " #
 Specify the level of debugging messages. The default is 2, which shows basic
 warning messages.
-.TP
-.BI "\-x " #
-Limit how many xattrs will be inlined. The default is 2.
 Disables storing xattrs if < 0.
 .TP
 .BI "\-E " [^]extended-option \fR[\fP, ... \fR]\fP
@@ -52,16 +78,24 @@ feature, usually prefix the extended option name with a caret ('^') character.
 The following extended options are supported:
 .RS 1.2i
 .TP
+.BI 48bit
+Enable 48-bit block addressing and encoded extents to support larger filesystem
+images and byte-oriented data compression mainly for Zstandard. (Linux 6.15+)
+.TP
 .BI all-fragments
 Forcely record the whole files into a special inode for better compression and
 it may take an argument as the pcluster size of the packed inode in bytes.
-(Linux v6.1+)
+(Linux 6.1+)
 .TP
 .BI dedupe
 Enable global compressed data deduplication to minimize duplicated data in
 the filesystem. May further reduce image size when used with
 .BR -E\ fragments .
-(Linux v6.1+)
+(Linux 6.1+)
+.TP
+.BI dot-omitted
+Omit the "." (dot) directory entry in all directories to reduce metadata
+overhead (Linux 6.15+). It will also enable \fB48bit\fR on-disk layout.
 .TP
 .BI force-inode-compact
 Force generation of compact (32-byte) inodes.
@@ -92,23 +126,31 @@ Always deduplicate fragment data if possible
 .BI fragments\fR[\fP= size \fR]\fP
 Pack the tail part (pcluster) of compressed files, or entire files, into a
 special inode for smaller image sizes, and it may take an argument as the
-pcluster size of the packed inode in bytes. (Linux v6.1+)
+pcluster size of the packed inode in bytes. (Linux 6.1+)
 .TP
 .BI ^inline_data
 Don't inline regular files.  It's typically useful to enable FSDAX (Linux 5.15+)
 for those images, however, there could be other use cases too.
 .TP
-.BI legacy-compress
-Disable "inplace decompression" and "compacted indexes",
-for compatibility with Linux pre-v5.4.
+.B legacy-compress " (obsolete; should not be used in daily use)"
+Disable "compacted indexes" on-disk layout.
+.TP
+.BI nosbcrc
+Disable filesystem superblock checksum explicitly.
+.TP
+.BI plain-xattr-prefixes
+Store long extended attribute name prefixes directly on disk rather than in
+special inodes. By default, long xattr name prefixes are placed in metabox_inode
+(if metabox is enabled) or packed_inode (if fragments is enabled). This option
+forces them to be stored as plain on-disk structures.
 .TP
 .B xattr-name-filter
 Enable a name filter for extended attributes to optimize negative lookups.
-(Linux v6.6+).
+(Linux 6.6+).
 .TP
 .BI ztailpacking
 Pack the tail part (pcluster) of compressed files into its metadata to save
-more space and the tail part I/O. (Linux v5.17+)
+more space and the tail part I/O. (Linux 5.17+)
 .RE
 .TP
 .BI "\-L " volume-label
@@ -146,13 +188,57 @@ Make all files owned by root.
 (used together with \fB-T\fR) set all files to the fixed timestamp. This is the
 default.
 .TP
+.BI "\-\-async-queue-limit=" #
+Specify the maximum number of entries in the multi-threaded job queue.
+.TP
+.BI "\-\-aufs"
+Replace aufs special files with overlayfs metadata.
+.TP
 .BI "\-\-blobdev " file
 Specify an extra blob device to store chunk-based data.
 .TP
 .BI "\-\-chunksize " #
 Generate chunk-based files with #-byte chunks.
 .TP
-.BI "\-\-compress-hints " file
+.BI "\-\-clean=" MODE
+Run full clean build with the given \fIMODE\fR, which could be one of
+\fBdata\fR, \fBrvsp\fR, or \fB0\fR.
+
+If \fB\-\-clean\fR is specified without an explicit value, it is treated
+as \fB\-\-clean=data\fR.
+
+\fBdata\fR: Import complete file data from the source into the destination
+image, creating a fully self-contained EROFS image. This mode is useful when
+you need a standalone image that doesn't depend on external blob devices.
+
+\fBrvsp\fR: Reserve space for file data in the destination image without
+copying the actual content. The file data will need to be filled in later
+through other means. This is useful for creating sparse images or when the
+actual data will be populated separately.
+
+\fB0\fR:Fill all inode data with zeros.
+
+The current source-specific support for \fIMODE\fR:
+.RS 1.2i
+.TP
+.I Local directory source
+Only \fBdata\fR is supported. \fBrvsp\fR and \fB0\fR will be ignored.
+.TP
+.I Tar source (\fB\-\-tar\fR)
+\fBdata\fR and \fBrvsp\fR are supported. \fB0\fR will be ignored.
+Note that \fBrvsp\fR takes precedence over \fB--tar=i\fR or \fB--tar=headerball\fR.
+.TP
+.I Rebuild mode
+Only \fBrvsp\fR is supported.
+.TP
+.I S3 source (\fB\-\-s3\fR)
+\fBdata\fR and \fB0\fR are supported.
+.TP
+.I OCI source (\fB\-\-oci\fR)
+Only \fBdata\fR is supported.
+.RE
+.TP
+.BI "\-\-compress-hints=" file
 Apply a per-file compression strategy. Each line in
 .I file
 is defined by
@@ -162,6 +248,7 @@ the given primary algorithm, alternative algorithms can be specified with
 .RS 1.2i
 <pcluster-size-in-bytes> [algorithm-index] <match-pattern>
 .RE
+.IP
 .IR match-pattern s
 are extended regular expressions, matched against absolute paths within
 the output filesystem, with no leading /.
@@ -216,11 +303,12 @@ When this option is used together with
 the final file gids are
 set to \fIGID\fR + \fIGID-OFFSET\fR.
 .TP
-\fB\-V\fR, \fB\-\-version\fR
-Print the version number and exit.
+.BI "\-\-gzinfo\fR[\fP=" file \fR]\fP
+(used together with \fI--tar\fR) Generate AWS SOCI-compatible zinfo to support
+random gzip access. Source file must be a gzip-compressed tarball.
 .TP
-\fB\-h\fR, \fB\-\-help\fR
-Display help string and exit.
+.BI "\-\-hard-dereference"
+Dereference hardlinks and add links as separate inodes.
 .TP
 .B "\-\-ignore-mtime"
 Ignore the file modification time whenever it would cause \fBmkfs.erofs\fR to
@@ -228,12 +316,68 @@ use extended inodes over compact inodes. When not using a fixed timestamp, this
 can reduce total metadata size. Implied by
 .BR "-E force-inode-compact" .
 .TP
-.BI "\-\-max-extent-bytes " #
-Specify maximum decompressed extent size in bytes.
+.BI "\-\-incremental=" MODE
+Run an incremental build where DESTINATION is an existing EROFS image,
+and the data specified by SOURCE will be incrementally appended to the image.
+\fIMODE\fR has the same meaning as in \fB\-\-clean\fR above.
+Incremental build is unsupported for \fB\-\-s3\fR and \fB\-\-oci\fR sources.
+
+If \fB\-\-incremental\fR is specified without an explicit value, it is treated
+as \fB\-\-incremental=data\fR.
+
+The current source-specific support for \fIMODE\fR:
+.RS 1.2i
+.TP
+.I Local directory source
+Only \fBdata\fR is supported. \fBrvsp\fR and \fB0\fR will be ignored.
+.TP
+.I Tar source (\fB\-\-tar\fR)
+\fBdata\fR and \fBrvsp\fR are supported. \fB0\fR will be ignored.
+Note that \fBrvsp\fR takes precedence over \fB--tar=i\fR or \fB--tar=headerball\fR.
+.TP
+.I Rebuild mode
+Only \fBrvsp\fR is supported.
+.RE
+.TP
+.BI "\-\-max-extent-bytes=" #
+Specify maximum decompressed extent size in bytes. The default is unlimited.
 .TP
 .B \-\-mkfs-time
 (used together with \fB-T\fR) the given timestamp is only applied to the build
 time.
+.TP
+.BI "\-\-mount-point=" path
+Specify the prefix of target filesystem path (default: /).
+.TP
+.BI "\-\-oci\fR[\fP=<f|i>\fR]\fP"
+Generate a full (f) or index-only (i) image from OCI remote source.
+Additional options can be specified:
+.RS 1.2i
+.TP
+.BI platform= platform
+Specify the platform (default: linux/amd64).
+.TP
+.BI layer= #
+Specify the layer index to extract (0-based; omit to extract all layers).
+.TP
+.BI blob= digest
+Specify the blob digest to extract (omit to extract all layers).
+.TP
+.BI username= username
+Username for authentication (optional).
+.TP
+.BI password= password
+Password for authentication (optional).
+.TP
+.B insecure
+Use HTTP instead of HTTPS (optional).
+.RE
+.TP
+.BI "\-\-offset=" #
+Skip # bytes at the beginning of the image.
+.TP
+.BI "\-\-ovlfs-strip\fR[\fP=<0|1>\fR]\fP"
+Strip overlayfs metadata in the target image (e.g. whiteouts).
 .TP
 .B "\-\-preserve-mtime"
 Use extended inodes instead of compact inodes if the file modification time
@@ -242,6 +386,28 @@ would overflow compact inodes. This is the default. Overrides
 .TP
 .B "\-\-quiet"
 Quiet execution (do not write anything to standard output.)
+.TP
+.BI "\-\-root-xattr-isize=" #
+Ensure the inline xattr size of the root directory is # bytes at least.
+.TP
+.BI "\-\-s3=" endpoint
+Generate an image from S3-compatible object store.
+Additional options can be specified:
+.RS 1.2i
+.TP
+.BI passwd_file= file
+S3FS-compatible password file, with the format of "accessKey:secretKey" in
+the first line.
+.TP
+.BI urlstyle= style
+S3 API calling style (vhost or path) (default: vhost).
+.TP
+.BI sig= version
+S3 API signature version (2 or 4) (default: 2).
+.TP
+.BI region= code
+Region code in which endpoint belongs to (required for sig=4).
+.RE
 .TP
 .BI "\-\-sort=" MODE
 Inode data sorting order for tarballs as input.
@@ -269,7 +435,6 @@ filesystem with other data-only layers.
 
 \fBheaderball\fR: Generate a meta-only EROFS image from a stream identical
 to a tarball except that file data is not present after each file header.
-It can improve performance especially when \fISOURCE\fR is not seekable.
 .TP
 .BI "\-\-uid-offset=" UIDOFFSET
 Add \fIUIDOFFSET\fR to all file UIDs.
@@ -290,11 +455,76 @@ be dumped together.
 Generate a VMDK descriptor file to merge sub-filesystems, which can be used
 for tar index or rebuild mode.
 .TP
+.BI "\-\-workers=" #
+Set the number of worker threads to # (default: number of CPUs).
+.TP
+.BI "\-\-xattr-inode-digest=" name
+Specify extended attribute name to record inode digests.
+.TP
 .BI "\-\-xattr-prefix=" PREFIX
 Specify a customized extended attribute namespace prefix for space saving,
 e.g. "trusted.overlay.".  You may give multiple
 .B --xattr-prefix
-options (Linux v6.4+).
+options (Linux 6.4+).
+.TP
+.BI "\-\-zfeature-bits=" #
+Toggle filesystem compression features according to given bits #.
+Each bit in the value corresponds to a specific compression feature:
+.RS 1.2i
+.nf
+.ft CW
+  7 6 5 4 3 2 1 0  (bit position)
+  | | | | | | | |
+  | | | | | | | +-- Bit 0 (1)   : legacy-compress
+  | | | | | | +---- Bit 1 (2)   : ztailpacking
+  | | | | | +------ Bit 2 (4)   : fragments
+  | | | | +-------- Bit 3 (8)   : all-fragments
+  | | | +---------- Bit 4 (16)  : dedupe
+  | | +------------ Bit 5 (32)  : fragdedupe
+  | +-------------- Bit 6 (64)  : 48bit
+  +---------------- Bit 7 (128) : dot-omitted
+.ft
+.fi
+.RE
+.IP
+For example,
+.B --zfeature-bits=6
+(binary: 0000 0110) enables ztailpacking (bit 1) and fragments (bit 2).
+.RE
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Display help string and exit.
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print the version number and exit.
+.SH NOTES
+.TP
+.B REBUILD MODE
+\fBRebuild mode\fR allows \fBmkfs.erofs\fR to generate a new EROFS image from
+one or more existing EROFS images passed as \fISOURCE\fR(s).
+This mode is particularly useful for merging multiple EROFS images or creating
+index-only metadata images that reference data in the source images.
+
+When SOURCE contains one or more EROFS image files,
+.B mkfs.erofs
+automatically enters rebuild mode. The behavior is controlled by the
+.B \-\-clean
+or
+.B \-\-incremental
+options, which determine how file data is handled:
+.RS 1.2i
+.TP
+.I Default mode (blob index)
+The generated image contains only metadata (inodes, dentries, and xattrs).
+File data is referenced through chunk-based indexes pointing to the original
+source images, which act as external blob devices. This creates a compact
+metadata layer suitable for layered filesystem scenarios, similar to container
+image layers.
+.TP
+.I rvsp mode
+\fB\-\-clean=rvsp\fR or \fB\-\-incremental=rvsp\fR: Reserve space for file
+data without copying actual content, useful for creating sparse images.
+.RE
 .SH AUTHOR
 This version of \fBmkfs.erofs\fR is written by Li Guifu <blucerlee@gmail.com>,
 Miao Xie <miaoxie@huawei.com> and Gao Xiang <xiang@kernel.org> with
