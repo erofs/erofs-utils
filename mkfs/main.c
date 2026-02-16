@@ -166,6 +166,12 @@ static void usage(int argc, char **argv)
 				printf("%s  [,dictsize=<dictsize>]\t(default=<auto>, max=%u)\n",
 				       spaces, s->c->max_dictsize);
 		}
+		if (!strcmp(s->name, "lzma")) {
+			printf("\n%s  LZMA advanced options (do not specify if unsure):\n", spaces);
+			printf("%s  [,lc=<n>]  n = number of literal context bits\n", spaces);
+			printf("%s  [,lp=<n>]  n = number of literal position bits\n", spaces);
+			printf("%s  [,pb=<n>]  n = number of position bits\n", spaces);
+		}
 	}
 	printf(
 		" -C#                    specify the size of compress physical cluster in bytes\n"
@@ -845,7 +851,9 @@ unsigned int erofs_mkfs_total_ccfgs;
 static int mkfs_parse_one_compress_alg(char *alg)
 {
 	struct z_erofs_paramset *zset = mkfscfg.zcfgs + mkfscfg.total_zcfgs;
+	char extraopts[48];
 	char *p, *q, *opt, *endptr;
+	int i, j;
 
 	if (zset >= erofs_mkfs_zparams + ARRAY_SIZE(erofs_mkfs_zparams)) {
 		erofs_err("too many algorithm types");
@@ -854,6 +862,7 @@ static int mkfs_parse_one_compress_alg(char *alg)
 	zset->clevel = -1;
 	zset->dict_size = 0;
 
+	i = 0;
 	p = strchr(alg, ',');
 	if (!p) {
 		zset->alg = alg;
@@ -891,13 +900,20 @@ static int mkfs_parse_one_compress_alg(char *alg)
 						return -EINVAL;
 					}
 				} else {
-					erofs_err("invalid compression option %s", opt);
-					return -EINVAL;
+					if (i)
+						j = snprintf(extraopts + i, sizeof(extraopts) - i, ",%s", opt);
+					else
+						j = snprintf(extraopts, sizeof(extraopts), "%s", opt);
+					if (j < 0)
+						return -ERANGE;
+					i += j;
 				}
 				opt = q ? q + 1 : NULL;
 			}
 		}
 	}
+	if (i)
+		zset->extraopts = strdup(extraopts);
 	return mkfscfg.total_zcfgs++;
 }
 

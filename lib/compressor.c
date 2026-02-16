@@ -96,6 +96,13 @@ int erofs_compress(const struct erofs_compress *c,
 	return c->alg->c->compress(c, src, srcsize, dst, dstcapacity);
 }
 
+int erofs_compressor_exit(struct erofs_compress *c)
+{
+	if (c->alg && c->alg->c->exit)
+		return c->alg->c->exit(c);
+	return 0;
+}
+
 int erofs_compressor_init(struct erofs_sb_info *sbi, struct erofs_compress *c,
 			  const struct z_erofs_paramset *zset,
 			  u32 pclustersize_max)
@@ -117,17 +124,36 @@ int erofs_compressor_init(struct erofs_sb_info *sbi, struct erofs_compress *c,
 		if (!erofs_algs[i].c)
 			continue;
 
+		if (!erofs_algs[i].c->setlevel && zset->clevel >= 0) {
+			erofs_err("compression level %d is not supported for %s",
+				  zset->clevel, zset->alg);
+			return -EINVAL;
+		}
+
+		if (!erofs_algs[i].c->setdictsize && zset->dict_size) {
+			erofs_err("unsupported dict size for %s", zset->alg);
+			return -EINVAL;
+		}
+
+		if (!erofs_algs[i].c->setextraopts && zset->extraopts) {
+			erofs_err("invalid compression option %s for %s",
+				  zset->extraopts, zset->alg);
+			return -EINVAL;
+		}
+
+		if (erofs_algs[i].c->preinit) {
+			ret = erofs_algs[i].c->preinit(c);
+			if (ret)
+				return ret;
+		}
+
 		if (erofs_algs[i].c->setlevel) {
 			ret = erofs_algs[i].c->setlevel(c, zset->clevel);
 			if (ret) {
 				erofs_err("failed to set compression level %d for %s",
 					  zset->clevel, zset->alg);
-				return ret;
+				goto fail;
 			}
-		} else if (zset->clevel >= 0) {
-			erofs_err("compression level %d is not supported for %s",
-				  zset->clevel, zset->alg);
-			return -EINVAL;
 		}
 
 		if (erofs_algs[i].c->setdictsize) {
@@ -136,32 +162,30 @@ int erofs_compressor_init(struct erofs_sb_info *sbi, struct erofs_compress *c,
 			if (ret) {
 				erofs_err("failed to set dict size %u for %s",
 					  zset->dict_size, zset->alg);
-				return ret;
+				goto fail;
 			}
-		} else if (zset->dict_size) {
-			erofs_err("dict size is not supported for %s",
-				  zset->alg);
-			return -EINVAL;
 		}
 
-		ret = erofs_algs[i].c->init(c);
-		if (ret)
-			return ret;
-
-		if (!ret) {
-			c->alg = &erofs_algs[i];
-			return 0;
+		if (zset->extraopts && erofs_algs[i].c->setextraopts) {
+			ret = erofs_algs[i].c->setextraopts(c, zset->extraopts);
+			if (ret)
+				goto fail;
 		}
+
+		if (erofs_algs[i].c->init) {
+			ret = erofs_algs[i].c->init(c);
+			if (ret)
+				goto fail;
+		}
+		c->alg = &erofs_algs[i];
+		return 0;
 	}
 	erofs_err("Cannot find a valid compressor %s", zset->alg);
 	return ret;
-}
-
-int erofs_compressor_exit(struct erofs_compress *c)
-{
-	if (c->alg && c->alg->c->exit)
-		return c->alg->c->exit(c);
-	return 0;
+fail:
+	if (erofs_algs[i].c->preinit && erofs_algs[i].c->exit)
+		erofs_algs[i].c->exit(c);
+	return ret;
 }
 
 void erofs_compressor_reset(struct erofs_compress *c)

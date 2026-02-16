@@ -1457,10 +1457,11 @@ void *z_erofs_mt_wq_tls_free(struct erofs_workqueue *wq, void *priv)
 	struct erofs_compress_wq_tls *tls = priv;
 	int i;
 
-	for (i = 0; i < EROFS_MAX_COMPR_CFGS; i++)
-		if (tls->ccfg[i].enable)
-			erofs_compressor_exit(&tls->ccfg[i].handle);
-
+	for (i = 0; i < EROFS_MAX_COMPR_CFGS; i++) {
+		if (!tls->ccfg[i].enable)
+			continue;
+		erofs_compressor_exit(&tls->ccfg[i].handle);
+	}
 	free(tls->ccfg);
 	free(tls->destbuf);
 	free(tls->queue);
@@ -2163,6 +2164,11 @@ int z_erofs_compress_init(struct erofs_importer *im)
 		ccfg->zset.alg = strdup(zset->alg);
 		if (!ccfg->zset.alg)
 			return -ENOMEM;
+		if (zset->extraopts) {
+			ccfg->zset.extraopts = strdup(zset->extraopts);
+			if (!ccfg->zset.extraopts)
+				return -ENOMEM;
+		}
 
 		ret = erofs_compressor_init(sbi, c, &ccfg->zset,
 					    pclustersize_max);
@@ -2264,6 +2270,7 @@ int z_erofs_compress_exit(struct erofs_sb_info *sbi)
 		if (ret)
 			return ret;
 		free(sbi->zmgr->ccfg[i].zset.alg);
+		free(sbi->zmgr->ccfg[i].zset.extraopts);
 	}
 	free(sbi->zmgr);
 	return 0;

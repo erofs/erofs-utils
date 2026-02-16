@@ -438,6 +438,7 @@ struct z_erofs_paramset {
 	char *alg;
 	int clevel;
 	u32 dict_size;
+	char *extraopts;
 };
 
 int liberofs_global_init(void);
