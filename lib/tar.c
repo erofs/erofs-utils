@@ -1105,7 +1105,7 @@ new_inode:
 								 inode->i_size))
 					ret = -EIO;
 			} else if (tar->try_no_reorder &&
-				   !cfg.c_compr_opts[0].alg &&
+				   !sbi->available_compr_algs &&
 				   params->no_datainline) {
 				ret = tarerofs_write_uncompressed_file(inode, tar);
 			} else {

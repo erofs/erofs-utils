@@ -69,7 +69,7 @@ int erofs_compress(const struct erofs_compress *c,
 		   void *dst, unsigned int dstcapacity);
 
 int erofs_compressor_init(struct erofs_sb_info *sbi, struct erofs_compress *c,
-			  char *alg_name, int compression_level, u32 dict_size,
+			  const struct z_erofs_paramset *zset,
 			  u32 pclustersize_max);
 int erofs_compressor_exit(struct erofs_compress *c);
 void erofs_compressor_reset(struct erofs_compress *c);

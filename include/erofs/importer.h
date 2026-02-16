@@ -30,6 +30,7 @@ enum {
 };
 
 struct erofs_importer_params {
+	struct z_erofs_paramset *z_paramsets;
 	char *source;
 	u32 mt_async_queue_limit;
 	u32 fixed_uid;

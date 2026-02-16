@@ -1028,7 +1028,7 @@ static int s3erofs_remote_getobject(struct erofs_importer *im,
 		return -EIO;
 
 	resp.pos = 0;
-	if (!cfg.c_compr_opts[0].alg && im->params->no_datainline) {
+	if (!sbi->available_compr_algs && im->params->no_datainline) {
 		inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 		inode->idata_size = 0;
 		ret = erofs_allocate_inode_bh_data(inode,

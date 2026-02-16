@@ -2023,7 +2023,7 @@ static int erofs_mkfs_begin_nondirectory(const struct erofs_mkfs_btctx *btctx,
 				return ret;
 		}
 
-		if (cfg.c_compr_opts[0].alg &&
+		if (inode->sbi->available_compr_algs &&
 		    erofs_file_is_compressible(im, inode)) {
 			ctx.ictx = erofs_prepare_compressed_file(im, inode);
 			if (IS_ERR(ctx.ictx))
@@ -2352,7 +2352,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_importer *im,
 		return ERR_PTR(ret);
 	}
 
-	if (cfg.c_compr_opts[0].alg &&
+	if (sbi->available_compr_algs &&
 	    erofs_file_is_compressible(im, inode)) {
 		ictx = erofs_prepare_compressed_file(im, inode);
 		if (IS_ERR(ictx))

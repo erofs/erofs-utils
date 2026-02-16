@@ -29,12 +29,6 @@ enum {
 
 #define EROFS_MAX_COMPR_CFGS		64
 
-struct erofs_compr_opts {
-	char *alg;
-	int level;
-	u32 dict_size;
-};
-
 struct erofs_configure {
 	const char *c_version;
 	int c_dbg_lvl;
@@ -54,7 +48,6 @@ struct erofs_configure {
 	char *c_src_path;
 	char *c_blobdev_path;
 	char *c_compress_hints_file;
-	struct erofs_compr_opts c_compr_opts[EROFS_MAX_COMPR_CFGS];
 	char c_force_chunkformat;
 	u8 c_mkfs_metabox_algid;
 	u32 c_max_decompressed_extent_bytes;

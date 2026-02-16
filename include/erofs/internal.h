@@ -434,6 +434,12 @@ struct erofs_map_dev {
 	unsigned int m_deviceid;
 };
 
+struct z_erofs_paramset {
+	char *alg;
+	int clevel;
+	u32 dict_size;
+};
+
 int liberofs_global_init(void);
 void liberofs_global_exit(void);
 

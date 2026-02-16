@@ -97,8 +97,8 @@ int erofs_compress(const struct erofs_compress *c,
 }
 
 int erofs_compressor_init(struct erofs_sb_info *sbi, struct erofs_compress *c,
-			  char *alg_name, int compression_level,
-			  u32 dict_size, u32 pclustersize_max)
+			  const struct z_erofs_paramset *zset,
+			  u32 pclustersize_max)
 {
 	int ret, i;
 
@@ -109,43 +109,38 @@ int erofs_compressor_init(struct erofs_sb_info *sbi, struct erofs_compress *c,
 	c->compression_level = -1;
 	c->dict_size = 0;
 
-	if (!alg_name) {
-		c->alg = NULL;
-		return 0;
-	}
-
 	ret = -EINVAL;
 	for (i = 0; i < ARRAY_SIZE(erofs_algs); ++i) {
-		if (alg_name && strcmp(alg_name, erofs_algs[i].name))
+		if (strcmp(zset->alg, erofs_algs[i].name))
 			continue;
 
 		if (!erofs_algs[i].c)
 			continue;
 
 		if (erofs_algs[i].c->setlevel) {
-			ret = erofs_algs[i].c->setlevel(c, compression_level);
+			ret = erofs_algs[i].c->setlevel(c, zset->clevel);
 			if (ret) {
 				erofs_err("failed to set compression level %d for %s",
-					  compression_level, alg_name);
+					  zset->clevel, zset->alg);
 				return ret;
 			}
-		} else if (compression_level >= 0) {
+		} else if (zset->clevel >= 0) {
 			erofs_err("compression level %d is not supported for %s",
-				  compression_level, alg_name);
+				  zset->clevel, zset->alg);
 			return -EINVAL;
 		}
 
 		if (erofs_algs[i].c->setdictsize) {
-			ret = erofs_algs[i].c->setdictsize(c, dict_size,
+			ret = erofs_algs[i].c->setdictsize(c, zset->dict_size,
 							   pclustersize_max);
 			if (ret) {
 				erofs_err("failed to set dict size %u for %s",
-					  dict_size, alg_name);
+					  zset->dict_size, zset->alg);
 				return ret;
 			}
-		} else if (dict_size) {
+		} else if (zset->dict_size) {
 			erofs_err("dict size is not supported for %s",
-				  alg_name);
+				  zset->alg);
 			return -EINVAL;
 		}
 
@@ -158,7 +153,7 @@ int erofs_compressor_init(struct erofs_sb_info *sbi, struct erofs_compress *c,
 			return 0;
 		}
 	}
-	erofs_err("Cannot find a valid compressor %s", alg_name);
+	erofs_err("Cannot find a valid compressor %s", zset->alg);
 	return ret;
 }
 

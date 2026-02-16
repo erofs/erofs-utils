@@ -273,10 +273,12 @@ static void version(void)
 }
 
 static struct erofsmkfs_cfg {
+	struct z_erofs_paramset zcfgs[EROFS_MAX_COMPR_CFGS + 1];
 	/* < 0, xattr disabled and >= INT_MAX, always use inline xattrs */
 	long inlinexattr_tolerance;
 	bool inode_metazone;
 	u64 unix_timestamp;
+	unsigned int total_zcfgs;
 } mkfscfg = {
 	.inlinexattr_tolerance = 2,
 	.unix_timestamp = -1,
@@ -314,7 +316,7 @@ static enum {
 	EROFS_MKFS_SOURCE_REBUILD,
 } source_mode;
 
-static unsigned int rebuild_src_count, total_ccfgs;
+static unsigned int rebuild_src_count;
 static LIST_HEAD(rebuild_src_list);
 static u8 fixeduuid[16];
 static bool valid_fixeduuid;
@@ -837,66 +839,66 @@ static int mkfs_parse_oci_options(struct ocierofs_config *oci_cfg, char *options
 }
 #endif
 
-static int mkfs_parse_one_compress_alg(char *alg,
-				       struct erofs_compr_opts *copts)
+struct z_erofs_paramset erofs_mkfs_zparams[EROFS_MAX_COMPR_CFGS + 1];
+unsigned int erofs_mkfs_total_ccfgs;
+
+static int mkfs_parse_one_compress_alg(char *alg)
 {
+	struct z_erofs_paramset *zset = mkfscfg.zcfgs + mkfscfg.total_zcfgs;
 	char *p, *q, *opt, *endptr;
 
-	copts->level = -1;
-	copts->dict_size = 0;
+	if (zset >= erofs_mkfs_zparams + ARRAY_SIZE(erofs_mkfs_zparams)) {
+		erofs_err("too many algorithm types");
+		return -EINVAL;
+	}
+	zset->clevel = -1;
+	zset->dict_size = 0;
 
 	p = strchr(alg, ',');
-	if (p) {
-		copts->alg = strndup(alg, p - alg);
-
-		/* support old '-zlzma,9' form */
-		if (isdigit(*(p + 1))) {
-			copts->level = strtol(p + 1, &endptr, 10);
-			if (*endptr && *endptr != ',') {
-				erofs_err("invalid compression level %s",
-					  p + 1);
-				return -EINVAL;
-			}
-			return 0;
-		}
+	if (!p) {
+		zset->alg = alg;
 	} else {
-		copts->alg = strdup(alg);
-		return 0;
-	}
-
-	opt = p + 1;
-	while (opt) {
-		q = strchr(opt, ',');
-		if (q)
-			*q = '\0';
-
-		if ((p = strstr(opt, "level="))) {
-			p += strlen("level=");
-			copts->level = strtol(p, &endptr, 10);
-			if ((endptr == p) || (*endptr && *endptr != ',')) {
+		*p++ = '\0';
+		zset->alg = alg;
+		if (isdigit(*p)) {	/* support old '-zlzma,9' form */
+			zset->clevel = strtol(p, &endptr, 10);
+			if (*endptr && *endptr != ',') {
 				erofs_err("invalid compression level %s", p);
 				return -EINVAL;
 			}
-		} else if ((p = strstr(opt, "dictsize="))) {
-			p += strlen("dictsize=");
-			copts->dict_size = strtoul(p, &endptr, 10);
-			if (*endptr == 'k' || *endptr == 'K')
-				copts->dict_size <<= 10;
-			else if (*endptr == 'm' || *endptr == 'M')
-				copts->dict_size <<= 20;
-			else if ((endptr == p) || (*endptr && *endptr != ',')) {
-				erofs_err("invalid compression dictsize %s", p);
-				return -EINVAL;
-			}
 		} else {
-			erofs_err("invalid compression option %s", opt);
-			return -EINVAL;
+			for (opt = p; opt;) {
+				q = strchr(opt, ',');
+				if (q)
+					*q = '\0';
+
+				if ((p = strstr(opt, "level="))) {
+					p += strlen("level=");
+					zset->clevel = strtol(p, &endptr, 10);
+					if ((endptr == p) || (*endptr && *endptr != ',')) {
+						erofs_err("invalid compression level %s", p);
+						return -EINVAL;
+					}
+				} else if ((p = strstr(opt, "dictsize="))) {
+					p += strlen("dictsize=");
+					zset->dict_size = strtoul(p, &endptr, 10);
+					if (*endptr == 'k' || *endptr == 'K')
+						zset->dict_size <<= 10;
+					else if (*endptr == 'm' || *endptr == 'M')
+						zset->dict_size <<= 20;
+					else if ((endptr == p) || (*endptr && *endptr != ',')) {
+						erofs_err("invalid compression dictsize %s", p);
+						return -EINVAL;
+					}
+				} else {
+					erofs_err("invalid compression option %s", opt);
+					return -EINVAL;
+				}
+				opt = q ? q + 1 : NULL;
+			}
 		}
-
-		opt = q ? q + 1 : NULL;
 	}
-
-	return 0;
+	return mkfscfg.total_zcfgs++;
 }
 
 static int mkfs_parse_compress_algs(char *algs)
@@ -905,15 +907,9 @@ static int mkfs_parse_compress_algs(char *algs)
 	int ret;
 
 	for (s = strtok(algs, ":"); s; s = strtok(NULL, ":")) {
-		if (total_ccfgs >= EROFS_MAX_COMPR_CFGS - 1) {
-			erofs_err("too many algorithm types");
-			return -EINVAL;
-		}
-
-		ret = mkfs_parse_one_compress_alg(s, &cfg.c_compr_opts[total_ccfgs]);
-		if (ret)
+		ret = mkfs_parse_one_compress_alg(s);
+		if (ret < 0)
 			return ret;
-		++total_ccfgs;
 	}
 	return 0;
 }
@@ -1210,11 +1206,10 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 				metabox_algorithmid =
 					strtoul(algid + 1, &endptr, 0);
 				if (*endptr != '\0') {
-					err = mkfs_parse_one_compress_alg(algid + 1,
-							&cfg.c_compr_opts[total_ccfgs]);
-					if (err)
+					err = mkfs_parse_one_compress_alg(algid + 1);
+					if (err < 0)
 						return err;
-					metabox_algorithmid = total_ccfgs++;
+					metabox_algorithmid = err;
 				}
 			}
 			pclustersize_metabox = atoi(optarg);
@@ -1856,6 +1851,7 @@ int main(int argc, char **argv)
 
 	if (mkfscfg.inlinexattr_tolerance < 0)
 		importer_params.no_xattrs = true;
+	importer_params.z_paramsets = mkfscfg.zcfgs;
 	importer_params.source = cfg.c_src_path;
 	importer_params.no_datainline = mkfs_no_datainline;
 	importer_params.dot_omitted = mkfs_dot_omitted;
@@ -1864,7 +1860,7 @@ int main(int argc, char **argv)
 		goto exit;
 
 	if (importer_params.dedupe == EROFS_DEDUPE_FORCE_ON) {
-		if (!cfg.c_compr_opts[0].alg) {
+		if (!g_sbi.available_compr_algs) {
 			erofs_err("Compression is not enabled.  Turn on chunk-based data deduplication instead.");
 			cfg.c_chunkbits = g_sbi.blkszbits;
 		} else {

@@ -100,11 +100,7 @@ struct erofs_compress_work {
 	struct z_erofs_compress_sctx ctx;
 	pthread_cond_t cond;
 	struct erofs_compress_work *next;
-
-	unsigned int alg_id;
-	char *alg_name;
-	unsigned int comp_level;
-	unsigned int dict_size;
+	struct z_erofs_paramset *zset;
 
 	int errcode;
 };
@@ -126,7 +122,8 @@ struct z_erofs_compress_fslot {
 /* compressing configuration specified by users */
 struct erofs_compress_cfg {
 	struct erofs_compress handle;
-	unsigned int algorithmtype;
+	struct z_erofs_paramset zset;
+	int algorithmtype;
 	bool enable;
 };
 
@@ -1479,19 +1476,22 @@ void z_erofs_mt_workfn(struct erofs_work *work, void *tlsp)
 	struct z_erofs_compress_ictx *ictx = sctx->ictx;
 	struct erofs_inode *inode = ictx->inode;
 	struct erofs_sb_info *sbi = inode->sbi;
-	struct erofs_compress_cfg *lc = &tls->ccfg[cwork->alg_id];
+	int zsetno = container_of(cwork->zset, struct erofs_compress_cfg, zset)
+			- sbi->zmgr->ccfg;
+	struct erofs_compress_cfg *lc = &tls->ccfg[zsetno];
 	int ret;
 
 	if (__erofs_unlikely(!lc->enable)) {
 		unsigned int pclustersize_max =
 			ictx->im->params->pclusterblks_max << sbi->blkszbits;
 
-		ret = erofs_compressor_init(sbi, &lc->handle,
-					    cwork->alg_name, cwork->comp_level,
-					    cwork->dict_size, pclustersize_max);
+		lc->zset = *cwork->zset;
+		ret = erofs_compressor_init(sbi, &lc->handle, &lc->zset,
+					    pclustersize_max);
 		if (ret)
 			goto out;
-		lc->algorithmtype = cwork->alg_id;
+		lc->algorithmtype =
+			z_erofs_get_compress_algorithm_id(&lc->handle);
 		lc->enable = true;
 	}
 
@@ -1499,7 +1499,7 @@ void z_erofs_mt_workfn(struct erofs_work *work, void *tlsp)
 	DBG_BUGON(sctx->pclustersize > Z_EROFS_PCLUSTER_MAX_SIZE);
 	sctx->queue = tls->queue;
 	sctx->destbuf = tls->destbuf;
-	sctx->chandle = &tls->ccfg[cwork->alg_id].handle;
+	sctx->chandle = &lc->handle;
 	erofs_compressor_reset(sctx->chandle);
 	sctx->membuf = malloc(round_up(sctx->remaining, erofs_blksiz(sbi)));
 	if (!sctx->membuf) {
@@ -1639,10 +1639,7 @@ int z_erofs_mt_compress(struct z_erofs_compress_ictx *ictx)
 		};
 		init_list_head(&cur->ctx.extents);
 
-		cur->alg_id = ccfg->handle.alg->id;
-		cur->alg_name = ccfg->handle.alg->name;
-		cur->comp_level = ccfg->handle.compression_level;
-		cur->dict_size = ccfg->handle.dict_size;
+		cur->zset = &ccfg->zset;
 		cur->errcode = 1;	/* mark as "in progress" */
 
 		if (i >= nsegs - 1) {
@@ -2154,13 +2151,20 @@ int z_erofs_compress_init(struct erofs_importer *im)
 		newzmgr = true;
 	}
 
-	for (i = 0; cfg.c_compr_opts[i].alg; ++i) {
+	for (i = 0; params->z_paramsets[i].alg; ++i) {
 		struct erofs_compress_cfg *ccfg = &sbi->zmgr->ccfg[i];
 		struct erofs_compress *c = &ccfg->handle;
+		const struct z_erofs_paramset *zset = &params->z_paramsets[i];
 
-		ret = erofs_compressor_init(sbi, c, cfg.c_compr_opts[i].alg,
-					    cfg.c_compr_opts[i].level,
-					    cfg.c_compr_opts[i].dict_size,
+		if (ccfg->enable)
+			return -EINVAL;
+
+		ccfg->zset = *zset;
+		ccfg->zset.alg = strdup(zset->alg);
+		if (!ccfg->zset.alg)
+			return -ENOMEM;
+
+		ret = erofs_compressor_init(sbi, c, &ccfg->zset,
 					    pclustersize_max);
 		if (ret)
 			return ret;
@@ -2168,8 +2172,8 @@ int z_erofs_compress_init(struct erofs_importer *im)
 		id = z_erofs_get_compress_algorithm_id(c);
 		ccfg->algorithmtype = id;
 		ccfg->enable = true;
-		available_compr_algs |= 1 << ccfg->algorithmtype;
-		if (ccfg->algorithmtype != Z_EROFS_COMPRESSION_LZ4)
+		available_compr_algs |= 1 << id;
+		if (id != Z_EROFS_COMPRESSION_LZ4)
 			erofs_sb_set_compr_cfgs(sbi);
 		if (c->dict_size > max_dict_size[id])
 			max_dict_size[id] = c->dict_size;
@@ -2253,10 +2257,13 @@ int z_erofs_compress_exit(struct erofs_sb_info *sbi)
 	if (!sbi->zmgr)
 		return 0;
 
-	for (i = 0; cfg.c_compr_opts[i].alg; ++i) {
+	for (i = 0; i < ARRAY_SIZE(sbi->zmgr->ccfg); ++i) {
+		if (!sbi->zmgr->ccfg[i].enable)
+			continue;
 		ret = erofs_compressor_exit(&sbi->zmgr->ccfg[i].handle);
 		if (ret)
 			return ret;
+		free(sbi->zmgr->ccfg[i].zset.alg);
 	}
 	free(sbi->zmgr);
 	return 0;
