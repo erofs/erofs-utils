@@ -1,3 +1,23 @@
+erofs-utils 1.9
+
+ * This release includes the following updates:
+   - Add 48-bit layout support for larger filesystems (EXPERIMENTAL);
+   - Add metadata compression support (EXPERIMENTAL);
+   - (mkfs.erofs) Enable image creation from S3 storage (Yifan Zhao);
+   - (mkfs.erofs) Enable image creation from OCI registries (Chengyu Zhu);
+   - Implement an external mount helper for mounting remote EROFS filesystems;
+   - (mount.erofs) Add support for mounting EROFS-native layers in OCI
+                   registries (Chengyu Zhu);
+   - (mkfs.erofs) Support directory compression via the `--zD` option;
+   - (mkfs.erofs) Enable isolated metadata zones to concentrate inodes and
+                  directories using the `--MZ` option;
+   - (mkfs.erofs) Support customized lc,lp,pb properties for LZMA;
+   - (mkfs.erofs) Add the `--xattr-inode-digest` option to enable page cache
+                  sharing by generating per-inode fingerprints;
+   - Miscellaneous fixes and improvements.
+
+ -- Gao Xiang <xiang@kernel.org>  Wed, 18 Feb 2026 00:00:00 +0800
+
 erofs-utils 1.8.10
 
  * A quick maintenance release that includes the following fixes:
