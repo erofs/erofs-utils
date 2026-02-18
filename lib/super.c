@@ -169,6 +169,12 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 		sbi->devs = NULL;
 	}
 	sbi->sb_valid = !ret;
+	if (erofs_sb_has_48bit(sbi))
+		erofs_info("EXPERIMENTAL 48-bit layout support in use. Use at your own risk!");
+	if (erofs_sb_has_metabox(sbi)) {
+		erofs_info("EXPERIMENTAL metadata compression support in use. Use at your own risk!");
+		erofs_info("No in-memory cache for metadata compression: userspace parser for metabox remains slow.");
+	}
 	return ret;
 }
 
