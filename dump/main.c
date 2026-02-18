@@ -96,7 +96,7 @@ static struct erofsdump_feature feature_lists[] = {
 	{  true,    0, EROFS_FEATURE_COMPAT_SB_CHKSUM, "sb_csum" },
 	{  true,    0, EROFS_FEATURE_COMPAT_MTIME, "mtime" },
 	{  true,    0, EROFS_FEATURE_COMPAT_XATTR_FILTER, "xattr_filter" },
-	{ false, 504U, EROFS_FEATURE_INCOMPAT_ZERO_PADDING, "0padding" },
+	{ false, 504U, EROFS_FEATURE_INCOMPAT_LZ4_0PADDING, "lz4_0padding" },
 	{ false, 513U, EROFS_FEATURE_INCOMPAT_COMPR_CFGS, "compr_cfgs" },
 	{ false, 513U, EROFS_FEATURE_INCOMPAT_BIG_PCLUSTER, "big_pcluster" },
 	{ false, 515U, EROFS_FEATURE_INCOMPAT_CHUNKED_FILE, "chunked_file" },

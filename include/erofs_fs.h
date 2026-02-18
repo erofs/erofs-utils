@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-only OR Apache-2.0 */
+/* SPDX-License-Identifier: MIT */
 /*
  * EROFS (Enhanced ROM File System) on-disk format definition
  *
@@ -13,17 +13,18 @@
 /* to allow for x86 boot sectors and other oddities. */
 #define EROFS_SUPER_OFFSET      1024
 
-#define EROFS_FEATURE_COMPAT_SB_CHKSUM          0x00000001
-#define EROFS_FEATURE_COMPAT_MTIME              0x00000002
-#define EROFS_FEATURE_COMPAT_XATTR_FILTER	0x00000004
-#define EROFS_FEATURE_COMPAT_PLAIN_XATTR_PFX	0x00000010
-#define EROFS_FEATURE_COMPAT_ISHARE_XATTRS	0x00000020
+#define EROFS_FEATURE_COMPAT_SB_CHKSUM			0x00000001
+#define EROFS_FEATURE_COMPAT_MTIME			0x00000002
+#define EROFS_FEATURE_COMPAT_XATTR_FILTER		0x00000004
+#define EROFS_FEATURE_COMPAT_SHARED_EA_IN_METABOX	0x00000008
+#define EROFS_FEATURE_COMPAT_PLAIN_XATTR_PFX		0x00000010
+#define EROFS_FEATURE_COMPAT_ISHARE_XATTRS		0x00000020
 
 /*
  * Any bits that aren't in EROFS_ALL_FEATURE_INCOMPAT should
  * be incompatible with this kernel version.
  */
-#define EROFS_FEATURE_INCOMPAT_ZERO_PADDING	0x00000001
+#define EROFS_FEATURE_INCOMPAT_LZ4_0PADDING	0x00000001
 #define EROFS_FEATURE_INCOMPAT_COMPR_CFGS	0x00000002
 #define EROFS_FEATURE_INCOMPAT_BIG_PCLUSTER	0x00000002
 #define EROFS_FEATURE_INCOMPAT_CHUNKED_FILE	0x00000004
@@ -50,7 +51,7 @@ struct erofs_deviceslot {
 };
 #define EROFS_DEVT_SLOT_SIZE	sizeof(struct erofs_deviceslot)
 
-/* erofs on-disk super block (currently 128 bytes) */
+/* erofs on-disk super block (currently 144 bytes at maximum) */
 struct erofs_super_block {
 	__le32 magic;           /* file system magic number */
 	__le32 checksum;        /* crc32c to avoid unexpected on-disk overlap */
@@ -60,7 +61,7 @@ struct erofs_super_block {
 	union {
 		__le16 rootnid_2b;	/* nid of root directory */
 		__le16 blocks_hi;	/* (48BIT on) blocks count MSB */
-	} rb;
+	} __packed rb;
 	__le64 inos;            /* total valid ino # (== f_files - f_favail) */
 	__le64 epoch;		/* base seconds used for compact inodes */
 	__le32 fixed_nsec;	/* fixed nanoseconds for compact inodes */
@@ -89,7 +90,7 @@ struct erofs_super_block {
 	__le64 rootnid_8b;	/* (48BIT on) nid of root directory */
 	__le64 reserved2;
 	__le64 metabox_nid;	/* (METABOX on) nid of the metabox inode */
-	__le64 reserved3;
+	__le64 reserved3;	/* [align to extslot 1] */
 };
 
 /*
@@ -155,7 +156,7 @@ union erofs_inode_i_nb {
 	__le16 nlink;		/* if EROFS_I_NLINK_1_BIT is unset */
 	__le16 blocks_hi;	/* total blocks count MSB */
 	__le16 startblk_hi;	/* starting block number MSB */
-};
+} __packed;
 
 /* 32-byte reduced form of an ondisk inode */
 struct erofs_inode_compact {
@@ -386,9 +387,9 @@ struct z_erofs_map_header {
 			 * bit 7   : pack the whole file into packed inode
 			 */
 			__u8	h_clusterbits;
-		};
+		} __packed;
 		__le16 h_extents_hi;	/* extent count MSB */
-	};
+	} __packed;
 };
 
 enum {
