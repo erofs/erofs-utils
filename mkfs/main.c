@@ -354,6 +354,29 @@ static int erofs_mkfs_feat_set_ztailpacking(struct erofs_importer_params *params
 	return 0;
 }
 
+static int erofs_mkfs_strtoull(const char *nptr, char **endptr,
+			       unsigned long long *res, int base)
+{
+	char *end;
+	unsigned long long number;
+
+	errno = 0;
+	number = strtoull(nptr, &end, base);
+	if (errno)
+		return -errno;
+
+	if (*end == 'k' || *end == 'K')
+		number <<= 10, ++end;
+	else if (*end == 'm' || *end == 'M')
+		number <<= 20, ++end;
+	else if (*end == 'g' || *end == 'G')
+		number <<= 30, ++end;
+	*res = number;
+	if (endptr)
+		*endptr = end;
+	return 0;
+}
+
 static int erofs_mkfs_feat_set_fragments(struct erofs_importer_params *params,
 					 bool en, const char *val,
 					 unsigned int vallen)
@@ -366,10 +389,12 @@ static int erofs_mkfs_feat_set_fragments(struct erofs_importer_params *params,
 	}
 
 	if (vallen) {
+		unsigned long long i;
 		char *endptr;
-		u64 i = strtoull(val, &endptr, 0);
+		int err;
 
-		if (endptr - val != vallen) {
+		err = erofs_mkfs_strtoull(val, &endptr, &i, 0);
+		if (err || endptr - val != vallen) {
 			erofs_err("invalid pcluster size %s for the packed file", val);
 			return -EINVAL;
 		}
@@ -748,6 +773,59 @@ static int mkfs_parse_s3_cfg(char *cfg_str)
 }
 #endif
 
+static int erofs_mkfs_strtoll(const char *nptr, char **endptr,
+			      long long *res, int base)
+{
+	char *end;
+	long long number;
+
+	errno = 0;
+	number = strtoll(nptr, &end, base);
+	if (errno)
+		return -errno;
+
+	if (*end == 'k' || *end == 'K')
+		number *= 1024, ++end;
+	else if (*end == 'm' || *end == 'M')
+		number *= 1048576, ++end;
+	else if (*end == 'g' || *end == 'G')
+		number *= 1073741824, ++end;
+	*res = number;
+	if (endptr)
+		*endptr = end;
+	return 0;
+}
+
+static int erofs_mkfs_strtol(const char *nptr, char **endptr,
+			     long *res, int base)
+{
+	long long res_ll;
+	int ret;
+
+	ret = erofs_mkfs_strtoll(nptr, endptr, &res_ll, base);
+	if (ret)
+		return ret;
+	if (res_ll > LONG_MAX || res_ll < LONG_MIN)
+		return -ERANGE;
+	*res = res_ll;
+	return 0;
+}
+
+static int erofs_mkfs_strtou32(const char *nptr, char **endptr,
+			       u32 *res, int base)
+{
+	unsigned long long res_ull;
+	int ret;
+
+	ret = erofs_mkfs_strtoull(nptr, endptr, &res_ull, base);
+	if (ret)
+		return ret;
+	if (res_ull > UINT32_MAX)
+		return -ERANGE;
+	*res = res_ull;
+	return 0;
+}
+
 #ifdef OCIEROFS_ENABLED
 /*
  * mkfs_parse_oci_options - Parse comma-separated OCI options string
@@ -765,6 +843,7 @@ static int mkfs_parse_oci_options(struct ocierofs_config *oci_cfg, char *options
 {
 	char *opt, *q, *p;
 	long idx;
+	int ret;
 
 	if (!options_str)
 		return 0;
@@ -815,8 +894,8 @@ static int mkfs_parse_oci_options(struct ocierofs_config *oci_cfg, char *options
 				erofs_err("invalid --oci: layer and blob cannot be set together");
 				return -EINVAL;
 			}
-			idx = strtol(p, NULL, 10);
-			if (idx < 0)
+			ret = erofs_mkfs_strtol(p, NULL, &idx, 10);
+			if (ret || idx < 0)
 				return -EINVAL;
 			oci_cfg->layer_index = (int)idx;
 		} else if ((p = strstr(opt, "username="))) {
@@ -890,12 +969,8 @@ static int mkfs_parse_one_compress_alg(char *alg)
 					}
 				} else if ((p = strstr(opt, "dictsize="))) {
 					p += strlen("dictsize=");
-					zset->dict_size = strtoul(p, &endptr, 10);
-					if (*endptr == 'k' || *endptr == 'K')
-						zset->dict_size <<= 10;
-					else if (*endptr == 'm' || *endptr == 'M')
-						zset->dict_size <<= 20;
-					else if ((endptr == p) || (*endptr && *endptr != ',')) {
+					j = erofs_mkfs_strtou32(p, &endptr, &zset->dict_size, 0);
+					if (j < 0 || (*endptr != '\0' && endptr != q)) {
 						erofs_err("invalid compression dictsize %s", p);
 						return -EINVAL;
 					}
@@ -1069,8 +1144,9 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			break;
 
 		case 'b':
-			i = atoi(optarg);
-			if (i < 512 || i > EROFS_MAX_BLOCK_SIZE) {
+			err = erofs_mkfs_strtol(optarg, &endptr, &i, 0);
+			if (err || *endptr != '\0' || i < 512 ||
+			    i > EROFS_MAX_BLOCK_SIZE) {
 				erofs_err("invalid block size %s", optarg);
 				return -EINVAL;
 			}
@@ -1179,8 +1255,9 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			break;
 #endif
 		case 9:
-			i = strtol(optarg, &endptr, 0);
-			if (*endptr != '\0' || i > INT32_MAX || i < INT32_MIN) {
+			err = erofs_mkfs_strtol(optarg, &endptr, &i, 0);
+			if (err || *endptr != '\0' ||
+			    i > INT32_MAX || i < INT32_MIN) {
 				erofs_err("invalid maximum compressed extent size %s",
 					  optarg);
 				return -EINVAL;
@@ -1206,8 +1283,8 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			break;
 #endif
 		case 'C':
-			i = strtoull(optarg, &endptr, 0);
-			if (*endptr != '\0') {
+			err = erofs_mkfs_strtol(optarg, &endptr, &i, 0);
+			if (err < 0 || *endptr != '\0' || i <= 0) {
 				erofs_err("invalid physical clustersize %s",
 					  optarg);
 				return -EINVAL;
@@ -1228,7 +1305,13 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 					metabox_algorithmid = err;
 				}
 			}
-			pclustersize_metabox = atoi(optarg);
+			err = erofs_mkfs_strtol(optarg, &endptr, &i, 0);
+			if (err < 0 || (*endptr != '\0' && algid != endptr) ||
+			    i <= 0) {
+				erofs_err("invalid metabox option %s", optarg);
+				return -EINVAL;
+			}
+			pclustersize_metabox = i;
 			break;
 		}
 
