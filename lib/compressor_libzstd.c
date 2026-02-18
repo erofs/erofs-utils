@@ -175,8 +175,7 @@ static int compressor_libzstd_init(struct erofs_compress *c)
 
 	if (!erofs_atomic_test_and_set(&__warnonce)) {
 		erofs_warn("EXPERIMENTAL libzstd compressor in use. Note that `fitblk` isn't supported by upstream zstd for now.");
-		erofs_warn("Therefore it will takes more time in order to get the optimal result.");
-		erofs_info("You could clarify further needs in zstd repository <https://github.com/facebook/zstd/issues> for reference too.");
+		erofs_warn("If unaligned compression isn't used (without -E48bit), it will take more time in order to get the optimal result.");
 	}
 	return 0;
 out_err:

@@ -120,7 +120,6 @@ static int compressor_libdeflate_exit(struct erofs_compress *c)
 
 static int compressor_libdeflate_init(struct erofs_compress *c)
 {
-	static erofs_atomic_bool_t __warnonce;
 	struct erofs_libdeflate_context *ctx;
 
 	DBG_BUGON(c->private_data);
@@ -133,8 +132,6 @@ static int compressor_libdeflate_init(struct erofs_compress *c)
 		return -ENOMEM;
 	}
 	c->private_data = ctx;
-	if (!erofs_atomic_test_and_set(&__warnonce))
-		erofs_warn("EXPERIMENTAL libdeflate compressor in use. Use at your own risk!");
 	return 0;
 }
 
