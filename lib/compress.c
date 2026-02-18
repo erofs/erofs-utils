@@ -634,7 +634,7 @@ retry_aligned:
 			may_packing = false;
 			e->length = min_t(u32, e->length, ctx->pclustersize);
 nocompression:
-			if (params->dedupe != EROFS_DEDUPE_FORCE_OFF)
+			if (params->dedupe == EROFS_DEDUPE_FORCE_ON)
 				ret = write_uncompressed_block(ctx, len, dst);
 			else
 				ret = write_uncompressed_extents(ctx, len,
@@ -1382,7 +1382,7 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 
 	if (ptotal)
 		(void)erofs_bh_balloon(bh, ptotal);
-	else if (!params->fragments && params->dedupe == EROFS_DEDUPE_FORCE_OFF)
+	else if (!params->fragments && params->dedupe != EROFS_DEDUPE_FORCE_ON)
 		DBG_BUGON(!inode->idata_size);
 
 	erofs_info("compressed %s (%llu bytes) into %llu bytes",
@@ -1887,7 +1887,7 @@ void *erofs_prepare_compressed_file(struct erofs_importer *im,
 			params->max_compressed_extent_size;
 		ictx->data_unaligned = false;
 	}
-	if (params->fragments && params->dedupe == EROFS_DEDUPE_FORCE_OFF &&
+	if (params->fragments && params->dedupe != EROFS_DEDUPE_FORCE_ON &&
 	    !ictx->data_unaligned)
 		inode->z_advise |= Z_EROFS_ADVISE_INTERLACED_PCLUSTER;
 
