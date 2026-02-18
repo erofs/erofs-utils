@@ -29,6 +29,8 @@ enum {
 	EROFS_FRAGDEDUPE_OFF,
 };
 
+#define EROFS_COMPRESSED_EXTENT_UNSPECIFIED	0
+
 struct erofs_importer_params {
 	struct z_erofs_paramset *z_paramsets;
 	char *source;
@@ -42,6 +44,7 @@ struct erofs_importer_params {
 	u32 pclusterblks_def;
 	u32 pclusterblks_packed;
 	s32 pclusterblks_metabox;
+	s32 max_compressed_extent_size;
 	s64 build_time;
 	char force_inodeversion;
 	bool ignore_mtime;

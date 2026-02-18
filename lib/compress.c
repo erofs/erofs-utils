@@ -53,6 +53,7 @@ struct z_erofs_compress_ictx {		/* inode context */
 	struct list_head extents;
 	u16 clusterofs;
 	int seg_num;
+	u32 max_compressed_extent_size;
 
 #if EROFS_MT_ENABLED
 	pthread_mutex_t mutex;
@@ -595,7 +596,7 @@ static int __z_erofs_compress_one(struct z_erofs_compress_sctx *ctx,
 			goto nocompression;
 	}
 
-	e->length = min(len, cfg.c_max_decompressed_extent_bytes);
+	e->length = min(len, ictx->max_compressed_extent_size);
 	if (data_unaligned) {
 		ret = erofs_compress(h, ctx->queue + ctx->head, e->length,
 				     dst, ctx->pclustersize);
@@ -1847,9 +1848,45 @@ void *erofs_prepare_compressed_file(struct erofs_importer *im,
 		ictx->ccfg = &sbi->zmgr->ccfg[inode->z_algorithmtype[0]];
 	inode->z_algorithmtype[0] = ictx->ccfg->algorithmtype;
 	inode->z_algorithmtype[1] = 0;
-	ictx->data_unaligned = erofs_sb_has_48bit(sbi) &&
-		cfg.c_max_decompressed_extent_bytes <=
-			z_erofs_get_pclustersize(ictx);
+
+	if (params->max_compressed_extent_size ==
+	    EROFS_COMPRESSED_EXTENT_UNSPECIFIED) {
+		if (erofs_sb_has_48bit(sbi) && ictx->ccfg->handle.alg->c->compress) {
+			ictx->max_compressed_extent_size =
+				z_erofs_get_pclustersize(ictx);
+			ictx->data_unaligned = true;
+		} else {
+			ictx->max_compressed_extent_size = UINT32_MAX;
+			ictx->data_unaligned = false;
+		}
+	} else if (params->max_compressed_extent_size <=
+		   (s32)z_erofs_get_pclustersize(ictx)) {
+		if (params->max_compressed_extent_size < 0) {
+			ictx->max_compressed_extent_size =
+				-params->max_compressed_extent_size;
+			if (!erofs_sb_has_48bit(sbi)) {
+				erofs_err("Unaligned compressed extents must be used with the 48bit encoded extent layout",
+					  ictx->max_compressed_extent_size);
+				free(ictx);
+				return ERR_PTR(-EINVAL);
+			}
+			ictx->data_unaligned = true;
+		} else {
+			ictx->max_compressed_extent_size =
+				params->max_compressed_extent_size;
+			if (erofs_sb_has_48bit(sbi))
+				ictx->data_unaligned = true;
+		}
+		if (ictx->max_compressed_extent_size < erofs_blksiz(sbi)) {
+			erofs_err("Maximum compressed extent size (%u) must be at least the block size (%u)",
+				  ictx->max_compressed_extent_size, erofs_blksiz(sbi));
+			return ERR_PTR(-EINVAL);
+		}
+	} else {
+		ictx->max_compressed_extent_size =
+			params->max_compressed_extent_size;
+		ictx->data_unaligned = false;
+	}
 	if (params->fragments && params->dedupe == EROFS_DEDUPE_FORCE_OFF &&
 	    !ictx->data_unaligned)
 		inode->z_advise |= Z_EROFS_ADVISE_INTERLACED_PCLUSTER;

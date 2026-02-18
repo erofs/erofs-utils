@@ -1179,13 +1179,13 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			break;
 #endif
 		case 9:
-			cfg.c_max_decompressed_extent_bytes =
-				strtoul(optarg, &endptr, 0);
-			if (*endptr != '\0') {
-				erofs_err("invalid maximum uncompressed extent size %s",
+			i = strtol(optarg, &endptr, 0);
+			if (*endptr != '\0' || i > INT32_MAX || i < INT32_MIN) {
+				erofs_err("invalid maximum compressed extent size %s",
 					  optarg);
 				return -EINVAL;
 			}
+			params->max_compressed_extent_size = i;
 			break;
 		case 10:
 			cfg.c_compress_hints_file = optarg;

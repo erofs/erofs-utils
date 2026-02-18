@@ -24,6 +24,8 @@ void erofs_importer_preset(struct erofs_importer_params *params)
 		.fixed_gid = -1,
 		.fsalignblks = 1,
 		.build_time = -1,
+		.max_compressed_extent_size =
+			EROFS_COMPRESSED_EXTENT_UNSPECIFIED,
 	};
 }
 
