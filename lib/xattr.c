@@ -1358,7 +1358,7 @@ static int erofs_xattr_iter_inline(struct erofs_xattr_iter *it,
 	erofs_init_metabuf(&it->buf, it->sbi, erofs_inode_in_metabox(vi));
 	remaining = vi->xattr_isize - xattr_header_sz;
 	it->pos = erofs_iloc(vi) + vi->inode_isize + xattr_header_sz;
-	while (remaining) {
+	do {
 		it->kaddr = erofs_bread(&it->buf, it->pos, true);
 		if (IS_ERR(it->kaddr))
 			return PTR_ERR(it->kaddr);
@@ -1380,7 +1380,7 @@ static int erofs_xattr_iter_inline(struct erofs_xattr_iter *it,
 			break;
 
 		it->pos = next_pos;
-	}
+	} while (remaining);
 	return ret;
 }
 
