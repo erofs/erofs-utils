@@ -1172,7 +1172,7 @@ static int erofs_init_inode_xattrs(struct erofs_inode *vi)
 	}
 
 	it.buf = __EROFS_BUF_INITIALIZER;
-	erofs_init_metabuf(&it.buf, sbi, false);
+	erofs_init_metabuf(&it.buf, sbi, erofs_inode_in_metabox(vi));
 	it.pos = erofs_iloc(vi) + vi->inode_isize;
 
 	/* read in shared xattr array (non-atomic, see kmalloc below) */
@@ -1355,6 +1355,7 @@ static int erofs_xattr_iter_inline(struct erofs_xattr_iter *it,
 		return -ENODATA;
 	}
 
+	erofs_init_metabuf(&it->buf, it->sbi, erofs_inode_in_metabox(vi));
 	remaining = vi->xattr_isize - xattr_header_sz;
 	it->pos = erofs_iloc(vi) + vi->inode_isize + xattr_header_sz;
 	while (remaining) {
@@ -1390,6 +1391,8 @@ static int erofs_xattr_iter_shared(struct erofs_xattr_iter *it,
 	unsigned int i;
 	int ret = -ENODATA;
 
+	erofs_init_metabuf(&it->buf, sbi,
+			   erofs_sb_has_shared_ea_in_metabox(sbi));
 	for (i = 0; i < vi->xattr_shared_count; ++i) {
 		it->pos = erofs_pos(sbi, sbi->xattr_blkaddr) +
 				vi->xattr_shared_xattrs[i] * sizeof(__le32);
@@ -1431,7 +1434,6 @@ int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
 
 	it.sbi = vi->sbi;
 	it.buf = __EROFS_BUF_INITIALIZER;
-	erofs_init_metabuf(&it.buf, it.sbi, false);
 	it.buffer = buffer;
 	it.buffer_size = buffer_size;
 	it.buffer_ofs = 0;
@@ -1456,7 +1458,6 @@ int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size)
 
 	it.sbi = vi->sbi;
 	it.buf = __EROFS_BUF_INITIALIZER;
-	erofs_init_metabuf(&it.buf, it.sbi, false);
 	it.buffer = buffer;
 	it.buffer_size = buffer_size;
 	it.buffer_ofs = 0;
