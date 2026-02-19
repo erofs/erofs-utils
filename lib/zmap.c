@@ -560,7 +560,8 @@ static int z_erofs_map_blocks_ext(struct erofs_inode *vi,
 			pos += sizeof(__le64);
 			lstart = 0;
 		} else {
-			lstart = map->m_la >> vi->z_lclusterbits;
+			lstart = round_down(map->m_la, 1 << vi->z_lclusterbits);
+			pos += (lstart >> vi->z_lclusterbits) * recsz;
 			pa = EROFS_NULL_ADDR;
 		}
 
@@ -579,7 +580,7 @@ static int z_erofs_map_blocks_ext(struct erofs_inode *vi,
 		}
 		last = (lstart >= round_up(lend, 1 << vi->z_lclusterbits));
 		lend = min(lstart, lend);
-		lstart -= 1ULL << vi->z_lclusterbits;
+		lstart -= 1 << vi->z_lclusterbits;
 	} else {
 		lstart = lend;
 		for (l = 0, r = vi->z_extents; l < r; ) {
@@ -621,7 +622,7 @@ static int z_erofs_map_blocks_ext(struct erofs_inode *vi,
 			vi->z_fragmentoff = map->m_plen;
 			if (recsz > offsetof(struct z_erofs_extent, pstart_lo))
 				vi->z_fragmentoff |= map->m_pa << 32;
-		} else if (map->m_plen) {
+		} else if (map->m_plen & Z_EROFS_EXTENT_PLEN_MASK) {
 			map->m_flags |= EROFS_MAP_MAPPED |
 				EROFS_MAP_FULL_MAPPED | EROFS_MAP_ENCODED;
 			fmt = map->m_plen >> Z_EROFS_EXTENT_PLEN_FMT_BIT;
