@@ -123,10 +123,10 @@ static int erofs_compressor_libzstd_setdictsize(struct erofs_compress *c,
 		} else {
 			dict_size = min_t(u32, Z_EROFS_ZSTD_MAX_DICT_SIZE,
 					  pclustersize_max << 3);
-			dict_size = 1 << ilog2(dict_size);
+			dict_size = 1U << ilog2(dict_size);
 		}
 	}
-	if (dict_size != 1 << ilog2(dict_size) ||
+	if (dict_size != 1U << ilog2(dict_size) ||
 	    dict_size > Z_EROFS_ZSTD_MAX_DICT_SIZE) {
 		erofs_err("invalid dictionary size %u", dict_size);
 		return -EINVAL;
