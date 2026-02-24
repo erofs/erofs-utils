@@ -322,6 +322,10 @@ AS_IF([test "x$MAX_BLOCK_SIZE" = "x"], [
                              [erofs_cv_max_block_size=`cat conftest.out`],
                              [erofs_cv_max_block_size=4096],
                              [erofs_cv_max_block_size=4096]))
+  dnl Ensure aarch64 supports at least 16K
+  AS_CASE([$build_cpu],
+    [aarch64*], [AS_IF([test "$erofs_cv_max_block_size" -lt 16384],
+                   [erofs_cv_max_block_size=16384])])
 ], [erofs_cv_max_block_size=$MAX_BLOCK_SIZE])
 
 # Configure multi-threading support
