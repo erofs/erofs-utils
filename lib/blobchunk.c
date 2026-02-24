@@ -154,6 +154,19 @@ int erofs_write_chunk_indexes(struct erofs_inode *inode, struct erofs_vfile *vf,
 		unit = EROFS_BLOCK_MAP_ENTRY_SIZE;
 
 	chunkblks = 1ULL << (inode->u.chunkformat & EROFS_CHUNK_FORMAT_BLKBITS_MASK);
+
+	/* check if any chunk lands above 32-bit range once remapped_base is applied */
+	for (src = 0; src < inode->extent_isize / unit * sizeof(void *);
+	     src += sizeof(void *)) {
+		struct erofs_blobchunk *chunk = *(void **)(inode->chunkindexes + src);
+
+		if (chunk->blkaddr != EROFS_NULL_ADDR && !chunk->device_id &&
+		    remapped_base + chunk->blkaddr > UINT32_MAX) {
+			inode->u.chunkformat |= EROFS_CHUNK_FORMAT_48BIT;
+			break;
+		}
+	}
+
 	_48bit = inode->u.chunkformat & EROFS_CHUNK_FORMAT_48BIT;
 	for (dst = src = 0; dst < inode->extent_isize;
 	     src += sizeof(void *), dst += unit) {
@@ -380,10 +393,6 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 			goto err;
 		}
 
-		/* FIXME! `chunk->blkaddr` is not the final blkaddr here */
-		if (chunk->blkaddr != EROFS_NULL_ADDR &&
-		    chunk->blkaddr >= UINT32_MAX)
-			inode->u.chunkformat |= EROFS_CHUNK_FORMAT_48BIT;
 		if (!erofs_blob_can_merge(sbi, lastch, chunk)) {
 			erofs_update_minextblks(sbi, interval_start, pos,
 						&minextblks);
