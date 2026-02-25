@@ -96,6 +96,9 @@ static struct erofsdump_feature feature_lists[] = {
 	{  true,    0, EROFS_FEATURE_COMPAT_SB_CHKSUM, "sb_csum" },
 	{  true,    0, EROFS_FEATURE_COMPAT_MTIME, "mtime" },
 	{  true,    0, EROFS_FEATURE_COMPAT_XATTR_FILTER, "xattr_filter" },
+	{  true,    0, EROFS_FEATURE_COMPAT_SHARED_EA_IN_METABOX, "shared_ea_in_metabox" },
+	{  true,    0, EROFS_FEATURE_COMPAT_PLAIN_XATTR_PFX, "plain_xattr_pfx" },
+	{  true,    0, EROFS_FEATURE_COMPAT_ISHARE_XATTRS, "ishare_xattrs" },
 	{ false, 504U, EROFS_FEATURE_INCOMPAT_LZ4_0PADDING, "lz4_0padding" },
 	{ false, 513U, EROFS_FEATURE_INCOMPAT_COMPR_CFGS, "compr_cfgs" },
 	{ false, 513U, EROFS_FEATURE_INCOMPAT_BIG_PCLUSTER, "big_pcluster" },
@@ -675,12 +678,21 @@ static void erofsdump_show_superblock(void)
 			g_sbi.inos | 0ULL);
 	fprintf(stdout, "Filesystem created:                           %s",
 			ctime(&time));
-	fprintf(stdout, "Filesystem features:                          ");
+	fprintf(stdout, "Filesystem compatible features:               ");
 	for (i = 0; i < ARRAY_SIZE(feature_lists); i++) {
-		u32 feat = le32_to_cpu(feature_lists[i].compat ?
-				       g_sbi.feature_compat :
-				       g_sbi.feature_incompat);
-		if (feat & feature_lists[i].flag) {
+		if (!feature_lists[i].compat)
+			continue;
+		if (le32_to_cpu(g_sbi.feature_compat) & feature_lists[i].flag) {
+			fprintf(stdout, "%s ", feature_lists[i].name);
+			if (feature_lists[i].lkver > minkver)
+				minkver = feature_lists[i].lkver;
+		}
+	}
+	fprintf(stdout, "\nFilesystem incompatible features:             ");
+	for (i = 0; i < ARRAY_SIZE(feature_lists); i++) {
+		if (feature_lists[i].compat)
+			continue;
+		if (le32_to_cpu(g_sbi.feature_incompat) & feature_lists[i].flag) {
 			fprintf(stdout, "%s ", feature_lists[i].name);
 			if (feature_lists[i].lkver > minkver)
 				minkver = feature_lists[i].lkver;
