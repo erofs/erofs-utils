@@ -794,6 +794,7 @@ int erofs_iflush(struct erofs_inode *inode)
 	} else if (is_inode_layout_compression(inode)) {
 		u1.blocks_lo = cpu_to_le32(inode->u.i_blocks);
 	} else if (inode->datalayout == EROFS_INODE_CHUNK_BASED) {
+		erofs_inode_fixup_chunkformat(inode);
 		u1.c.format = cpu_to_le16(inode->u.chunkformat);
 	} else {
 		ret = erofs_inode_map_flat_blkaddr(inode);
