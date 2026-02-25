@@ -1678,7 +1678,7 @@ static void erofs_mkfs_default_options(struct erofs_importer_params *params)
 	mkfs_blkszbits = ilog2(min_t(u32, getpagesize(), EROFS_MAX_BLOCK_SIZE));
 	params->pclusterblks_max = 1U;
 	params->pclusterblks_def = 1U;
-	g_sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
+	g_sbi.feature_incompat = 0;
 	g_sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM |
 			     EROFS_FEATURE_COMPAT_MTIME;
 }
