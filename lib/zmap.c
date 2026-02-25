@@ -160,7 +160,7 @@ static int z_erofs_load_compact_lcluster(struct z_erofs_maprecorder *m,
 	m->nextpackoff = round_down(pos, vcnt << amortizedshift) +
 			 (vcnt << amortizedshift);
 	lobits = max(lclusterbits, ilog2(Z_EROFS_LI_D0_CBLKCNT) + 1U);
-	encodebits = ((vcnt << amortizedshift) - sizeof(__le32)) * 8 / vcnt;
+	encodebits = (((vcnt << amortizedshift) - sizeof(__le32)) * 8) >> ilog2(vcnt);
 	bytes = pos & ((vcnt << amortizedshift) - 1);
 	in -= bytes;
 	i = bytes >> amortizedshift;
