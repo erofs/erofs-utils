@@ -37,6 +37,14 @@ Optionally extract contents of the \fIIMAGE\fR to \fIdirectory\fR.
 .B "--no-sbcrc"
 Bypass the on-disk superblock checksum verification.
 .TP
+.BI "\-\-nid=" #
+Specify the target inode by its NID for checking or extraction.
+The default is the root inode.
+.TP
+.BI "\-\-path=" path
+Specify the target inode by its path for checking or extraction. If both
+\fB\-\-nid\fR and \fB\-\-path\fR are specified, \fB\-\-path\fR takes precedence.
+.TP
 .BI "--[no-]xattrs"
 Whether to dump extended attributes during extraction (default off).
 .TP
