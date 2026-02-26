@@ -897,7 +897,7 @@ s3erofs_create_object_iterator(struct erofs_s3 *s3, const char *path,
 			       const char *delimiter)
 {
 	struct s3erofs_object_iterator *iter;
-	char *prefix;
+	const char *prefix;
 
 	iter = calloc(1, sizeof(struct s3erofs_object_iterator));
 	if (!iter)

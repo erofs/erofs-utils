@@ -122,7 +122,7 @@ static void version(void)
 static int erofsmount_parse_oci_option(const char *option)
 {
 	struct ocierofs_config *oci_cfg = &nbdsrc.ocicfg;
-	char *p;
+	const char *p;
 	long idx;
 
 	if ((p = strstr(option, "oci.blob=")) != NULL) {

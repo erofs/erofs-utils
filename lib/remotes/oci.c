@@ -1047,7 +1047,7 @@ out_auth:
  */
 static int ocierofs_parse_ref(struct ocierofs_ctx *ctx, const char *ref_str)
 {
-	char *slash, *colon, *dot;
+	const char *slash, *colon, *dot;
 	const char *repo_part;
 	size_t len;
 	char *tmp;
