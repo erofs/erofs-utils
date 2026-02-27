@@ -717,6 +717,7 @@ out_closefd:
 static int erofsmount_write_recovery_oci(FILE *f, struct erofs_nbd_source *source)
 {
 	char *b64cred = NULL;
+	const char *platform;
 	int ret;
 
 	if (source->ocicfg.username || source->ocicfg.password) {
@@ -726,11 +727,15 @@ static int erofsmount_write_recovery_oci(FILE *f, struct erofs_nbd_source *sourc
 			return PTR_ERR(b64cred);
 	}
 
+	platform = source->ocicfg.platform;
+	if (!platform || !*platform)
+		platform = ocierofs_get_platform_spec();
+
 	if ((source->ocicfg.tarindex_path || source->ocicfg.zinfo_path) &&
 	    source->ocicfg.blob_digest && *source->ocicfg.blob_digest) {
 		ret = fprintf(f, "TARINDEX_OCI_BLOB %s %s %s %s %s %s\n",
 			      source->ocicfg.image_ref ?: "",
-			      source->ocicfg.platform ?: "",
+			      platform ?: "",
 			      source->ocicfg.blob_digest,
 			      b64cred ?: "",
 			      source->ocicfg.tarindex_path ?: "",
@@ -742,7 +747,7 @@ static int erofsmount_write_recovery_oci(FILE *f, struct erofs_nbd_source *sourc
 	if (source->ocicfg.blob_digest && *source->ocicfg.blob_digest) {
 		ret = fprintf(f, "OCI_NATIVE_BLOB %s %s %s %s\n",
 			      source->ocicfg.image_ref ?: "",
-			      source->ocicfg.platform ?: "",
+			      platform ?: "",
 			      source->ocicfg.blob_digest,
 			      b64cred ?: "");
 		free(b64cred);
@@ -752,7 +757,7 @@ static int erofsmount_write_recovery_oci(FILE *f, struct erofs_nbd_source *sourc
 	if (source->ocicfg.layer_index >= 0) {
 		ret = fprintf(f, "OCI_LAYER %s %s %d %s\n",
 			      source->ocicfg.image_ref ?: "",
-			      source->ocicfg.platform ?: "",
+			      platform ?: "",
 			      source->ocicfg.layer_index,
 			      b64cred ?: "");
 		free(b64cred);

@@ -80,6 +80,7 @@ int ocierofs_io_open(struct erofs_vfile *vf, const struct ocierofs_config *cfg);
 
 char *ocierofs_encode_userpass(const char *username, const char *password);
 int ocierofs_decode_userpass(const char *b64, char **out_user, char **out_pass);
+const char *ocierofs_get_platform_spec(void);
 
 #ifdef __cplusplus
 }

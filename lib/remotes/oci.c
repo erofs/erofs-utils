@@ -1109,54 +1109,38 @@ static int ocierofs_parse_ref(struct ocierofs_ctx *ctx, const char *ref_str)
 	return 0;
 }
 
-static char *ocierofs_get_platform_spec(void)
+const char *ocierofs_get_platform_spec(void)
 {
-	const char *os = NULL, *arch = NULL, *variant = NULL;
-	char *platform;
-
 #if defined(__linux__)
-	os = "linux";
+#define EROFS_OCI_OS "linux"
 #elif defined(__APPLE__)
-	os = "darwin";
+#define EROFS_OCI_OS "darwin"
 #elif defined(_WIN32)
-	os = "windows";
+#define EROFS_OCI_OS "windows"
 #elif defined(__FreeBSD__)
-	os = "freebsd";
+#define EROFS_OCI_OS "freebsd"
 #endif
 
 #if defined(__x86_64__) || defined(__amd64__)
-	arch = "amd64";
+	return EROFS_OCI_OS "/amd64";
 #elif defined(__aarch64__) || defined(__arm64__)
-	arch = "arm64";
-	variant = "v8";
+	return EROFS_OCI_OS "/arm64/v8";
 #elif defined(__i386__)
-	arch = "386";
+	return EROFS_OCI_OS "/386";
 #elif defined(__arm__)
-	arch = "arm";
-	variant = "v7";
+	return EROFS_OCI_OS "/arm/v7";
 #elif defined(__riscv) && (__riscv_xlen == 64)
-	arch = "riscv64";
+	return EROFS_OCI_OS "/riscv64";
+#elif defined(__ppc64__) && defined(__BYTE_ORDER__) && \
+	  (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+	return EROFS_OCI_OS "/ppc64le";
 #elif defined(__ppc64__)
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-	arch = "ppc64le";
-#else
-	arch = "ppc64";
-#endif
+	return EROFS_OCI_OS "/ppc64";
 #elif defined(__s390x__)
-	arch = "s390x";
+	return EROFS_OCI_OS "/s390x";
+#else
+	return NULL;
 #endif
-
-	if (!os || !arch)
-		return NULL;
-
-	if (variant) {
-		if (asprintf(&platform, "%s/%s/%s", os, arch, variant) < 0)
-			return NULL;
-	} else {
-		if (asprintf(&platform, "%s/%s", os, arch) < 0)
-			return NULL;
-	}
-	return platform;
 }
 
 /**
@@ -1187,10 +1171,7 @@ static int ocierofs_init(struct ocierofs_ctx *ctx, const struct ocierofs_config 
 		ctx->blob_digest = NULL;
 	ctx->registry = strdup("registry-1.docker.io");
 	ctx->tag = strdup("latest");
-	if (config->platform)
-		ctx->platform = strdup(config->platform);
-	else
-		ctx->platform = ocierofs_get_platform_spec();
+	ctx->platform = strdup(config->platform ?: ocierofs_get_platform_spec());
 	if (!ctx->registry || !ctx->tag || !ctx->platform)
 		return -ENOMEM;
 
