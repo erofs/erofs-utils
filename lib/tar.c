@@ -638,8 +638,11 @@ static int tarerofs_write_uncompressed_file(struct erofs_inode *inode,
 
 	for (pos = 0; pos < inode->i_size; pos += ret) {
 		ret = erofs_iostream_read(&tar->ios, &buf, inode->i_size - pos);
-		if (ret < 0)
+		if (ret <= 0) {
+			if (!ret)
+				ret = -EIO;
 			break;
+		}
 		if (erofs_dev_write(sbi, buf,
 				    erofs_pos(sbi, inode->u.i_blkaddr) + pos,
 				    ret)) {
@@ -649,6 +652,8 @@ static int tarerofs_write_uncompressed_file(struct erofs_inode *inode,
 	}
 	inode->idata_size = 0;
 	inode->datasource = EROFS_INODE_DATA_SOURCE_NONE;
+	if (ret < 0)
+		return ret;
 	return 0;
 }
 
@@ -671,20 +676,25 @@ static int tarerofs_write_file_data(struct erofs_inode *inode,
 	if (fd < 0)
 		return -EBADF;
 
-	for (j = inode->i_size; j; ) {
+	j = inode->i_size;
+	DBG_BUGON(!j);
+	do {
 		nread = erofs_iostream_read(&tar->ios, &buf, j);
-		if (nread < 0)
+		if (nread <= 0) {
+			if (!nread)
+				nread = -EIO;
 			break;
+		}
 		if (pwrite(fd, buf, nread, off) != nread) {
 			nread = -EIO;
 			break;
 		}
 		j -= nread;
 		off += nread;
-	}
+	} while (j);
 	erofs_diskbuf_commit(inode->i_diskbuf, inode->i_size);
 	inode->datasource = EROFS_INODE_DATA_SOURCE_DISKBUF;
-	return 0;
+	return nread < 0 ? nread : 0;
 }
 
 int tarerofs_parse_tar(struct erofs_importer *im, struct erofs_tarfile *tar)
