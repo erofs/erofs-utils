@@ -64,6 +64,7 @@ static struct erofsmount_cfg {
 	long flags;
 	enum erofs_backend_drv backend;
 	enum erofsmount_mode mountmode;
+	bool force_loopdev;
 } mountcfg = {
 	.full_options = "ro",
 	.flags = MS_RDONLY,		/* default mountflags */
@@ -225,7 +226,9 @@ static long erofsmount_parse_flagopts(char *s, long flags, char **more)
 		if (comma)
 			*comma = '\0';
 
-		if (strncmp(s, "oci", 3) == 0) {
+		if (!strcmp(s, "loop")) {
+			mountcfg.force_loopdev = true;
+		} else if (strncmp(s, "oci", 3) == 0) {
 			/* Initialize ocicfg here iff != EROFSNBD_SOURCE_OCI */
 			if (nbdsrc.type != EROFSNBD_SOURCE_OCI) {
 				erofs_warn("EXPERIMENTAL OCI mount support in use, use at your own risk.");
@@ -1530,6 +1533,9 @@ int main(int argc, char *argv[])
 		goto exit;
 	}
 
+	if (mountcfg.force_loopdev)
+		goto loopmount;
+
 	err = mount(mountcfg.device, mountcfg.target, mountcfg.fstype,
 		    mountcfg.flags, mountcfg.options);
 	if (err < 0)
@@ -1539,6 +1545,7 @@ int main(int argc, char *argv[])
 		err = erofsmount_fuse(mountcfg.device, mountcfg.target,
 				      mountcfg.fstype, mountcfg.full_options);
 	else if (err == -ENOTBLK)
+loopmount:
 		err = erofsmount_loopmount(mountcfg.device, mountcfg.target,
 					   mountcfg.fstype, mountcfg.flags,
 					   mountcfg.options);
