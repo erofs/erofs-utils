@@ -1735,7 +1735,9 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 	}
 
 	list_for_each_entry(src, &rebuild_src_list, list) {
+		src->xamgr = g_sbi.xamgr;
 		ret = erofs_rebuild_load_tree(root, src, datamode);
+		src->xamgr = NULL;
 		if (ret) {
 			erofs_err("failed to load %s", src->devname);
 			return ret;
