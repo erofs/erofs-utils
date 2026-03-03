@@ -1,3 +1,20 @@
+erofs-utils 1.9.1
+
+ * A quick maintenance release includes the following fixes:
+   - (erofsfuse) Synchronize kernel patches to fix encoded extents
+                 and shared xattrs in the metabox;
+   - (mkfs.erofs) Do not set LZ4_0PADDING for plain filesystems;
+   - (fsck.erofs) Support extracting subtrees (Inseob Kim);
+   - (mount.erofs) Fix a flag-clearing bug that can cause mount
+		   failures (Yifan Zhao);
+   - (mkfs.erofs) Fix a CPU spin when using `--tar=f` if stdin is
+                  closed (David Scott);
+   - (mkfs.erofs) Fix crashes in the rebuild mode when the source
+                  images contains xattrs (lishixian);
+   - Miscellaneous fixes.
+
+ -- Gao Xiang <xiang@kernel.org>  Wed, 04 Mar 2026 00:00:00 +0800
+
 erofs-utils 1.9
 
  * This release includes the following updates:
