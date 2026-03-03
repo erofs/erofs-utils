@@ -543,6 +543,7 @@ static int z_erofs_map_blocks_ext(struct erofs_inode *vi,
 	unsigned int recsz = z_erofs_extent_recsize(vi->z_advise);
 	erofs_off_t pos = round_up(Z_EROFS_MAP_HEADER_END(erofs_iloc(vi) +
 				   vi->inode_isize + vi->xattr_isize), recsz);
+	unsigned int bmask = erofs_blksiz(sbi) - 1;
 	bool in_mbox = erofs_inode_in_metabox(vi);
 	erofs_off_t lend = vi->i_size;
 	erofs_off_t l, r, mid, pa, la, lstart;
@@ -626,17 +627,17 @@ static int z_erofs_map_blocks_ext(struct erofs_inode *vi,
 			map->m_flags |= EROFS_MAP_MAPPED |
 				EROFS_MAP_FULL_MAPPED | EROFS_MAP_ENCODED;
 			fmt = map->m_plen >> Z_EROFS_EXTENT_PLEN_FMT_BIT;
+			if (map->m_plen & Z_EROFS_EXTENT_PLEN_PARTIAL)
+				map->m_flags |= EROFS_MAP_PARTIAL_REF;
+			map->m_plen &= Z_EROFS_EXTENT_PLEN_MASK;
 			if (fmt)
 				map->m_algorithmformat = fmt - 1;
-			else if (interlaced && !erofs_blkoff(sbi, map->m_pa))
+			else if (interlaced && !((map->m_pa | map->m_plen) & bmask))
 				map->m_algorithmformat =
 					Z_EROFS_COMPRESSION_INTERLACED;
 			else
 				map->m_algorithmformat =
 					Z_EROFS_COMPRESSION_SHIFTED;
-			if (map->m_plen & Z_EROFS_EXTENT_PLEN_PARTIAL)
-				map->m_flags |= EROFS_MAP_PARTIAL_REF;
-			map->m_plen &= Z_EROFS_EXTENT_PLEN_MASK;
 		}
 	}
 	map->m_llen = lend - map->m_la;
