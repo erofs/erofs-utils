@@ -149,6 +149,7 @@ static qpl_job *z_erofs_qpl_get_job(void)
 		status = qpl_init_job(execution_path, (qpl_job *)job->job);
 		if (status != QPL_STS_OK) {
 			erofs_err("failed to initialize job: %d", status);
+			free(job);
 			return ERR_PTR(-EOPNOTSUPP);
 		}
 		erofs_atomic_dec_return(&z_erofs_qpl_reclaim_quot);
