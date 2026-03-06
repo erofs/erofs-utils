@@ -11,6 +11,9 @@
 #include "erofs/xattr.h"
 #include "erofs/blobchunk.h"
 #include "erofs/importer.h"
+#if defined(HAVE_SYS_SYSMACROS_H)
+#include <sys/sysmacros.h>
+#endif
 #if defined(HAVE_ZLIB)
 #include <zlib.h>
 #endif
@@ -957,7 +960,7 @@ out_eot:
 			goto out;
 		}
 
-		st.st_rdev = (major << 8) | (minor & 0xff) | ((minor & ~0xff) << 12);
+		st.st_rdev = makedev(major, minor);
 	} else if (th->typeflag == '1' || th->typeflag == '2') {
 		if (!eh.link)
 			eh.link = strndup(th->linkname, sizeof(th->linkname));
