@@ -127,7 +127,7 @@ int erofs_metazone_flush(struct erofs_sb_info *sbi)
 	if (!m2gr)
 		return 0;
 	bh = erofs_balloc(sbi->bmgr, DATA, 0, 0);
-	if (!bh)
+	if (IS_ERR(bh))
 		return PTR_ERR(bh);
 	erofs_mapbh(NULL, bh->block);
 	pos_out = erofs_btell(bh, false);
