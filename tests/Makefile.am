@@ -22,6 +22,7 @@ TESTS_ENVIRONMENT = \
 	fi; \
 	[ -z $$MKFS_EROFS_PROG ] && export MKFS_EROFS_PROG=../mkfs/mkfs.erofs; \
 	[ -z $$FSCK_EROFS_PROG ] && export FSCK_EROFS_PROG=../fsck/fsck.erofs; \
+	[ -z $$DUMP_EROFS_PROG ] && export DUMP_EROFS_PROG=../dump/dump.erofs; \
 	[ -z $$EROFSFUSE_PROG ] && export EROFSFUSE_PROG=../fuse/erofsfuse;
 
 if ENABLE_LZ4
@@ -115,6 +116,9 @@ TESTS += erofs/025
 
 # 026 - verify Zstandard compressed image
 TESTS += erofs/026
+
+# 027 - ensure that uncompressed filesystems should not have LZ4_0PADDING set
+TESTS += erofs/027
 
 EXTRA_DIST = common/rc erofs
 
