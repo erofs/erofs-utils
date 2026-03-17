@@ -6,9 +6,9 @@
 #include "erofs/err.h"
 #include "liberofs_gzran.h"
 #include <stdlib.h>
-#include <zlib.h>
 
 #ifdef HAVE_ZLIB
+#include <zlib.h>
 struct erofs_gzran_cutpoint {
 	u8	window[EROFS_GZRAN_WINSIZE];	/* preceding 32K of uncompressed data */
 	u64	outpos;			/* corresponding offset in uncompressed data */
