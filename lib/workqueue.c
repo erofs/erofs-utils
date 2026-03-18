@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+ OR Apache-2.0
 #include <pthread.h>
 #include <stdlib.h>
+#include "erofs/print.h"
 #include "erofs/workqueue.h"
 
 static void *worker_thread(void *arg)
@@ -53,10 +54,14 @@ int erofs_destroy_workqueue(struct erofs_workqueue *wq)
 	while (wq->nworker) {
 		int ret = -pthread_join(wq->workers[wq->nworker - 1], NULL);
 
-		if (ret)
+		if (ret) {
+			erofs_err("failed to join worker thread %u: %d",
+				  wq->nworker - 1, ret);
 			return ret;
+		}
 		--wq->nworker;
 	}
+
 	free(wq->workers);
 	pthread_mutex_destroy(&wq->lock);
 	pthread_cond_destroy(&wq->cond_empty);
