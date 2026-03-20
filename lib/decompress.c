@@ -198,13 +198,17 @@ static int z_erofs_decompress_qpl(struct z_erofs_decompress_req *rq)
 		return PTR_ERR(job);
 
 	inputmargin = z_erofs_fixup_insize(src, rq->inputsize);
-	if (inputmargin >= rq->inputsize)
-		return -EFSCORRUPTED;
+	if (inputmargin >= rq->inputsize) {
+		ret = -EFSCORRUPTED;
+		goto out_inflate_end;
+	}
 
 	if (rq->decodedskip) {
 		buff = malloc(rq->decodedlength);
-		if (!buff)
-			return -ENOMEM;
+		if (!buff) {
+			ret = -ENOMEM;
+			goto out_inflate_end;
+		}
 		dest = buff;
 	}
 
