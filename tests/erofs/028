@@ -1,0 +1,126 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# Test inode page cache sharing functionality
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -f $tmp.*
+}
+
+check_ishare()
+{
+	local f1=$1
+	local f2=$2
+	local orimd5=$3
+	local shouldshare=$4
+
+	md5_2=$(md5sum "$f2" | cut -d' ' -f1)
+	md5_1=$(md5sum "$f1" | cut -d' ' -f1)
+
+	[ "x$orimd5" = "x$md5_1" ] || _fail "md5sum is not match with file1"
+	[ "x$orimd5" = "x$md5_2" ] || _fail "md5sum is not match with file2"
+
+	fadvise -a dontneed "$f2"
+	osiz=$(strace -efault=cachestat -o/dev/null fincore -oRES -bnr "$f1")
+
+	if [ x"$shouldshare" != 'xtrue' ]; then
+		[ "$osiz" -lt "$(du -b $f1 | awk '{print $1}')" ] && \
+			_fail "page cache is shared"
+	else
+		[ $osiz -gt 0 ] && _fail "page cache is not shared"
+	fi
+}
+
+_require_erofs_inode_sharing
+_require_erofs_compression "-zlz4"
+which strace > /dev/null 2>&1 || _notrun "strace is not found"
+which fincore > /dev/null 2>&1 || _notrun "fincore is not found"
+which fadvise > /dev/null 2>&1 || _notrun "fadvise is not found"
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f $SCRATCH_DEV
+fi
+
+if [ -z $SCRATCH2_DEV ]; then
+	SCRATCH2_DEV=$tmp/erofs_${seq}_2.img
+	rm -rf $SCRATCH2_DEV
+fi
+
+localdir="$tmp/$seq"
+test_tarball="test.tar"
+
+rm -rf $localdir
+mkdir -p $localdir
+
+# collect files to build the images
+files=`find .. -type f -printf '%P:'`
+IFS=':'
+for f in $files; do
+	[ -z "${f##\.\./tests*}" ] && continue
+	[ -z "${f##\.\./\.*}" ] && continue
+	FILELIST="${FILELIST} $f"
+done
+unset IFS
+
+echo "${FILELIST}" | xargs tar -C../ -rf $localdir/$test_tarball.1
+
+orimd5=$(md5sum $localdir/$test_tarball.1 | cut -d' ' -f1)
+ln $localdir/$test_tarball.1 $localdir/${test_tarball}.2
+
+mkfs_extra_opts="--hard-dereference"
+
+i=0
+while IFS= read -r opt; do
+	mkfs_extra_opts="$mkfs_extra_opts $opt"
+
+	# prepare two identical EROFS images
+	_scratch_mkfs $mkfs_extra_opts $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+	cp $SCRATCH_DEV $SCRATCH2_DEV
+
+	_scratch_mount 2>> $seqres.full
+	check_ishare $SCRATCH_MNT/${test_tarball}.1 $SCRATCH_MNT/${test_tarball}.2 $orimd5 false
+	_scratch_unmount
+
+	# shared in the same filesystem
+	_scratch_mount -oinode_share,domain_id=share_domain1-$i 2>> $seqres.full
+	check_ishare $SCRATCH_MNT/${test_tarball}.1 $SCRATCH_MNT/${test_tarball}.2 $orimd5 true
+	_scratch_unmount
+
+	# shared in different filesystems
+	_scratch_mount -oinode_share,domain_id=share_domain2-$i 2>> $seqres.full
+	_scratch2_mount -oinode_share,domain_id=share_domain2-$i 2>> $seqres.full
+	check_ishare $SCRATCH_MNT/${test_tarball}.1 $SCRATCH2_MNT/${test_tarball}.2 $orimd5 true
+	check_ishare $SCRATCH_MNT/${test_tarball}.2 $SCRATCH2_MNT/${test_tarball}.1 $orimd5 true
+	_scratch_unmount
+	_scratch2_unmount
+
+	# do not share if domain IDs are different
+	_scratch_mount -oinode_share,domain_id=share_domain3-$i 2>> $seqres.full
+	_scratch2_mount -oinode_share,domain_id=share_domain4-$i 2>> $seqres.full
+	check_ishare $SCRATCH_MNT/${test_tarball}.1 $SCRATCH2_MNT/${test_tarball}.1 $orimd5 false
+	_scratch_unmount
+	_scratch2_unmount
+	i=$((i+1))
+done << EOF
+--xattr-inode-digest=system.erofs.fingerprint
+-zlz4
+EOF
+
+echo Silence is golden
+status=0
+exit 0

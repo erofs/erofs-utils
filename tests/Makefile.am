@@ -11,9 +11,9 @@ TESTS_ENVIRONMENT = \
 		export SCRATCH_MNT=/tmp/erofstest/scratch;	\
 		mkdir -p $$SCRATCH_MNT 2>/dev/null; \
 	fi; \
-	if [ -z $$TEST_MNT ]; then \
-		export TEST_MNT=/tmp/erofstest/test;	\
-		mkdir -p $$TEST_MNT 2>/dev/null; \
+	if [ -z $$SCRATCH2_MNT ]; then \
+		export SCRATCH2_MNT=/tmp/erofstest/scratch2;	\
+		mkdir -p $$SCRATCH2_MNT 2>/dev/null; \
 	fi; \
 	if [ -z $$RESULT_DIR ]; then \
 		export RESULT_DIR=`pwd`/results;	\
@@ -118,6 +118,9 @@ TESTS += erofs/026
 
 # 027 - ensure that uncompressed filesystems should not have LZ4_0PADDING set
 TESTS += erofs/027
+
+# 028 - test inode page cache sharing functionality
+TESTS += erofs/028
 
 EXTRA_DIST = common/rc erofs
 
