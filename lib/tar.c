@@ -473,7 +473,7 @@ int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 	char *buf, *p;
 	int ret;
 
-	buf = malloc(size);
+	buf = malloc((size_t)size + 1);
 	if (!buf)
 		return -ENOMEM;
 	p = buf;
@@ -481,6 +481,7 @@ int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 	ret = erofs_iostream_bread(ios, buf, size);
 	if (ret != size)
 		goto out;
+	buf[size] = '\0';
 
 	while (p < buf + size) {
 		char *kv, *key, *value;
@@ -870,6 +871,8 @@ out_eot:
 		st.st_mode = S_IFIFO;
 		break;
 	case 'g':
+		if ((u64)st.st_size >= UINT_MAX)
+			goto invalid_tar;
 		ret = tarerofs_parse_pax_header(&tar->ios, &tar->global,
 						st.st_size);
 		if (ret)
@@ -884,6 +887,8 @@ out_eot:
 		}
 		goto restart;
 	case 'x':
+		if ((u64)st.st_size >= UINT_MAX)
+			goto invalid_tar;
 		ret = tarerofs_parse_pax_header(&tar->ios, &eh, st.st_size);
 		if (ret)
 			goto out;
