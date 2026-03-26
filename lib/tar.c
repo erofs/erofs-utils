@@ -516,7 +516,7 @@ int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 				int j = p - 1 - value;
 				free(eh->path);
 				eh->path = strdup(value);
-				while (eh->path[j - 1] == '/')
+				while (j && eh->path[j - 1] == '/')
 					eh->path[--j] = '\0';
 			} else if (!strncmp(kv, "linkpath=",
 					sizeof("linkpath=") - 1)) {
