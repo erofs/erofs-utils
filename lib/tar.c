@@ -250,6 +250,7 @@ int erofs_iostream_read(struct erofs_iostream *ios, void **buf, u64 bytes)
 int erofs_iostream_bread(struct erofs_iostream *ios, void *buf, u64 bytes)
 {
 	u64 rem = bytes;
+	u8 *dst = buf;
 	void *src;
 	int ret;
 
@@ -257,7 +258,8 @@ int erofs_iostream_bread(struct erofs_iostream *ios, void *buf, u64 bytes)
 		ret = erofs_iostream_read(ios, &src, rem);
 		if (ret < 0)
 			return ret;
-		memcpy(buf, src, ret);
+		memcpy(dst, src, ret);
+		dst += ret;
 		rem -= ret;
 	} while (rem && ret);
 
