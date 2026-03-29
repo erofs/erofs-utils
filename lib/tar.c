@@ -525,6 +525,9 @@ int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 				eh->link = strdup(value);
 			} else if (!strncmp(kv, "mtime=",
 					sizeof("mtime=") - 1)) {
+				unsigned int ns = 0;
+				int digits = 0;
+
 				ret = sscanf(value, "%lld %n", &lln, &n);
 				if(ret < 1) {
 					ret = -EIO;
@@ -532,12 +535,31 @@ int tarerofs_parse_pax_header(struct erofs_iostream *ios,
 				}
 				eh->st.st_mtime = lln;
 				if (value[n] == '.') {
-					ret = sscanf(value + n + 1, "%d", &n);
-					if (ret < 1) {
+					while (value[n + 1] >= '0' &&
+					       value[n + 1] <= '9') {
+						if (digits < 9)
+							ns = ns * 10 + value[n + 1] - '0';
+						++digits;
+						++n;
+					}
+					if (!digits || value[n + 1] != '\0') {
 						ret = -EIO;
 						goto out;
 					}
-					ST_MTIM_NSEC_SET(&eh->st, n);
+					while (digits++ < 9)
+						ns *= 10;
+					if (ns && value[0] == '-') {
+						if (check_sub_overflow(eh->st.st_mtime, (time_t)1,
+								       &eh->st.st_mtime)) {
+							ret = -EIO;
+							goto out;
+						}
+						ns = 1000000000 - ns;
+					}
+					ST_MTIM_NSEC_SET(&eh->st, ns);
+				} else if (value[n] != '\0') {
+					ret = -EIO;
+					goto out;
 				} else {
 					ST_MTIM_NSEC_SET(&eh->st, 0);
 				}
