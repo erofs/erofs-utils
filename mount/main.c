@@ -71,18 +71,18 @@ static struct erofsmount_cfg {
 	.fstype = "erofs",
 };
 
-enum erofs_nbd_source_type {
-	EROFSNBD_SOURCE_LOCAL,
-	EROFSNBD_SOURCE_OCI,
+enum erofsmount_source_type {
+	EROFSMOUNT_SOURCE_LOCAL,
+	EROFSMOUNT_SOURCE_OCI,
 };
 
-static struct erofs_nbd_source {
-	enum erofs_nbd_source_type type;
+static struct erofsmount_source {
+	enum erofsmount_source_type type;
 	union {
 		const char *device_path;
 		struct ocierofs_config ocicfg;
 	};
-} nbdsrc;
+} mountsrc;
 
 static void usage(int argc, char **argv)
 {
@@ -122,7 +122,7 @@ static void version(void)
 #ifdef OCIEROFS_ENABLED
 static int erofsmount_parse_oci_option(const char *option)
 {
-	struct ocierofs_config *oci_cfg = &nbdsrc.ocicfg;
+	struct ocierofs_config *oci_cfg = &mountsrc.ocicfg;
 	const char *p;
 	long idx;
 
@@ -229,12 +229,12 @@ static long erofsmount_parse_flagopts(char *s, long flags, char **more)
 		if (!strcmp(s, "loop")) {
 			mountcfg.force_loopdev = true;
 		} else if (strncmp(s, "oci", 3) == 0) {
-			/* Initialize ocicfg here iff != EROFSNBD_SOURCE_OCI */
-			if (nbdsrc.type != EROFSNBD_SOURCE_OCI) {
+			/* Initialize ocicfg here iff != EROFSMOUNT_SOURCE_OCI */
+			if (mountsrc.type != EROFSMOUNT_SOURCE_OCI) {
 				erofs_warn("EXPERIMENTAL OCI mount support in use, use at your own risk.");
 				erofs_warn("Note that runtime performance is still unoptimized.");
-				nbdsrc.type = EROFSNBD_SOURCE_OCI;
-				nbdsrc.ocicfg.layer_index = -1;
+				mountsrc.type = EROFSMOUNT_SOURCE_OCI;
+				mountsrc.ocicfg.layer_index = -1;
 			}
 			err = erofsmount_parse_oci_option(s);
 			if (err < 0)
@@ -288,7 +288,7 @@ static int erofsmount_parse_options(int argc, char **argv)
 	int opt;
 	int i;
 
-	nbdsrc.ocicfg.layer_index = -1;
+	mountsrc.ocicfg.layer_index = -1;
 
 	while ((opt = getopt_long(argc, argv, "VNfhd:no:st:uv",
 				  long_options, NULL)) != -1) {
@@ -664,14 +664,14 @@ out:
 	return (void *)(uintptr_t)err;
 }
 
-static int erofsmount_startnbd(int nbdfd, struct erofs_nbd_source *source)
+static int erofsmount_startnbd(int nbdfd, struct erofsmount_source *source)
 {
 	struct erofsmount_nbd_ctx ctx = {};
 	uintptr_t retcode;
 	pthread_t th;
 	int err, err2;
 
-	if (source->type == EROFSNBD_SOURCE_OCI) {
+	if (source->type == EROFSMOUNT_SOURCE_OCI) {
 		if (source->ocicfg.tarindex_path || source->ocicfg.zinfo_path) {
 			err = erofsmount_tarindex_open(&ctx.vd, &source->ocicfg,
 						       source->ocicfg.tarindex_path,
@@ -720,7 +720,7 @@ out_closefd:
 }
 
 #ifdef OCIEROFS_ENABLED
-static int erofsmount_write_recovery_oci(FILE *f, struct erofs_nbd_source *source)
+static int erofsmount_write_recovery_oci(FILE *f, struct erofsmount_source *source)
 {
 	char *b64cred = NULL;
 	const char *platform;
@@ -774,13 +774,13 @@ static int erofsmount_write_recovery_oci(FILE *f, struct erofs_nbd_source *sourc
 	return -EINVAL;
 }
 #else
-static int erofsmount_write_recovery_oci(FILE *f, struct erofs_nbd_source *source)
+static int erofsmount_write_recovery_oci(FILE *f, struct erofsmount_source *source)
 {
 	return -EOPNOTSUPP;
 }
 #endif
 
-static int erofsmount_write_recovery_local(FILE *f, struct erofs_nbd_source *source)
+static int erofsmount_write_recovery_local(FILE *f, struct erofsmount_source *source)
 {
 	char *realp;
 	int err;
@@ -795,7 +795,7 @@ static int erofsmount_write_recovery_local(FILE *f, struct erofs_nbd_source *sou
 	return err ? -ENOMEM : 0;
 }
 
-static char *erofsmount_write_recovery_info(struct erofs_nbd_source *source)
+static char *erofsmount_write_recovery_info(struct erofsmount_source *source)
 {
 	char recp[] = "/var/run/erofs/mountnbd_XXXXXX";
 	int fd, err;
@@ -817,7 +817,7 @@ static char *erofsmount_write_recovery_info(struct erofs_nbd_source *source)
 		return ERR_PTR(-errno);
 	}
 
-	if (source->type == EROFSNBD_SOURCE_OCI)
+	if (source->type == EROFSMOUNT_SOURCE_OCI)
 		err = erofsmount_write_recovery_oci(f, source);
 	else
 		err = erofsmount_write_recovery_local(f, source);
@@ -1026,7 +1026,7 @@ static int erofsmount_nbd_fix_backend_linkage(int num, char **recp)
 	return 0;
 }
 
-static int erofsmount_startnbd_nl(pid_t *pid, struct erofs_nbd_source *source)
+static int erofsmount_startnbd_nl(pid_t *pid, struct erofsmount_source *source)
 {
 	int pipefd[2], err, num;
 
@@ -1042,7 +1042,7 @@ static int erofsmount_startnbd_nl(pid_t *pid, struct erofs_nbd_source *source)
 		if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
 			exit(EXIT_FAILURE);
 
-		if (source->type == EROFSNBD_SOURCE_OCI) {
+		if (source->type == EROFSMOUNT_SOURCE_OCI) {
 			if (source->ocicfg.tarindex_path || source->ocicfg.zinfo_path) {
 				err = erofsmount_tarindex_open(&ctx.vd, &source->ocicfg,
 							       source->ocicfg.tarindex_path,
@@ -1201,7 +1201,7 @@ err_identifier:
 	return err;
 }
 
-static int erofsmount_nbd(struct erofs_nbd_source *source,
+static int erofsmount_nbd(struct erofsmount_source *source,
 			  const char *mountpoint, const char *fstype,
 			  int flags, const char *options)
 {
@@ -1524,11 +1524,11 @@ int main(int argc, char *argv[])
 	}
 
 	if (mountcfg.backend == EROFSNBD) {
-		if (nbdsrc.type == EROFSNBD_SOURCE_OCI)
-			nbdsrc.ocicfg.image_ref = mountcfg.device;
+		if (mountsrc.type == EROFSMOUNT_SOURCE_OCI)
+			mountsrc.ocicfg.image_ref = mountcfg.device;
 		else
-			nbdsrc.device_path = mountcfg.device;
-		err = erofsmount_nbd(&nbdsrc, mountcfg.target,
+			mountsrc.device_path = mountcfg.device;
+		err = erofsmount_nbd(&mountsrc, mountcfg.target,
 				     mountcfg.fstype, mountcfg.flags, mountcfg.options);
 		goto exit;
 	}
