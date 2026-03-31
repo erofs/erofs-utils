@@ -36,6 +36,10 @@ noinst_HEADERS = $(top_srcdir)/include/erofs_fs.h \
       $(top_srcdir)/lib/liberofs_s3.h
 
 noinst_HEADERS += compressor.h
+if ENABLE_FANOTIFY
+noinst_HEADERS += $(top_srcdir)/lib/liberofs_fanotify.h
+endif
+
 liberofs_la_SOURCES = config.c io.c cache.c super.c inode.c xattr.c exclude.c \
 		      namei.c data.c compress.c compressor.c zmap.c decompress.c \
 		      compress_hints.c hashmap.c sha256.c blobchunk.c dir.c \
@@ -88,6 +92,9 @@ if OS_LINUX
 liberofs_la_CFLAGS += ${libnl3_CFLAGS}
 liberofs_la_LDFLAGS += ${libnl3_LIBS}
 liberofs_la_SOURCES += backends/nbd.c
+if ENABLE_FANOTIFY
+liberofs_la_SOURCES += backends/fanotify.c
+endif
 endif
 liberofs_la_SOURCES += remotes/oci.c remotes/docker_config.c
 liberofs_la_CFLAGS += ${json_c_CFLAGS}

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 #define _GNU_SOURCE
+#include <dirent.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <stdio.h>
@@ -18,6 +19,9 @@
 #include "../lib/liberofs_nbd.h"
 #include "../lib/liberofs_oci.h"
 #include "../lib/liberofs_gzran.h"
+#ifdef EROFS_FANOTIFY_ENABLED
+#include "../lib/liberofs_fanotify.h"
+#endif
 
 #ifdef HAVE_LINUX_LOOP_H
 #include <linux/loop.h>
@@ -40,12 +44,22 @@ struct loop_info {
 
 /* Device boundary probe */
 #define EROFSMOUNT_NBD_DISK_SIZE	(INT64_MAX >> 9)
+#define EROFSMOUNT_CACHE_DIR	"/var/cache/erofsmount"
+#define EROFSMOUNT_RUNTIME_DIR	"/run/erofsmount"
+#define EROFSMOUNT_FANOTIFY_STATE_DIR	EROFSMOUNT_RUNTIME_DIR "/fanotify"
+
+#ifdef EROFS_FANOTIFY_ENABLED
+#define EROFSMOUNT_FANOTIFY_HELP	", fanotify"
+#else
+#define EROFSMOUNT_FANOTIFY_HELP	""
+#endif
 
 enum erofs_backend_drv {
 	EROFSAUTO,
 	EROFSLOCAL,
 	EROFSFUSE,
 	EROFSNBD,
+	EROFSFANOTIFY,
 };
 
 enum erofsmount_mode {
@@ -95,7 +109,7 @@ static void usage(int argc, char **argv)
 		" -d <0-9>              set output verbosity; 0=quiet, 9=verbose (default=%i)\n"
 		" -o options            comma-separated list of mount options\n"
 		" -t type[.subtype]     filesystem type (and optional subtype)\n"
-		"                       subtypes: fuse, local, nbd\n"
+		"                       subtypes: fuse, local, nbd" EROFSMOUNT_FANOTIFY_HELP "\n"
 		" -u                    unmount the filesystem\n"
 		"    --disconnect       abort an existing NBD device forcibly\n"
 		"    --reattach         reattach to an existing NBD device\n"
@@ -324,6 +338,13 @@ static int erofsmount_parse_options(int argc, char **argv)
 					mountcfg.backend = EROFSLOCAL;
 				} else if (!strcmp(dot + 1, "nbd")) {
 					mountcfg.backend = EROFSNBD;
+				} else if (!strcmp(dot + 1, "fanotify")) {
+#ifdef EROFS_FANOTIFY_ENABLED
+					mountcfg.backend = EROFSFANOTIFY;
+#else
+					erofs_err("fanotify backend support is not built-in");
+					return -EINVAL;
+#endif
 				} else {
 					erofs_err("invalid filesystem subtype `%s`", dot + 1);
 					return -EINVAL;
@@ -1342,6 +1363,435 @@ out_err:
 	return -errno;
 }
 
+#ifdef EROFS_FANOTIFY_ENABLED
+struct erofsmount_fanotify_state {
+	pid_t pid;
+	char *mountpoint;
+	char *source;
+};
+
+static void erofsmount_free_fanotify_state(struct erofsmount_fanotify_state *state)
+{
+	free(state->mountpoint);
+	free(state->source);
+	state->mountpoint = NULL;
+	state->source = NULL;
+}
+
+static int erofsmount_write_fanotify_state(const char *state_path, pid_t pid,
+					   const char *mountpoint,
+					   const char *source)
+{
+	struct erofsmount_fanotify_state state;
+	char *tmp_path = NULL;
+	FILE *f = NULL;
+	int fd = -1, err;
+
+	if (mkdir(EROFSMOUNT_RUNTIME_DIR, 0700) < 0 && errno != EEXIST)
+		return -errno;
+	if (mkdir(EROFSMOUNT_FANOTIFY_STATE_DIR, 0700) < 0 &&
+	    errno != EEXIST)
+		return -errno;
+
+	state.pid = pid;
+	state.mountpoint = (char *)mountpoint;
+	state.source = (char *)source;
+
+	if (asprintf(&tmp_path, "%s.tmpXXXXXX", state_path) < 0)
+		return -ENOMEM;
+
+	fd = mkstemp(tmp_path);
+	if (fd < 0) {
+		err = -errno;
+		goto out;
+	}
+
+	f = fdopen(fd, "w");
+	if (!f) {
+		err = -errno;
+		goto out;
+	}
+	fd = -1;
+
+	if (fprintf(f, "%d\n%s\n%s\n", state.pid, state.mountpoint,
+		    state.source) < 0 || fflush(f) == EOF) {
+		err = errno ? -errno : -EIO;
+		goto out;
+	}
+
+	if (fsync(fileno(f)) < 0) {
+		err = -errno;
+		goto out;
+	}
+
+	if (fclose(f) < 0) {
+		err = -errno;
+		f = NULL;
+		goto out;
+	}
+	f = NULL;
+
+	if (rename(tmp_path, state_path) < 0) {
+		err = -errno;
+		goto out;
+	}
+
+	err = 0;
+out:
+	if (f)
+		fclose(f);
+	else if (fd >= 0)
+		close(fd);
+	if (err && tmp_path)
+		unlink(tmp_path);
+	free(tmp_path);
+	return err;
+}
+
+static int erofsmount_read_fanotify_state(const char *state_path,
+					  struct erofsmount_fanotify_state *state)
+{
+	FILE *f;
+	size_t n = 0;
+	int err = 0;
+
+	memset(state, 0, sizeof(*state));
+
+	f = fopen(state_path, "r");
+	if (!f)
+		return -errno;
+
+	if (fscanf(f, "%d", &state->pid) != 1)
+		err = -EINVAL;
+	else if (fgetc(f) != '\n')
+		err = -EINVAL;
+	else if (getline(&state->mountpoint, &n, f) < 0)
+		err = feof(f) ? -EINVAL : -errno;
+	else if (getline(&state->source, &n, f) < 0)
+		err = feof(f) ? -EINVAL : -errno;
+	fclose(f);
+	if (err) {
+		erofsmount_free_fanotify_state(state);
+		return err;
+	}
+
+	state->mountpoint[strcspn(state->mountpoint, "\n")] = '\0';
+	state->source[strcspn(state->source, "\n")] = '\0';
+	return err;
+}
+
+static int erofsmount_cleanup_fanotify_worker(const char *mountpoint,
+					      const char *source)
+{
+	DIR *dir;
+	struct dirent *de;
+	int err = 0;
+
+	dir = opendir(EROFSMOUNT_FANOTIFY_STATE_DIR);
+	if (!dir) {
+		if (errno == ENOENT)
+			return 0;
+		return -errno;
+	}
+
+	while ((de = readdir(dir)) != NULL) {
+		struct erofsmount_fanotify_state state;
+		char *state_path;
+
+		if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+			continue;
+		if (!strstr(de->d_name, ".state"))
+			continue;
+		if (asprintf(&state_path, "%s/%s", EROFSMOUNT_FANOTIFY_STATE_DIR,
+			     de->d_name) < 0) {
+			err = -ENOMEM;
+			goto out;
+		}
+
+		err = erofsmount_read_fanotify_state(state_path, &state);
+		if (err == -ENOENT) {
+			free(state_path);
+			err = 0;
+			continue;
+		}
+		if (err) {
+			free(state_path);
+			goto out;
+		}
+		if (strcmp(state.mountpoint, mountpoint) ||
+		    strcmp(state.source, source)) {
+			erofsmount_free_fanotify_state(&state);
+			free(state_path);
+			continue;
+		}
+		if (kill(state.pid, SIGTERM) < 0 && errno != ESRCH)
+			err = -errno;
+		else if (unlink(state_path) < 0 && errno != ENOENT)
+			err = -errno;
+		erofsmount_free_fanotify_state(&state);
+		free(state_path);
+		goto out;
+	}
+out:
+	closedir(dir);
+	if (!err)
+		return 0;
+	return err;
+}
+
+static int erofsmount_create_sparse_file(struct erofs_fanotify_ctx *ctx,
+					 u64 size, const char *blob_digest)
+{
+	char filepath[PATH_MAX];
+	const char *hex_digest;
+	int fd, err;
+
+	/* Extract hex part from "sha256:xxxx..." */
+	if (!blob_digest || strncmp(blob_digest, "sha256:", 7) != 0)
+		return -EINVAL;
+	hex_digest = blob_digest + 7;
+
+	/* Construct file path using blob SHA256 */
+	snprintf(filepath, sizeof(filepath), EROFSMOUNT_CACHE_DIR "/%s",
+		 hex_digest);
+
+	/* Try to open existing file or create new one */
+	fd = open(filepath, O_RDWR | O_CREAT, 0600);
+	if (fd < 0 && errno == ENOENT) {
+		err = mkdir(EROFSMOUNT_CACHE_DIR, 0700);
+		if (err)
+			return -errno;
+		fd = open(filepath, O_RDWR | O_CREAT, 0600);
+	}
+	if (fd < 0)
+		return -errno;
+
+	ctx->sparse_path = strdup(filepath);
+	if (!ctx->sparse_path) {
+		err = -ENOMEM;
+		goto err_path;
+	}
+
+	/* Set file size (creates sparse file) */
+	if (ftruncate(fd, size) < 0) {
+		err = -errno;
+		goto err_ftruncate;
+	}
+
+	ctx->sparse_fd = fd;
+	ctx->image_size = size;
+
+	erofs_dbg("Created local sparse file %s (size: %llu bytes)",
+		  ctx->sparse_path, (unsigned long long)size);
+	return 0;
+
+err_ftruncate:
+	free(ctx->sparse_path);
+	ctx->sparse_path = NULL;
+err_path:
+	close(fd);
+	unlink(filepath);
+	return err;
+}
+
+static int erofsmount_resolve_fanotify_blob(const struct ocierofs_config *oci_cfg,
+					    char **digest, u64 *image_size)
+{
+	struct ocierofs_ctx oci_ctx = {};
+	int err, i = -1;
+
+	err = ocierofs_ctx_init(&oci_ctx, oci_cfg);
+	if (err)
+		return err;
+
+	if (oci_ctx.blob_digest) {
+		for (i = 0; i < oci_ctx.layer_count; ++i) {
+			if (!strcmp(oci_ctx.layers[i]->digest, oci_ctx.blob_digest))
+				break;
+		}
+		if (i >= oci_ctx.layer_count) {
+			err = -ENOENT;
+			goto out;
+		}
+	} else if (oci_ctx.layer_count == 1) {
+		i = 0;
+	} else {
+		erofs_err("fanotify backend requires exactly one OCI blob; use oci.blob= or oci.layer=");
+		err = -EINVAL;
+		goto out;
+	}
+
+	*digest = strdup(oci_ctx.layers[i]->digest);
+	if (!*digest) {
+		err = -ENOMEM;
+		goto out;
+	}
+	*image_size = oci_ctx.layers[i]->size;
+	err = 0;
+
+out:
+	ocierofs_ctx_cleanup(&oci_ctx);
+	return err;
+}
+
+static void erofsmount_fanotify_ctx_cleanup(struct erofs_fanotify_ctx *ctx)
+{
+	if (ctx->fan_fd >= 0)
+		close(ctx->fan_fd);
+	if (ctx->sparse_fd >= 0)
+		close(ctx->sparse_fd);
+	if (ctx->vd.ops || ctx->vd.fd >= 0)
+		erofs_io_close(&ctx->vd);
+	free(ctx->fetch_buf);
+	free(ctx->sparse_path);
+}
+
+static int erofsmount_fanotify_child(struct erofs_fanotify_ctx *ctx,
+				     int pipefd)
+{
+	int err;
+
+	ctx->fan_fd = erofs_fanotify_init_precontent();
+	if (ctx->fan_fd < 0) {
+		err = ctx->fan_fd;
+		goto notify;
+	}
+
+	err = erofs_fanotify_mark_file(ctx->fan_fd, ctx->sparse_path);
+	if (err)
+		goto notify;
+
+	err = 0;
+notify:
+	write(pipefd, &err, sizeof(err));
+	close(pipefd);
+
+	if (err)
+		return err;
+
+	return erofs_fanotify_loop(ctx);
+}
+
+static int erofsmount_fanotify(struct erofsmount_source *source,
+			       const char *mountpoint, const char *fstype,
+			       int flags, const char *options)
+{
+	struct erofs_fanotify_ctx ctx = {
+		.vd = {.fd = -1},
+		.sparse_fd = -1,
+		.fan_fd = -1,
+	};
+	struct ocierofs_config layer_cfg;
+	char *blob_digest = NULL;
+	char *state_mountpoint = NULL;
+	char *state_path = NULL;
+	pid_t pid = -1;
+	int pipefd[2];
+	int err, child_err;
+	u64 image_size;
+
+	if (strcmp(fstype, "erofs")) {
+		fprintf(stderr, "unsupported filesystem type `%s`\n", fstype);
+		return -ENODEV;
+	}
+	flags |= MS_RDONLY;
+
+	if (source->ocicfg.tarindex_path || source->ocicfg.zinfo_path) {
+		erofs_err("fanotify backend does not support tarindex or zinfo");
+		return -EOPNOTSUPP;
+	}
+
+	state_mountpoint = realpath(mountpoint, NULL);
+	if (!state_mountpoint) {
+		err = -errno;
+		goto out;
+	}
+
+	err = erofsmount_resolve_fanotify_blob(&source->ocicfg, &blob_digest,
+					       &image_size);
+	if (err)
+		goto out;
+
+	layer_cfg = source->ocicfg;
+	layer_cfg.blob_digest = blob_digest;
+	layer_cfg.layer_index = -1;
+
+	err = ocierofs_io_open(&ctx.vd, &layer_cfg);
+	if (err)
+		goto out;
+
+	err = erofsmount_create_sparse_file(&ctx, image_size, blob_digest);
+	if (err)
+		goto out;
+
+	/* Create pipe for parent-child communication */
+	if (pipe(pipefd) < 0) {
+		err = -errno;
+		goto out;
+	}
+
+	pid = fork();
+	if (pid < 0) {
+		err = -errno;
+		close(pipefd[0]);
+		close(pipefd[1]);
+		goto out;
+	}
+
+	if (pid == 0) {
+		close(pipefd[0]);
+		err = erofsmount_fanotify_child(&ctx, pipefd[1]);
+		erofsmount_fanotify_ctx_cleanup(&ctx);
+		exit(err ? EXIT_FAILURE : EXIT_SUCCESS);
+	}
+
+	/* Wait for child to report fanotify initialization result */
+	close(pipefd[1]);
+	if (read(pipefd[0], &child_err, sizeof(child_err)) != sizeof(child_err))
+		child_err = -EPIPE;
+	close(pipefd[0]);
+
+	if (child_err) {
+		erofs_err("Child process failed: %s", erofs_strerror(child_err));
+		err = child_err;
+		goto kill_child;
+	}
+
+	err = mount(ctx.sparse_path, mountpoint, fstype, flags, options);
+	if (err < 0)
+		err = -errno;
+	if (err)
+		goto kill_child;
+
+	if (asprintf(&state_path, "%s/%d.state",
+		     EROFSMOUNT_FANOTIFY_STATE_DIR, pid) < 0) {
+		err = -ENOMEM;
+		goto out_umount;
+	}
+
+	err = erofsmount_write_fanotify_state(state_path, pid, state_mountpoint,
+					      ctx.sparse_path);
+	if (err)
+		goto out_umount;
+	erofs_dbg("Mounted %s at %s successfully", ctx.sparse_path, mountpoint);
+	goto out;
+
+out_umount:
+	(void)umount(mountpoint);
+kill_child:
+	if (pid > 0) {
+		(void)kill(pid, SIGTERM);
+		(void)waitpid(pid, NULL, 0);
+	}
+out:
+	free(state_path);
+	free(state_mountpoint);
+	erofsmount_fanotify_ctx_cleanup(&ctx);
+	free(blob_digest);
+	return err;
+}
+#endif
+
 int erofsmount_umount(char *target)
 {
 	char *device = NULL, *mountpoint = NULL;
@@ -1437,6 +1887,15 @@ int erofsmount_umount(char *target)
 			goto err_out;
 		}
 	}
+#ifdef EROFS_FANOTIFY_ENABLED
+	if (!isblk) {
+		err = erofsmount_cleanup_fanotify_worker(target, device);
+		if (err) {
+			close(fd);
+			goto err_out;
+		}
+	}
+#endif
 	err = fstat(fd, &st);
 	if (err < 0)
 		err = -errno;
@@ -1532,6 +1991,21 @@ int main(int argc, char *argv[])
 				     mountcfg.fstype, mountcfg.flags, mountcfg.options);
 		goto exit;
 	}
+
+#ifdef EROFS_FANOTIFY_ENABLED
+	if (mountcfg.backend == EROFSFANOTIFY) {
+		if (mountsrc.type != EROFSMOUNT_SOURCE_OCI) {
+			erofs_err("Fanotify backend only supports OCI sources");
+			err = -EINVAL;
+			goto exit;
+		}
+		mountsrc.ocicfg.image_ref = mountcfg.device;
+		err = erofsmount_fanotify(&mountsrc, mountcfg.target,
+					  mountcfg.fstype, mountcfg.flags,
+					  mountcfg.options);
+		goto exit;
+	}
+#endif
 
 	if (mountcfg.force_loopdev)
 		goto loopmount;

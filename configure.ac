@@ -194,6 +194,10 @@ AC_ARG_ENABLE(oci,
                    [enable OCI registry based input support @<:@default=no@:>@]),
     [enable_oci="$enableval"],[enable_oci="no"])
 
+AC_ARG_ENABLE(fanotify,
+   [AS_HELP_STRING([--enable-fanotify], [enable fanotify pre-content backend @<:@default=no@:>@])],
+   [enable_fanotify="$enableval"], [enable_fanotify="no"])
+
 AC_ARG_ENABLE(fuse,
    [AS_HELP_STRING([--enable-fuse], [enable erofsfuse @<:@default=no@:>@])],
    [enable_fuse="$enableval"], [enable_fuse="no"])
@@ -651,6 +655,24 @@ AS_IF([test "x$enable_oci" = "xyes"], [
   ])
 ], [have_oci="no"])
 
+have_fanotify="no"
+AS_IF([test "x$enable_fanotify" = "xyes"], [
+  AS_IF([test "x$build_linux" != "xyes"], [
+    AC_MSG_ERROR([fanotify backend requires Linux])
+  ])
+  AS_IF([test "x$have_oci" != "xyes"], [
+    AC_MSG_ERROR([fanotify backend requires --enable-oci])
+  ])
+  AC_CHECK_HEADERS([sys/fanotify.h], [
+    have_fanotify="yes"
+    AC_CHECK_TYPES([struct fanotify_event_info_range], [], [], [[
+#include <sys/fanotify.h>
+    ]])
+  ], [
+    AC_MSG_ERROR([fanotify backend disabled: missing sys/fanotify.h])
+  ])
+])
+
 # Configure openssl
 have_openssl="no"
 AS_IF([test "x$with_openssl" != "xno"], [
@@ -766,6 +788,7 @@ AM_CONDITIONAL([ENABLE_LIBXML2], [test "x${have_libxml2}" = "xyes"])
 AM_CONDITIONAL([ENABLE_S3], [test "x${have_s3}" = "xyes"])
 AM_CONDITIONAL([ENABLE_STATIC_FUSE], [test "x${enable_static_fuse}" = "xyes"])
 AM_CONDITIONAL([ENABLE_OCI], [test "x${have_oci}" = "xyes"])
+AM_CONDITIONAL([ENABLE_FANOTIFY], [test "x${have_fanotify}" = "xyes"])
 
 if test "x$have_uuid" = "xyes"; then
   AC_DEFINE([HAVE_LIBUUID], 1, [Define to 1 if libuuid is found])
@@ -840,6 +863,11 @@ fi
 
 if test "x$have_oci" = "xyes"; then
   AC_DEFINE([OCIEROFS_ENABLED], 1, [Define to 1 if OCI registry is enabled])
+fi
+
+if test "x$have_fanotify" = "xyes"; then
+  AC_DEFINE([EROFS_FANOTIFY_ENABLED], 1,
+	    [Define to 1 if fanotify backend is enabled])
 fi
 
 # Dump maximum block size

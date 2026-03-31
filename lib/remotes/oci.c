@@ -1144,7 +1144,7 @@ const char *ocierofs_get_platform_spec(void)
 }
 
 /**
- * ocierofs_init - Initialize OCI context
+ * ocierofs_ctx_init - Initialize OCI context
  * @ctx: OCI context structure to initialize
  * @config: OCI configuration
  *
@@ -1154,7 +1154,7 @@ const char *ocierofs_get_platform_spec(void)
  *
  * Return: 0 on success, negative errno on failure
  */
-static int ocierofs_init(struct ocierofs_ctx *ctx, const struct ocierofs_config *config)
+int ocierofs_ctx_init(struct ocierofs_ctx *ctx, const struct ocierofs_config *config)
 {
 	int ret;
 
@@ -1288,7 +1288,7 @@ out:
  * Clean up CURL handle, free all allocated string parameters, and
  * reset the OCI context structure to a clean state.
  */
-static void ocierofs_ctx_cleanup(struct ocierofs_ctx *ctx)
+void ocierofs_ctx_cleanup(struct ocierofs_ctx *ctx)
 {
 	if (!ctx)
 		return;
@@ -1316,7 +1316,7 @@ int ocierofs_build_trees(struct erofs_importer *importer,
 	int ret, i, end, fd;
 	u64 tar_offset = 0;
 
-	ret = ocierofs_init(&ctx, config);
+	ret = ocierofs_ctx_init(&ctx, config);
 	if (ret) {
 		ocierofs_ctx_cleanup(&ctx);
 		return ret;
@@ -1529,7 +1529,7 @@ int ocierofs_io_open(struct erofs_vfile *vfile, const struct ocierofs_config *cf
 	if (!ctx)
 		return -ENOMEM;
 
-	err = ocierofs_init(ctx, cfg);
+	err = ocierofs_ctx_init(ctx, cfg);
 	if (err)
 		goto out;
 
