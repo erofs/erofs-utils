@@ -122,6 +122,13 @@ TESTS += erofs/027
 # 028 - test inode page cache sharing functionality
 TESTS += erofs/028
 
+# NEW TEST CASE HERE
+# TESTS += erofs/999
+
+# NOTE: When adding a new test case or updating an existing one, please write
+# POSIX-compliant shell scripts and avoid using Linux-specific features unless
+# unless the test case is expected to run only on Linux platforms.
+
 EXTRA_DIST = common/rc erofs
 
 clean-local: clean-local-check
