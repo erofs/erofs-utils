@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0+ */
+/* SPDX-License-Identifier: MIT */
 #ifdef __APPLE__
 #undef LIST_HEAD
 #endif

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: MIT
 /*
  * stress test for EROFS filesystem
  *

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0+
+# SPDX-License-Identifier: MIT
 
 dist_man_MANS = mkfs.erofs.1 dump.erofs.1 fsck.erofs.1
 

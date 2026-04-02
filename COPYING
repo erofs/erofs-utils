@@ -3,13 +3,13 @@ erofs-utils uses two different license patterns:
  - most liberofs files in `lib` and `include` directories
    use GPL-2.0+ OR MIT dual license;
 
- - all other files use GPL-2.0+ license, unless
-   explicitly stated otherwise.
+ - all other files use MIT license, unless explicitly stated
+   otherwise.
 
 Relevant licenses can be found in the LICENSES directory.
 
-This model is selected to emphasize that
-files in `lib` and `include` directories are designed to be included in
-3rd-party applications, while all other files are intended to be used
-"as is", as part of their intended scenarios, with no intention to
-support 3rd-party integration use cases.
+This model is selected to emphasize that erofs-utils can be integrated
+into various ecosystems as much as possible.
+
+However, liberofs should be GPL-2.0+ OR MIT dual license since some
+parts can be shared with the Linux kernel.

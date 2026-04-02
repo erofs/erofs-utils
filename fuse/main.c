@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
+// SPDX-License-Identifier: MIT
 /*
  * Created by Li Guifu <blucerlee@gmail.com>
  * Lowlevel added by Li Yiyan <lyy0627@sjtu.edu.cn>
