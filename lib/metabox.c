@@ -32,8 +32,10 @@ static int erofs_metamgr_init(struct erofs_sb_info *sbi,
 
 	m2gr->vf = (struct erofs_vfile){ .fd = ret };
 	m2gr->bmgr = erofs_buffer_init(sbi, 0, &m2gr->vf);
-	if (!m2gr->bmgr)
+	if (!m2gr->bmgr) {
+		erofs_io_close(&m2gr->vf);
 		return -ENOMEM;
+	}
 	return 0;
 }
 
