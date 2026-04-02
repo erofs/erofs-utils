@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0+ OR Apache-2.0 */
+/* SPDX-License-Identifier: GPL-2.0+ OR MIT */
 #ifndef __EROFS_LIB_SHA256_H
 #define __EROFS_LIB_SHA256_H
 
