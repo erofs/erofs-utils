@@ -31,6 +31,7 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 {
 	unsigned int ondisk_extradevs, i;
 	erofs_off_t pos;
+	bool _48bit = erofs_sb_has_48bit(sbi);
 
 	sbi->total_blocks = sbi->primarydevice_blocks;
 
@@ -65,8 +66,10 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 			return ret;
 		}
 
-		sbi->devs[i].uniaddr = le32_to_cpu(dis.uniaddr_lo);
-		sbi->devs[i].blocks = le32_to_cpu(dis.blocks_lo);
+		sbi->devs[i].blocks = le32_to_cpu(dis.blocks_lo) |
+			(_48bit ? (u64)le16_to_cpu(dis.blocks_hi) << 32 : 0);
+		sbi->devs[i].uniaddr = le32_to_cpu(dis.uniaddr_lo) |
+			(_48bit ? (u64)le16_to_cpu(dis.uniaddr_hi) << 32 : 0);
 		memcpy(sbi->devs[i].tag, dis.tag, sizeof(dis.tag));
 		sbi->total_blocks += sbi->devs[i].blocks;
 		pos += EROFS_DEVT_SLOT_SIZE;
@@ -423,6 +426,8 @@ int erofs_write_device_table(struct erofs_sb_info *sbi)
 		struct erofs_deviceslot dis = {
 			.uniaddr_lo = cpu_to_le32(nblocks),
 			.blocks_lo = cpu_to_le32(sbi->devs[i].blocks),
+			.blocks_hi = cpu_to_le16(sbi->devs[i].blocks >> 32),
+			.uniaddr_hi = cpu_to_le16(nblocks >> 32),
 		};
 
 		memcpy(dis.tag, sbi->devs[i].tag, sizeof(dis.tag));
