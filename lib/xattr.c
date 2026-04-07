@@ -123,7 +123,7 @@ ssize_t erofs_sys_lsetxattr(const char *path, const char *name,
 	errno = ENODATA;
 #endif
 	if (ret < 0)
-		return errno;
+		return -errno;
 	return ret;
 }
 
