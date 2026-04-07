@@ -22,6 +22,7 @@ TESTS_ENVIRONMENT = \
 	fi; \
 	[ -z $$MKFS_EROFS_PROG ] && export MKFS_EROFS_PROG=../mkfs/mkfs.erofs; \
 	[ -z $$FSCK_EROFS_PROG ] && export FSCK_EROFS_PROG=../fsck/fsck.erofs; \
+	[ -z $$DUMP_EROFS_PROG ] && export DUMP_EROFS_PROG=../dump/dump.erofs; \
 	[ -z $$EROFSFUSE_PROG ] && export EROFSFUSE_PROG=../fuse/erofsfuse;
 
 if ENABLE_LZ4
@@ -121,6 +122,9 @@ TESTS += erofs/027
 
 # 028 - test inode page cache sharing functionality
 TESTS += erofs/028
+
+# 029 - test FUSE daemon and kernel error handling on corrupted inodes
+TESTS += erofs/029
 
 # NEW TEST CASE HERE
 # TESTS += erofs/999
