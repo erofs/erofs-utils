@@ -123,6 +123,9 @@ TESTS += erofs/027
 # 028 - test inode page cache sharing functionality
 TESTS += erofs/028
 
+# 029 - test FUSE daemon and kernel error handling on corrupted inodes
+TESTS += erofs/029
+
 # NEW TEST CASE HERE
 # TESTS += erofs/999
 
