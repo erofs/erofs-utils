@@ -1,0 +1,93 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+#
+# Test FUSE daemon and kernel error handling on corrupted inodes
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+_cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+	# Ensure we kill our background daemon if it's still alive
+	[ -n "$fuse_pid" ] && kill -9 $fuse_pid 2>/dev/null
+}
+
+_require_erofs
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z "$SCRATCH_DEV" ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f $SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+echo "test data" > $localdir/testfile
+
+_scratch_mkfs -T0 --all-time -Enosbcrc $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+
+sbdump=$($DUMP_EROFS_PROG $SCRATCH_DEV)
+meta_blkaddr=$(printf "$sbdump" | grep -i "meta_blkaddr" | grep -oE '[0-9]+' | head -n 1)
+[ -n "$meta_blkaddr" ] && _fail "failed get get meta_blkaddr"
+blocksize=$(printf "$sbdump" | grep -i "block size" | grep -oE '[0-9]+' | head -n 1)
+[ -n "$blocksize" ] && _fail "failed to get block size"
+
+victim=$($DUMP_EROFS_PROG --path=/ $SCRATCH_DEV | grep -iE 'nid\s*[:=]?\s*[0-9]+' -o | grep -oE '[0-9]+' | head -n 1)
+[ -z "$victim" ] && _fail "failed to find root NID"
+
+seeko=$((meta_blkaddr*blocksize+victim*32))
+
+# Deterministically corrupt the root inode's layout by writing 32 bytes of 0xFF
+awk 'BEGIN { for(i=0;i<32;i++) printf "\377" }' | \
+	dd of=$SCRATCH_DEV bs=1 seek=$seeko count=32 conv=notrunc >> $seqres.full 2>&1
+
+if [ "$FSTYP" = "erofsfuse" ]; then
+	[ -z "$EROFSFUSE_PROG" ] && _notrun "erofsfuse is not available"
+	# Run erofsfuse in the foreground to capture libfuse's internal stderr
+	$EROFSFUSE_PROG -f $SCRATCH_DEV $SCRATCH_MNT > $tmp/erofsfuse.log 2>&1 &
+	fuse_pid=$!
+	# Wait for the mount to establish
+	sleep 1
+elif ! _try_scratch_mount >> $seqres.full 2>&1; then
+	echo Silence is golden
+	status=0
+	exit 0
+fi
+
+# Attempt to stat the root directory to directly trigger getattr without a lookup
+timeout 5 stat $SCRATCH_MNT >> $seqres.full 2>&1
+res=$?
+[ $res -eq 124 ] && _fail "stat command timed out (kernel hung?)"
+[ $res -eq 0 ] && _fail "stat unexpectedly succeeded on a corrupted image"
+
+if [ "$FSTYP" = "erofsfuse" ]; then
+	_scratch_unmount >> $seqres.full 2>&1
+	# Wait for the daemon to cleanly exit, or kill it if stuck
+	kill $fuse_pid 2>/dev/null
+	wait $fuse_pid 2>/dev/null
+	cat $tmp/erofsfuse.log >> $seqres.full
+
+	if grep -q -i "multiple replies" $tmp/erofsfuse.log; then
+		_fail "Bug detected: libfuse reported multiple replies to request"
+	elif grep -q -i "segmentation fault\|aborted" $tmp/erofsfuse.log; then
+		_fail "Bug detected: FUSE daemon crashed"
+	fi
+else
+	_scratch_unmount >> $seqres.full 2>&1
+fi
+
+echo Silence is golden
+status=0
+exit 0
