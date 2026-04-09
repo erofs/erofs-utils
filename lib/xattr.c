@@ -946,7 +946,7 @@ int erofs_xattr_flush_name_prefixes(struct erofs_importer *im, bool plain)
 		erofs_bdrop(bh, false);
 	} else {
 		DBG_BUGON(bmgr);
-		if (lseek(vf->fd, offset, SEEK_CUR) < 0)
+		if (lseek(vf->fd, offset, SEEK_SET) < 0)
 			return -errno;
 	}
 	erofs_sb_set_xattr_prefixes(sbi);
