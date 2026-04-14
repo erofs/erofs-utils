@@ -1788,16 +1788,7 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 			memcpy(devs[idx].tag, tag, sizeof(devs[0].tag));
 		else
 			/* convert UUID of the source image to a hex string */
-			sprintf((char *)g_sbi.devs[idx].tag,
-				"%04x%04x%04x%04x%04x%04x%04x%04x",
-				(src->uuid[0] << 8) | src->uuid[1],
-				(src->uuid[2] << 8) | src->uuid[3],
-				(src->uuid[4] << 8) | src->uuid[5],
-				(src->uuid[6] << 8) | src->uuid[7],
-				(src->uuid[8] << 8) | src->uuid[9],
-				(src->uuid[10] << 8) | src->uuid[11],
-				(src->uuid[12] << 8) | src->uuid[13],
-				(src->uuid[14] << 8) | src->uuid[15]);
+			erofs_uuid_unparse_as_tag(src->uuid, (char *)g_sbi.devs[idx].tag);
 	}
 	return 0;
 }
