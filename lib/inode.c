@@ -2018,11 +2018,9 @@ static int erofs_mkfs_begin_nondirectory(const struct erofs_mkfs_btctx *btctx,
 			goto out;
 		}
 
-		if (S_ISREG(inode->i_mode) && inode->i_size) {
-			ret = erofs_set_inode_fingerprint(inode, ctx.fd, ctx.fpos);
-			if (ret < 0)
-				return ret;
-		}
+		ret = erofs_set_inode_fingerprint(inode, ctx.fd, ctx.fpos);
+		if (ret < 0)
+			return ret;
 
 		if (inode->sbi->available_compr_algs &&
 		    erofs_file_is_compressible(im, inode)) {
