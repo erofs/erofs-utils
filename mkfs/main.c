@@ -1689,7 +1689,7 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 		extra_devices += src->extra_devices;
 	}
 
-	if (datamode != EROFS_REBUILD_DATA_BLOB_INDEX)
+	if (datamode == EROFS_REBUILD_DATA_RESVSP)
 		return 0;
 
 	/* Each blob has either no extra device or only one device for TarFS */
@@ -1698,6 +1698,9 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 			  extra_devices, rebuild_src_count);
 		return -EOPNOTSUPP;
 	}
+
+	if (datamode == EROFS_REBUILD_DATA_FULL)
+		return 0;
 
 	ret = erofs_mkfs_init_devices(&g_sbi, rebuild_src_count);
 	if (ret)
@@ -1721,7 +1724,7 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 			memcpy(devs[idx].tag, tag, sizeof(devs[0].tag));
 		else
 			/* convert UUID of the source image to a hex string */
-			erofs_uuid_unparse_as_tag(src->uuid, (char *)g_sbi.devs[idx].tag);
+			erofs_uuid_unparse_as_tag(src->uuid, (char *)devs[idx].tag);
 	}
 	return 0;
 }

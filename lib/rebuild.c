@@ -14,6 +14,7 @@
 #include "erofs/xattr.h"
 #include "erofs/blobchunk.h"
 #include "erofs/internal.h"
+#include "erofs/io.h"
 #include "liberofs_rebuild.h"
 #include "liberofs_uuid.h"
 
@@ -221,6 +222,71 @@ err:
 	return ret;
 }
 
+static int erofs_rebuild_write_full_data(struct erofs_inode *inode)
+{
+	struct erofs_sb_info *src_sbi = inode->sbi;
+	int err = 0;
+
+	if (inode->datalayout == EROFS_INODE_FLAT_PLAIN) {
+		if (inode->u.i_blkaddr == EROFS_NULL_ADDR) {
+			if (inode->i_size)
+				return -EFSCORRUPTED;
+			return 0;
+		}
+		inode->rebuild_blobpath = strdup(src_sbi->devname);
+		if (!inode->rebuild_blobpath)
+			return -ENOMEM;
+		inode->rebuild_src_dataoff =
+			erofs_pos(src_sbi, erofs_inode_dev_baddr(inode));
+		inode->datasource = EROFS_INODE_DATA_SOURCE_REBUILD_BLOB;
+	} else if (inode->datalayout == EROFS_INODE_FLAT_INLINE) {
+		erofs_blk_t nblocks = erofs_blknr(src_sbi, inode->i_size);
+		unsigned int inline_size = inode->i_size % erofs_blksiz(src_sbi);
+
+		if (nblocks > 0 && inode->u.i_blkaddr != EROFS_NULL_ADDR) {
+			inode->rebuild_blobpath = strdup(src_sbi->devname);
+			if (!inode->rebuild_blobpath)
+				return -ENOMEM;
+			inode->rebuild_src_dataoff =
+				erofs_pos(src_sbi,
+					  erofs_inode_dev_baddr(inode));
+			inode->datasource = EROFS_INODE_DATA_SOURCE_REBUILD_BLOB;
+		}
+
+		inode->idata_size = inline_size;
+		if (inline_size > 0) {
+			struct erofs_vfile vf;
+			erofs_off_t tail_offset = erofs_pos(src_sbi, nblocks);
+
+			inode->idata = malloc(inline_size);
+			if (!inode->idata)
+				return -ENOMEM;
+			err = erofs_iopen(&vf, inode);
+			if (err) {
+				free(inode->idata);
+				inode->idata = NULL;
+				return err;
+			}
+			err = erofs_pread(&vf, inode->idata, inline_size,
+					  tail_offset);
+			if (err) {
+				free(inode->idata);
+				inode->idata = NULL;
+				return err;
+			}
+		}
+	} else if (inode->datalayout == EROFS_INODE_CHUNK_BASED) {
+		erofs_err("chunk-based files not yet supported: %s",
+			  inode->i_srcpath);
+		err = -EOPNOTSUPP;
+	} else if (is_inode_layout_compression(inode)) {
+		erofs_err("compressed files not yet supported: %s",
+			  inode->i_srcpath);
+		err = -EOPNOTSUPP;
+	}
+	return err;
+}
+
 static int erofs_rebuild_update_inode(struct erofs_sb_info *dst_sb,
 				      struct erofs_inode *inode,
 				      enum erofs_rebuild_datamode datamode)
@@ -265,6 +331,8 @@ static int erofs_rebuild_update_inode(struct erofs_sb_info *dst_sb,
 			err = erofs_rebuild_write_blob_index(dst_sb, inode);
 		else if (datamode == EROFS_REBUILD_DATA_RESVSP)
 			inode->datasource = EROFS_INODE_DATA_SOURCE_RESVSP;
+		else if (datamode == EROFS_REBUILD_DATA_FULL)
+			err = erofs_rebuild_write_full_data(inode);
 		else
 			err = -EOPNOTSUPP;
 		break;

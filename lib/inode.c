@@ -158,6 +158,8 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 	if (inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF) {
 		erofs_diskbuf_close(inode->i_diskbuf);
 		free(inode->i_diskbuf);
+	} else if (inode->datasource == EROFS_INODE_DATA_SOURCE_REBUILD_BLOB) {
+		free(inode->rebuild_blobpath);
 	} else {
 		free(inode->i_link);
 	}
@@ -679,8 +681,11 @@ static int erofs_write_unencoded_data(struct erofs_inode *inode,
 		} while (remaining);
 	}
 
-	/* read the tail-end data */
-	if (inode->idata_size) {
+	/*
+	 * Read the tail-end data if inode->idata is NULL; if the tail data
+	 * has been prepared then nothing more needs to be done here.
+	 */
+	if (inode->idata_size && !inode->idata) {
 		inode->idata = malloc(inode->idata_size);
 		if (!inode->idata)
 			return -ENOMEM;
@@ -697,7 +702,10 @@ static int erofs_write_unencoded_data(struct erofs_inode *inode,
 
 int erofs_write_unencoded_file(struct erofs_inode *inode, int fd, u64 fpos)
 {
-	if (cfg.c_chunkbits) {
+	struct erofs_vfile vf = { .fd = fd };
+
+	if (cfg.c_chunkbits &&
+	    inode->datasource != EROFS_INODE_DATA_SOURCE_REBUILD_BLOB) {
 		inode->u.chunkbits = cfg.c_chunkbits;
 		/* chunk indexes when explicitly specified */
 		inode->u.chunkformat = 0;
@@ -706,10 +714,15 @@ int erofs_write_unencoded_file(struct erofs_inode *inode, int fd, u64 fpos)
 		return erofs_blob_write_chunked_file(inode, fd, fpos);
 	}
 
+	if (inode->datasource == EROFS_INODE_DATA_SOURCE_REBUILD_BLOB) {
+		if (erofs_io_lseek(&vf, fpos, SEEK_SET) != (off_t)fpos)
+			return -EIO;
+		return erofs_write_unencoded_data(inode, &vf, fpos, true, false);
+	}
+
 	inode->datalayout = EROFS_INODE_FLAT_INLINE;
 	/* fallback to all data uncompressed */
-	return erofs_write_unencoded_data(inode,
-			&(struct erofs_vfile){ .fd = fd }, fpos,
+	return erofs_write_unencoded_data(inode, &vf, fpos,
 			inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF, false);
 }
 
@@ -1508,6 +1521,12 @@ out:
 		free(inode->i_diskbuf);
 		inode->i_diskbuf = NULL;
 		inode->datasource = EROFS_INODE_DATA_SOURCE_NONE;
+	} else if (inode->datasource == EROFS_INODE_DATA_SOURCE_REBUILD_BLOB) {
+		free(inode->rebuild_blobpath);
+		inode->rebuild_blobpath = NULL;
+		inode->datasource = EROFS_INODE_DATA_SOURCE_NONE;
+		DBG_BUGON(ctx->fd < 0);
+		close(ctx->fd);
 	} else {
 		DBG_BUGON(ctx->fd < 0);
 		close(ctx->fd);
@@ -2014,6 +2033,12 @@ static int erofs_mkfs_begin_nondirectory(const struct erofs_mkfs_btctx *btctx,
 			if (ctx.fd < 0)
 				return -errno;
 			break;
+		case EROFS_INODE_DATA_SOURCE_REBUILD_BLOB:
+			ctx.fd = open(inode->rebuild_blobpath, O_RDONLY | O_BINARY);
+			if (ctx.fd < 0)
+				return -errno;
+			ctx.fpos = inode->rebuild_src_dataoff;
+			break;
 		default:
 			goto out;
 		}
@@ -2022,7 +2047,8 @@ static int erofs_mkfs_begin_nondirectory(const struct erofs_mkfs_btctx *btctx,
 		if (ret < 0)
 			return ret;
 
-		if (inode->sbi->available_compr_algs &&
+		if (inode->datasource != EROFS_INODE_DATA_SOURCE_REBUILD_BLOB &&
+		    inode->sbi->available_compr_algs &&
 		    erofs_file_is_compressible(im, inode)) {
 			ctx.ictx = erofs_prepare_compressed_file(im, inode);
 			if (IS_ERR(ctx.ictx))
