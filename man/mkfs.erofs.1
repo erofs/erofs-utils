@@ -229,7 +229,7 @@ Only \fBdata\fR is supported. \fBrvsp\fR and \fB0\fR will be ignored.
 Note that \fBrvsp\fR takes precedence over \fB--tar=i\fR or \fB--tar=headerball\fR.
 .TP
 .I Rebuild mode
-Only \fBrvsp\fR is supported.
+\fBdata\fR and \fBrvsp\fR are supported.
 .TP
 .I S3 source (\fB\-\-s3\fR)
 \fBdata\fR and \fB0\fR are supported.
@@ -520,6 +520,11 @@ File data is referenced through chunk-based indexes pointing to the original
 source images, which act as external blob devices. This creates a compact
 metadata layer suitable for layered filesystem scenarios, similar to container
 image layers.
+.TP
+.I data mode
+\fB\-\-clean=data\fR: Import complete file data from all source images into
+the destination image, producing a fully self-contained EROFS image that does
+not depend on external blob devices.
 .TP
 .I rvsp mode
 \fB\-\-clean=rvsp\fR or \fB\-\-incremental=rvsp\fR: Reserve space for file
