@@ -22,6 +22,7 @@
 #ifdef EROFS_FANOTIFY_ENABLED
 #include "../lib/liberofs_fanotify.h"
 #endif
+#include "../lib/liberofs_s3.h"
 
 #ifdef HAVE_LINUX_LOOP_H
 #include <linux/loop.h>
@@ -88,13 +89,17 @@ static struct erofsmount_cfg {
 enum erofsmount_source_type {
 	EROFSMOUNT_SOURCE_LOCAL,
 	EROFSMOUNT_SOURCE_OCI,
+	EROFSMOUNT_SOURCE_S3_OBJECT,
 };
 
 static struct erofsmount_source {
 	enum erofsmount_source_type type;
 	union {
-		const char *device_path;
 		struct ocierofs_config ocicfg;
+		struct {
+			const char *device_path;
+			struct erofs_s3 s3cfg;
+		};
 	};
 } mountsrc;
 
@@ -104,27 +109,36 @@ static void usage(int argc, char **argv)
 		"Manage EROFS filesystem.\n"
 		"\n"
 		"General options:\n"
-		" -V, --version         print the version number of mount.erofs and exit\n"
-		" -h, --help            display this help and exit\n"
-		" -d <0-9>              set output verbosity; 0=quiet, 9=verbose (default=%i)\n"
-		" -o options            comma-separated list of mount options\n"
-		" -t type[.subtype]     filesystem type (and optional subtype)\n"
-		"                       subtypes: fuse, local, nbd" EROFSMOUNT_FANOTIFY_HELP "\n"
-		" -u                    unmount the filesystem\n"
-		"    --disconnect       abort an existing NBD device forcibly\n"
-		"    --reattach         reattach to an existing NBD device\n"
+		" -V, --version              print the version number of mount.erofs and exit\n"
+		" -h, --help                 display this help and exit\n"
+		" -d <0-9>                   set output verbosity; 0=quiet, 9=verbose (default=%i)\n"
+		" -o options                 comma-separated list of mount options\n"
+		" -t type[.subtype]          filesystem type (and optional subtype)\n"
+		"                            subtypes: fuse, local, nbd" EROFSMOUNT_FANOTIFY_HELP "\n"
+		" -u                         unmount the filesystem\n"
+		"    --disconnect            abort an existing NBD device forcibly\n"
+		"    --reattach              reattach to an existing NBD device\n"
 #ifdef OCIEROFS_ENABLED
 		"\n"
 		"OCI-specific options (EXPERIMENTAL, with -o):\n"
-		"   oci.blob=<digest>   specify OCI blob digest (sha256:...)\n"
-		"   oci.layer=<index>   specify OCI layer index\n"
-		"   oci.platform=<name> specify platform (default: linux/amd64)\n"
-		"   oci.username=<user> username for authentication (optional)\n"
-		"   oci.password=<pass> password for authentication (optional)\n"
-		"   oci.tarindex=<path> path to tarball index file (optional)\n"
-		"   oci.zinfo=<path>    path to gzip zinfo file (optional)\n"
-		"   oci.insecure        use HTTP instead of HTTPS (optional)\n"
+		"   oci.blob=<digest>        specify OCI blob digest (sha256:...)\n"
+		"   oci.layer=<index>        specify OCI layer index\n"
+		"   oci.platform=<name>      specify platform (default: linux/amd64)\n"
+		"   oci.username=<user>      username for authentication (optional)\n"
+		"   oci.password=<pass>      password for authentication (optional)\n"
+		"   oci.tarindex=<path>      path to tarball index file (optional)\n"
+		"   oci.zinfo=<path>         path to gzip zinfo file (optional)\n"
+		"   oci.insecure             use HTTP instead of HTTPS (optional)\n"
 #endif
+#ifdef S3EROFS_ENABLED
+		"\n"
+		"S3-specific options (EXPERIMENTAL, with -o):\n"
+		"   s3.endpoint=<url>        S3 endpoint URL (e.g., s3.amazonaws.com)\n"
+		"   s3.passwd_file=<path>    specify a s3fs-compatible password file\n"
+		"   s3.region=<region>       region code in which endpoint belongs to (required for sigv4)\n"
+		"   s3.sig=<2,4>             S3 API signature version (default: 2)\n"
+		"   s3.urlstyle=<vhost|path> S3 API calling URL (default: vhost)\n"
+ #endif
 		, argv[0], EROFS_WARN);
 }
 
@@ -210,6 +224,85 @@ static int erofsmount_parse_oci_option(const char *option)
 }
 #endif
 
+#ifdef S3EROFS_ENABLED
+static int erofsmount_parse_s3_option(const char *option, struct erofs_s3 *s3cfg)
+{
+	const char *p;
+	int ret;
+
+	if ((p = strstr(option, "s3.endpoint=")) != NULL) {
+		p += sizeof("s3.endpoint=") - 1;
+		s3cfg->endpoint = strdup(p);
+		if (!s3cfg->endpoint)
+			return -ENOMEM;
+	} else if ((p = strstr(option, "s3.passwd_file=")) != NULL) {
+		p += sizeof("s3.passwd_file=") - 1;
+		ret = s3erofs_parse_s3fs_passwd(p, s3cfg->access_key,
+						s3cfg->secret_key);
+		if (ret)
+			return ret;
+	} else if ((p = strstr(option, "s3.region=")) != NULL) {
+		p += sizeof("s3.region=") - 1;
+		s3cfg->region = strdup(p);
+		if (!s3cfg->region)
+			return -ENOMEM;
+	} else if ((p = strstr(option, "s3.urlstyle=")) != NULL) {
+		p += sizeof("s3.urlstyle=") - 1;
+		if (!strcmp(p, "vhost"))
+			s3cfg->url_style = S3EROFS_URL_STYLE_VIRTUAL_HOST;
+		else if (!strcmp(p, "path"))
+			s3cfg->url_style = S3EROFS_URL_STYLE_PATH;
+		else {
+			erofs_err("invalid S3 URL style %s", p);
+			return -EINVAL;
+		}
+	} else if ((p = strstr(option, "s3.sig=")) != NULL) {
+		p += sizeof("s3.sig=") - 1;
+		if (!strcmp(p, "2"))
+			s3cfg->sig = S3EROFS_SIGNATURE_VERSION_2;
+		else if (!strcmp(p, "4"))
+			s3cfg->sig = S3EROFS_SIGNATURE_VERSION_4;
+		else {
+			erofs_err("invalid S3 signature version %s", p);
+			return -EINVAL;
+		}
+	} else {
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int erofsmount_parse_s3_source(struct erofs_s3 *s3cfg, const char *source,
+				      char **bucket, char **key)
+{
+	const char *slash;
+
+	if (!source || !*source)
+		return -EINVAL;
+
+	slash = strchr(source, '/');
+	if (!slash) {
+		/* No slash: treat entire source as bucket, empty key */
+		*bucket = strdup(source);
+		*key = strdup("");
+	} else {
+		*bucket = strndup(source, slash - source);
+		*key = strdup(slash + 1);
+	}
+	if (!*bucket || !*key) {
+		free(*bucket);
+		free(*key);
+		return -ENOMEM;
+	}
+	return 0;
+}
+#else
+static int erofsmount_parse_s3_option(const char *option, void *s3cfg)
+{
+	return -EINVAL;
+}
+#endif
+
 static long erofsmount_parse_flagopts(char *s, long flags, char **more)
 {
 	static const struct {
@@ -251,6 +344,31 @@ static long erofsmount_parse_flagopts(char *s, long flags, char **more)
 				mountsrc.ocicfg.layer_index = -1;
 			}
 			err = erofsmount_parse_oci_option(s);
+			if (err < 0)
+				return err;
+		} else if (strncmp(s, "s3.", 3) == 0) {
+			/* Initialize s3cfg here iff != EROFSMOUNT_SOURCE_S3_OBJECT */
+			if (mountsrc.type != EROFSMOUNT_SOURCE_S3_OBJECT) {
+				erofs_warn("EXPERIMENTAL S3 mount support in use, use at your own risk.");
+				mountsrc.type = EROFSMOUNT_SOURCE_S3_OBJECT;
+				mountsrc.s3cfg.url_style = S3EROFS_URL_STYLE_VIRTUAL_HOST;
+				mountsrc.s3cfg.sig = S3EROFS_SIGNATURE_VERSION_2;
+				mountsrc.s3cfg.access_key[0] = '\0';
+				mountsrc.s3cfg.secret_key[0] = '\0';
+				if (getenv("AWS_ACCESS_KEY_ID")) {
+					strncpy(mountsrc.s3cfg.access_key,
+						getenv("AWS_ACCESS_KEY_ID"),
+						S3_ACCESS_KEY_LEN);
+					mountsrc.s3cfg.access_key[S3_ACCESS_KEY_LEN] = '\0';
+				}
+				if (getenv("AWS_SECRET_ACCESS_KEY")) {
+					strncpy(mountsrc.s3cfg.secret_key,
+						getenv("AWS_SECRET_ACCESS_KEY"),
+						S3_SECRET_KEY_LEN);
+					mountsrc.s3cfg.secret_key[S3_SECRET_KEY_LEN] = '\0';
+				}
+			}
+			err = erofsmount_parse_s3_option(s, &mountsrc.s3cfg);
 			if (err < 0)
 				return err;
 		} else {
@@ -635,8 +753,9 @@ err_out:
 }
 
 struct erofsmount_nbd_ctx {
-	struct erofs_vfile vd;		/* virtual device */
+	struct erofs_vfile _vd;		/* virtual device */
 	struct erofs_vfile sk;		/* socket file */
+	struct erofs_vfile *vd;
 };
 
 static void *erofsmount_nbd_loopfn(void *arg)
@@ -666,7 +785,7 @@ static void *erofsmount_nbd_loopfn(void *arg)
 		erofs_nbd_send_reply_header(ctx->sk.fd, rq.cookie, 0);
 		pos = rq.from;
 		do {
-			written = erofs_io_sendfile(&ctx->sk, &ctx->vd, &pos, rq.len);
+			written = erofs_io_sendfile(&ctx->sk, ctx->vd, &pos, rq.len);
 			if (written == -EINTR) {
 				err = written;
 				goto out;
@@ -680,49 +799,68 @@ static void *erofsmount_nbd_loopfn(void *arg)
 		}
 	}
 out:
-	erofs_io_close(&ctx->vd);
+	erofs_io_close(ctx->vd);
 	erofs_io_close(&ctx->sk);
 	return (void *)(uintptr_t)err;
 }
 
 static int erofsmount_startnbd(int nbdfd, struct erofsmount_source *source)
 {
-	struct erofsmount_nbd_ctx ctx = {};
+	struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
 	uintptr_t retcode;
 	pthread_t th;
 	int err, err2;
 
 	if (source->type == EROFSMOUNT_SOURCE_OCI) {
 		if (source->ocicfg.tarindex_path || source->ocicfg.zinfo_path) {
-			err = erofsmount_tarindex_open(&ctx.vd, &source->ocicfg,
+			err = erofsmount_tarindex_open(ctx.vd, &source->ocicfg,
 						       source->ocicfg.tarindex_path,
 						       source->ocicfg.zinfo_path);
 			if (err)
 				goto out_closefd;
 		} else {
-			err = ocierofs_io_open(&ctx.vd, &source->ocicfg);
+			err = ocierofs_io_open(ctx.vd, &source->ocicfg);
 			if (err)
 				goto out_closefd;
 		}
+#ifdef S3EROFS_ENABLED
+	} else if (source->type == EROFSMOUNT_SOURCE_S3_OBJECT) {
+		char *bucket = NULL, *key = NULL;
+		struct erofs_vfile *s3vf;
+
+		err = erofsmount_parse_s3_source(&source->s3cfg, source->device_path,
+						 &bucket, &key);
+		if (err)
+			goto out_closefd;
+
+		s3vf = s3erofs_io_open(&source->s3cfg, bucket, key);
+		free(bucket);
+		free(key);
+		if (IS_ERR(s3vf)) {
+			err = PTR_ERR(s3vf);
+			goto out_closefd;
+		}
+		ctx.vd = s3vf;
+#endif
 	} else {
 		err = open(source->device_path, O_RDONLY);
 		if (err < 0) {
 			err = -errno;
 			goto out_closefd;
 		}
-		ctx.vd.fd = err;
+		ctx._vd.fd = err;
 	}
 
 	err = erofs_nbd_connect(nbdfd, 9, EROFSMOUNT_NBD_DISK_SIZE);
 	if (err < 0) {
-		erofs_io_close(&ctx.vd);
+		erofs_io_close(ctx.vd);
 		goto out_closefd;
 	}
 	ctx.sk.fd = err;
 
 	err = -pthread_create(&th, NULL, erofsmount_nbd_loopfn, &ctx);
 	if (err) {
-		erofs_io_close(&ctx.vd);
+		erofs_io_close(ctx.vd);
 		erofs_io_close(&ctx.sk);
 		goto out_closefd;
 	}
@@ -840,7 +978,7 @@ static char *erofsmount_write_recovery_info(struct erofsmount_source *source)
 
 	if (source->type == EROFSMOUNT_SOURCE_OCI)
 		err = erofsmount_write_recovery_oci(f, source);
-	else
+	else if (source->type == EROFSMOUNT_SOURCE_LOCAL)
 		err = erofsmount_write_recovery_local(f, source);
 
 	fclose(f);
@@ -996,12 +1134,12 @@ static int erofsmount_reattach_gzran_oci(struct erofsmount_nbd_ctx *ctx,
 	if (err < 0)
 		return -ENOMEM;
 
-	err = erofsmount_reattach_oci(&ctx->vd, "OCI_NATIVE_BLOB", oci_source);
+	err = erofsmount_reattach_oci(ctx->vd, "OCI_NATIVE_BLOB", oci_source);
 	free(oci_source);
 	if (err)
 		return err;
 
-	temp_vd = ctx->vd;
+	temp_vd = *ctx->vd;
 	oci_cfg.image_ref = strdup(source);
 	if (!oci_cfg.image_ref) {
 		erofs_io_close(&temp_vd);
@@ -1013,7 +1151,7 @@ static int erofsmount_reattach_gzran_oci(struct erofsmount_nbd_ctx *ctx,
 	if (token_count > 4 && tokens[4] && *tokens[4])
 		zinfo_path = tokens[4];
 
-	err = erofsmount_tarindex_open(&ctx->vd, &oci_cfg,
+	err = erofsmount_tarindex_open(ctx->vd, &oci_cfg,
 				       meta_path, zinfo_path);
 	free(oci_cfg.image_ref);
 	erofs_io_close(&temp_vd);
@@ -1056,7 +1194,7 @@ static int erofsmount_startnbd_nl(pid_t *pid, struct erofsmount_source *source)
 		return -errno;
 
 	if ((*pid = fork()) == 0) {
-		struct erofsmount_nbd_ctx ctx = {};
+		struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
 		char *recp;
 
 		/* Otherwise, NBD disconnect sends SIGPIPE, skipping cleanup */
@@ -1065,25 +1203,42 @@ static int erofsmount_startnbd_nl(pid_t *pid, struct erofsmount_source *source)
 
 		if (source->type == EROFSMOUNT_SOURCE_OCI) {
 			if (source->ocicfg.tarindex_path || source->ocicfg.zinfo_path) {
-				err = erofsmount_tarindex_open(&ctx.vd, &source->ocicfg,
+				err = erofsmount_tarindex_open(ctx.vd, &source->ocicfg,
 							       source->ocicfg.tarindex_path,
 							       source->ocicfg.zinfo_path);
 				if (err)
 					exit(EXIT_FAILURE);
 			} else {
-				err = ocierofs_io_open(&ctx.vd, &source->ocicfg);
+				err = ocierofs_io_open(ctx.vd, &source->ocicfg);
 				if (err)
 					exit(EXIT_FAILURE);
 			}
+#ifdef S3EROFS_ENABLED
+		} else if (source->type == EROFSMOUNT_SOURCE_S3_OBJECT) {
+			char *bucket = NULL, *key = NULL;
+			struct erofs_vfile *s3vf;
+
+			err = erofsmount_parse_s3_source(&source->s3cfg, source->device_path,
+							 &bucket, &key);
+			if (err)
+				exit(EXIT_FAILURE);
+
+			s3vf = s3erofs_io_open(&source->s3cfg, bucket, key);
+			free(bucket);
+			free(key);
+			if (IS_ERR(s3vf))
+				exit(EXIT_FAILURE);
+			ctx.vd = s3vf;
+#endif
 		} else {
 			err = open(source->device_path, O_RDONLY);
 			if (err < 0)
 				exit(EXIT_FAILURE);
-			ctx.vd.fd = err;
+			ctx._vd.fd = err;
 		}
 		recp = erofsmount_write_recovery_info(source);
 		if (IS_ERR(recp)) {
-			erofs_io_close(&ctx.vd);
+			erofs_io_close(ctx.vd);
 			exit(EXIT_FAILURE);
 		}
 
@@ -1106,7 +1261,7 @@ static int erofsmount_startnbd_nl(pid_t *pid, struct erofsmount_source *source)
 				}
 			}
 		}
-		erofs_io_close(&ctx.vd);
+		erofs_io_close(ctx.vd);
 out_fork:
 		(void)unlink(recp);
 		free(recp);
@@ -1123,7 +1278,7 @@ out_fork:
 static int erofsmount_reattach(const char *target)
 {
 	char *identifier, *line, *source, *recp = NULL;
-	struct erofsmount_nbd_ctx ctx = {};
+	struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
 	int nbdnum, err;
 	struct stat st;
 	size_t n;
@@ -1186,13 +1341,13 @@ static int erofsmount_reattach(const char *target)
 			err = -errno;
 			goto err_line;
 		}
-		ctx.vd.fd = err;
+		ctx.vd->fd = err;
 	} else if (!strcmp(line, "TARINDEX_OCI_BLOB")) {
 		err = erofsmount_reattach_gzran_oci(&ctx, source);
 		if (err)
 			goto err_line;
 	} else if (!strcmp(line, "OCI_LAYER") || !strcmp(line, "OCI_NATIVE_BLOB")) {
-		err = erofsmount_reattach_oci(&ctx.vd, line, source);
+		err = erofsmount_reattach_oci(ctx.vd, line, source);
 		if (err)
 			goto err_line;
 	} else {
@@ -1214,7 +1369,7 @@ static int erofsmount_reattach(const char *target)
 		erofs_io_close(&ctx.sk);
 		err = 0;
 	}
-	erofs_io_close(&ctx.vd);
+	erofs_io_close(ctx.vd);
 err_line:
 	free(line);
 err_identifier:

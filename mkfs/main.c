@@ -634,73 +634,6 @@ static void mkfs_parse_tar_cfg(char *cfg)
 }
 
 #ifdef S3EROFS_ENABLED
-static int mkfs_parse_s3_cfg_passwd(const char *filepath, char *ak, char *sk)
-{
-	struct stat st;
-	int fd, n, ret;
-	char buf[S3_ACCESS_KEY_LEN + S3_SECRET_KEY_LEN + 3];
-	char *colon;
-
-	fd = open(filepath, O_RDONLY);
-	if (fd < 0) {
-		erofs_err("failed to open passwd_file %s", filepath);
-		return -errno;
-	}
-
-	ret = fstat(fd, &st);
-	if (ret) {
-		ret = -errno;
-		goto err;
-	}
-
-	if (!S_ISREG(st.st_mode)) {
-		erofs_err("%s is not a regular file", filepath);
-		ret = -EINVAL;
-		goto err;
-	}
-
-	if ((st.st_mode & 077) != 0)
-		erofs_warn("passwd_file %s should not be accessible by group or others",
-			   filepath);
-
-	if (st.st_size >= sizeof(buf)) {
-		erofs_err("passwd_file %s is too large (size: %llu)", filepath,
-			  st.st_size | 0ULL);
-		ret = -EINVAL;
-		goto err;
-	}
-
-	n = read(fd, buf, st.st_size);
-	if (n < 0) {
-		ret = -errno;
-		goto err;
-	}
-	buf[n] = '\0';
-
-	while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
-		buf[--n] = '\0';
-
-	colon = strchr(buf, ':');
-	if (!colon) {
-		ret = -EINVAL;
-		goto err;
-	}
-	*colon = '\0';
-
-	if (strlen(buf) > S3_ACCESS_KEY_LEN ||
-	    strlen(colon + 1) > S3_SECRET_KEY_LEN) {
-		ret = -EINVAL;
-		goto err;
-	}
-
-	strcpy(ak, buf);
-	strcpy(sk, colon + 1);
-
-err:
-	close(fd);
-	return ret;
-}
-
 static int mkfs_parse_s3_cfg(char *cfg_str)
 {
 	char *p, *q, *opt;
@@ -734,8 +667,8 @@ static int mkfs_parse_s3_cfg(char *cfg_str)
 
 		if ((p = strstr(opt, "passwd_file="))) {
 			p += sizeof("passwd_file=") - 1;
-			ret = mkfs_parse_s3_cfg_passwd(p, s3cfg.access_key,
-						       s3cfg.secret_key);
+			ret = s3erofs_parse_s3fs_passwd(p, s3cfg.access_key,
+							s3cfg.secret_key);
 			if (ret)
 				return ret;
 		} else if ((p = strstr(opt, "urlstyle="))) {

@@ -35,8 +35,13 @@ struct erofs_s3 {
 	enum s3erofs_signature_version sig;
 };
 
+struct erofs_vfile;
+
 int s3erofs_build_trees(struct erofs_importer *im, struct erofs_s3 *s3,
 			const char *path, bool fillzero);
+struct erofs_vfile *s3erofs_io_open(struct erofs_s3 *s3, const char *bucket,
+				    const char *key);
+int s3erofs_parse_s3fs_passwd(const char *filepath, char *ak, char *sk);
 
 #ifdef __cplusplus
 }

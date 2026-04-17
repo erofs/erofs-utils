@@ -39,6 +39,7 @@ struct s3erofs_curl_request {
 	char url[S3EROFS_URL_LEN];
 	char canonical_uri[S3EROFS_CANONICAL_URI_LEN];
 	char canonical_query[S3EROFS_CANONICAL_QUERY_LEN];
+	const char *method;
 };
 
 static const char *s3erofs_parse_host(const char *endpoint, const char **schema)
@@ -353,6 +354,7 @@ static void s3erofs_to_hex(const u8 *data, size_t len, char *output)
 
 // See: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTAuthentication.html#ConstructingTheAuthenticationHeader
 static char *s3erofs_sigv2_header(const struct curl_slist *headers,
+				  const char *request_method,
 				  const char *content_md5,
 				  const char *content_type, const char *date,
 				  const char *canonical_uri, const char *ak,
@@ -373,8 +375,8 @@ static char *s3erofs_sigv2_header(const struct curl_slist *headers,
 	if (!canonical_uri)
 		canonical_uri = "/";
 
-	pos = asprintf(&str, "GET\n%s\n%s\n%s\n%s%s", content_md5, content_type,
-		       date, "", canonical_uri);
+	pos = asprintf(&str, "%s\n%s\n%s\n%s\n%s%s", request_method,
+		       content_md5, content_type, date, "", canonical_uri);
 	if (pos < 0)
 		return ERR_PTR(-ENOMEM);
 
@@ -401,6 +403,7 @@ free_string:
 
 // See: https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 static char *s3erofs_sigv4_header(const struct curl_slist *headers,
+				  const char *request_method,
 				  time_t request_time, const char *canonical_uri,
 				  const char *canonical_query, const char *region,
 				  const char *ak, const char *sk)
@@ -430,13 +433,11 @@ static char *s3erofs_sigv4_header(const struct curl_slist *headers,
 
 	// Task 1: Create canonical request
 	if (asprintf(&canonical_request,
-		     "GET\n"
-		     "%s\n"
-		     "%s\n"
-		     "%s\n"
+		     "%s\n%s\n%s\n%s\n"
 		     "host;x-amz-content-sha256;x-amz-date\n"
 		     "UNSIGNED-PAYLOAD",
-		     canonical_uri, canonical_query, canonical_headers) < 0) {
+		     request_method, canonical_uri, canonical_query,
+		     canonical_headers) < 0) {
 		err = -ENOMEM;
 		goto err_canonical_headers;
 	}
@@ -533,7 +534,7 @@ static int s3erofs_request_insert_auth_v2(struct curl_slist **request_headers,
 	s3erofs_format_time(time(NULL), date + sizeof(date_prefix) - 1,
 			    sizeof(date) - sizeof(date_prefix) + 1, S3EROFS_DATE_RFC1123);
 
-	sigv2 = s3erofs_sigv2_header(*request_headers, NULL, NULL,
+	sigv2 = s3erofs_sigv2_header(*request_headers, req->method, NULL, NULL,
 				     date + sizeof(date_prefix) - 1, req->canonical_uri,
 				     s3->access_key, s3->secret_key);
 	if (IS_ERR(sigv2))
@@ -576,7 +577,7 @@ static int s3erofs_request_insert_auth_v4(struct curl_slist **request_headers,
 	*request_headers = curl_slist_append(*request_headers, tmp);
 	free(tmp);
 
-	sigv4 = s3erofs_sigv4_header(*request_headers, request_time,
+	sigv4 = s3erofs_sigv4_header(*request_headers, req->method, request_time,
 				     req->canonical_uri, req->canonical_query,
 				     s3->region, s3->access_key, s3->secret_key);
 	if (IS_ERR(sigv4))
@@ -618,6 +619,13 @@ static int s3erofs_request_perform(struct erofs_s3 *s3,
 	CURL *curl = s3->easy_curl;
 	long http_code = 0;
 	int ret;
+
+	if (!strcmp(req->method, "HEAD")) {
+		curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+	} else {
+		curl_easy_setopt(curl, CURLOPT_NOBODY, 0L);
+		curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+	}
 
 	if (s3->access_key[0]) {
 		if (s3->sig == S3EROFS_SIGNATURE_VERSION_4)
@@ -846,7 +854,7 @@ out:
 
 static int s3erofs_list_objects(struct s3erofs_object_iterator *it)
 {
-	struct s3erofs_curl_request req = {};
+	struct s3erofs_curl_request req = { .method = "GET", };
 	struct s3erofs_curl_response resp = {};
 	struct s3erofs_query_params params;
 	struct erofs_s3 *s3 = it->s3;
@@ -1014,7 +1022,7 @@ static int s3erofs_remote_getobject(struct erofs_importer *im,
 				    const char *bucket, const char *key)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
-	struct s3erofs_curl_request req = {};
+	struct s3erofs_curl_request req = { .method = "GET", };
 	struct s3erofs_curl_getobject_resp resp;
 	struct erofs_vfile vf;
 	u64 diskbuf_off;
@@ -1170,6 +1178,276 @@ err_global:
 	return ret;
 }
 
+struct s3erofs_vfile {
+	struct erofs_vfile vf;
+	struct erofs_s3 *s3;
+	char *bucket, *key;
+	u64 offset, size;
+};
+
+struct s3erofs_range_resp {
+	void *buf;
+	size_t len;
+};
+
+static size_t s3erofs_range_write_cb(void *contents, size_t size,
+				     size_t nmemb, void *userp)
+{
+	struct s3erofs_range_resp *resp = userp;
+	size_t realsize = size * nmemb;
+
+	if (realsize > resp->len)
+		return 0;
+
+	memcpy(resp->buf, contents, realsize);
+	resp->buf = (char *)resp->buf + realsize;
+	resp->len -= realsize;
+	return realsize;
+}
+
+static int s3erofs_get_object_range(struct s3erofs_vfile *s3vf,
+				    void *buf, size_t len, u64 offset)
+{
+	struct s3erofs_curl_request req = { .method = "GET", };
+	struct erofs_s3 *s3 = s3vf->s3;
+	struct s3erofs_range_resp resp;
+	CURL *curl = s3->easy_curl;
+	u64 end = offset + len;
+	long http_code = 0;
+	char range[64];
+	int ret;
+
+	if (end > s3vf->size)
+		end = s3vf->size;
+	if (__erofs_unlikely(end <= offset))
+		return 0;
+	resp.buf = buf;
+	resp.len = end - offset;
+
+	ret = s3erofs_prepare_url(&req, s3->endpoint, s3vf->bucket,
+				  s3vf->key, NULL, s3->url_style, s3->sig);
+	if (ret < 0)
+		return ret;
+
+	/* Add Range header for partial content */
+	snprintf(range, sizeof(range), "%llu-%llu", offset | 0ULL, (end - 1) | 0ULL);
+
+	curl_easy_setopt(curl, CURLOPT_RANGE, range);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, s3erofs_range_write_cb);
+
+	ret = s3erofs_request_perform(s3, &req, &resp);
+	if (ret)
+		return ret;
+
+	ret = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+	if (ret != CURLE_OK) {
+		erofs_err("curl_easy_getinfo() failed: %s",
+			  curl_easy_strerror(ret));
+		return -EIO;
+	}
+
+	if (http_code != 206 && http_code != 200) {
+		erofs_err("S3 range request failed with HTTP code %ld", http_code);
+		return -EIO;
+	}
+	return len - resp.len;  /* actual bytes read */
+}
+
+static ssize_t s3erofs_io_pread(struct erofs_vfile *vf, void *buf,
+				size_t len, u64 offset)
+{
+	struct s3erofs_vfile *s3vf = (struct s3erofs_vfile *)vf;
+	int ret;
+
+	if (offset >= s3vf->size) {
+		memset(buf, 0, len);
+		return len;
+	}
+	ret = s3erofs_get_object_range(s3vf, buf, len, offset);
+	if (ret >= 0 && ret < len) {
+		memset(buf + ret, 0, len - ret);
+		return len;
+	}
+	return ret;
+}
+
+static ssize_t s3erofs_io_read(struct erofs_vfile *vf, void *buf, size_t len)
+{
+	struct s3erofs_vfile *s3vf = (struct s3erofs_vfile *)vf;
+	ssize_t ret;
+
+	ret = s3erofs_io_pread(vf, buf, len, s3vf->offset);
+	if (ret > 0)
+		s3vf->offset += ret;
+	return ret;
+}
+
+static void s3erofs_io_close(struct erofs_vfile *vf)
+{
+	struct s3erofs_vfile *s3vf = (struct s3erofs_vfile *)vf;
+
+	if (!s3vf)
+		return;
+
+	s3erofs_curl_easy_exit(s3vf->s3);
+	free(s3vf->bucket);
+	free(s3vf->key);
+	free(s3vf);
+}
+
+static struct erofs_vfops s3erofs_io_vfops = {
+	.pread = s3erofs_io_pread,
+	.read = s3erofs_io_read,
+	.close = s3erofs_io_close,
+};
+
+static int s3erofs_get_object_size(struct s3erofs_vfile *s3vf)
+{
+	struct s3erofs_curl_request req = { .method = "HEAD", };
+	struct erofs_s3 *s3 = s3vf->s3;
+	CURL *curl = s3->easy_curl;
+	long http_code = 0;
+	double content_length = 0;
+	int ret;
+
+	ret = s3erofs_prepare_url(&req, s3->endpoint, s3vf->bucket,
+				  s3vf->key, NULL, s3->url_style, s3->sig);
+	if (ret < 0)
+		return ret;
+
+	ret = s3erofs_request_perform(s3, &req, NULL);
+	if (ret)
+		return ret;
+
+	ret = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+	if (ret != CURLE_OK) {
+		erofs_err("curl_easy_getinfo() failed: %s",
+			  curl_easy_strerror(ret));
+		return -EIO;
+	}
+
+	if (http_code != 200) {
+		erofs_err("HEAD request failed with HTTP code %ld", http_code);
+		return -EIO;
+	}
+
+	ret = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD,
+				&content_length);
+	if (ret != CURLE_OK)
+		return -EIO;
+	s3vf->size = (u64)content_length;
+	return 0;
+}
+
+struct erofs_vfile *s3erofs_io_open(struct erofs_s3 *s3, const char *bucket,
+				    const char *key)
+{
+	struct s3erofs_vfile *s3vf;
+	int ret = -ENOMEM;
+
+	s3vf = calloc(1, sizeof(*s3vf));
+	if (!s3vf)
+		return ERR_PTR(-ENOMEM);
+
+	s3vf->vf = (struct erofs_vfile){.ops = &s3erofs_io_vfops};
+	s3vf->bucket = strdup(bucket);
+	if (!s3vf->bucket)
+		goto err_free;
+	s3vf->key = strdup(key);
+	if (!s3vf->key)
+		goto err_free;
+	s3vf->s3 = s3;
+
+	ret = s3erofs_curl_easy_init(s3vf->s3);
+	if (ret)
+		goto err_free;
+
+	/* Get object size via HEAD request */
+	ret = s3erofs_get_object_size(s3vf);
+	if (ret) {
+		erofs_err("failed to get S3 object size");
+		goto err_curl;
+	}
+
+	erofs_dbg("S3 object (%s) size: %llu", s3vf->key, s3vf->size);
+	return &s3vf->vf;
+
+err_curl:
+	s3erofs_curl_easy_exit(s3);
+err_free:
+	free(s3vf->key);
+	free(s3vf->bucket);
+	free(s3vf);
+	return ERR_PTR(ret);
+}
+
+int s3erofs_parse_s3fs_passwd(const char *filepath, char *ak, char *sk)
+{
+	char buf[S3_ACCESS_KEY_LEN + S3_SECRET_KEY_LEN + 3];
+	struct stat st;
+	int fd, n, ret;
+	char *colon;
+
+	fd = open(filepath, O_RDONLY);
+	if (fd < 0) {
+		erofs_err("failed to open passwd_file %s", filepath);
+		return -errno;
+	}
+
+	ret = fstat(fd, &st);
+	if (ret) {
+		ret = -errno;
+		goto err;
+	}
+
+	if (!S_ISREG(st.st_mode)) {
+		erofs_err("%s is not a regular file", filepath);
+		ret = -EINVAL;
+		goto err;
+	}
+
+	if ((st.st_mode & 077) != 0)
+		erofs_warn("passwd_file %s should not be accessible by group or others",
+			   filepath);
+
+	if (st.st_size >= sizeof(buf)) {
+		erofs_err("passwd_file %s is too large (size: %llu)", filepath,
+			  st.st_size | 0ULL);
+		ret = -EINVAL;
+		goto err;
+	}
+
+	n = read(fd, buf, st.st_size);
+	if (n < 0) {
+		ret = -errno;
+		goto err;
+	}
+	buf[n] = '\0';
+
+	while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+		buf[--n] = '\0';
+
+	colon = strchr(buf, ':');
+	if (!colon) {
+		ret = -EINVAL;
+		goto err;
+	}
+	*colon = '\0';
+
+	if (strlen(buf) > S3_ACCESS_KEY_LEN ||
+	    strlen(colon + 1) > S3_SECRET_KEY_LEN) {
+		ret = -EINVAL;
+		goto err;
+	}
+
+	strcpy(ak, buf);
+	strcpy(sk, colon + 1);
+
+err:
+	close(fd);
+	return ret;
+}
+
 #ifdef TEST
 struct s3erofs_prepare_url_testcase {
 	const char *name;
@@ -1186,7 +1464,7 @@ struct s3erofs_prepare_url_testcase {
 static bool run_s3erofs_prepare_url_test(const struct s3erofs_prepare_url_testcase *tc,
 					 enum s3erofs_signature_version sig)
 {
-	struct s3erofs_curl_request req = {};
+	struct s3erofs_curl_request req = { .method = "GET", };
 	int ret;
 	const char *expected_canonical;
 
