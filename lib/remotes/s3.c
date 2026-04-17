@@ -20,6 +20,7 @@
 #include "erofs/importer.h"
 #include "liberofs_rebuild.h"
 #include "liberofs_s3.h"
+#include "liberofs_base64.h"
 
 #define S3EROFS_PATH_MAX		1024
 #define S3EROFS_MAX_QUERY_PARAMS	16
@@ -27,7 +28,7 @@
 #define S3EROFS_CANONICAL_URI_LEN	2048
 #define S3EROFS_CANONICAL_QUERY_LEN	S3EROFS_URL_LEN
 
-#define BASE64_ENCODE_LEN(len)	(((len + 2) / 3) * 4)
+#define BASE64_ENCODE_LEN(len)	(DIV_ROUND_UP(len, 3) * 4)
 
 struct s3erofs_query_params {
 	int num;
@@ -1446,6 +1447,78 @@ int s3erofs_parse_s3fs_passwd(const char *filepath, char *ak, char *sk)
 err:
 	close(fd);
 	return ret;
+}
+
+char *s3erofs_encode_cred(const char *access_key, const char *secret_key)
+{
+	char *cred, *out;
+	size_t outlen;
+	int ret;
+
+	ret = asprintf(&cred, "%s:%s", access_key ?: "", secret_key ?: "");
+	if (ret < 0)
+		return ERR_PTR(-ENOMEM);
+
+	outlen = BASE64_ENCODE_LEN(ret);
+	out = malloc(outlen + 1);
+	if (!out) {
+		free(cred);
+		return ERR_PTR(-ENOMEM);
+	}
+	ret = erofs_base64_encode((u8 *)cred, ret, out);
+	if (ret < 0) {
+		free(out);
+		free(cred);
+		return ERR_PTR(ret);
+	}
+	out[ret] = '\0';
+	free(cred);
+	return out;
+}
+
+int s3erofs_decode_cred(const char *b64, char **out_access_key,
+			char **out_secret_key)
+{
+	size_t len;
+	unsigned char *out;
+	int ret;
+	char *colon;
+
+	if (!b64 || !out_access_key || !out_secret_key)
+		return -EINVAL;
+
+	*out_access_key = NULL;
+	*out_secret_key = NULL;
+
+	len = strlen(b64);
+	out = malloc(len * 3 / 4 + 1);
+	if (!out)
+		return -ENOMEM;
+
+	ret = erofs_base64_decode(b64, len, out);
+	if (ret < 0) {
+		free(out);
+		return ret;
+	}
+	out[ret] = '\0';
+
+	colon = strchr((char *)out, ':');
+	if (!colon) {
+		free(out);
+		return -EINVAL;
+	}
+
+	*colon = '\0';
+	*out_access_key = strdup((char *)out);
+	*out_secret_key = strdup(colon + 1);
+	free(out);
+
+	if (!*out_access_key || !*out_secret_key) {
+		free(*out_access_key);
+		free(*out_secret_key);
+		return -ENOMEM;
+	}
+	return 0;
 }
 
 #ifdef TEST

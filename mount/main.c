@@ -954,6 +954,37 @@ static int erofsmount_write_recovery_local(FILE *f, struct erofsmount_source *so
 	return err ? -ENOMEM : 0;
 }
 
+#ifdef S3EROFS_ENABLED
+static int erofsmount_write_recovery_s3(FILE *f, struct erofsmount_source *source)
+{
+	char *b64cred = NULL;
+	int ret;
+
+	if (source->s3cfg.access_key[0] || source->s3cfg.secret_key[0]) {
+		b64cred = s3erofs_encode_cred(source->s3cfg.access_key,
+					      source->s3cfg.secret_key);
+		if (IS_ERR(b64cred))
+			return PTR_ERR(b64cred);
+	}
+
+	/* S3_OBJECT <bucket/key> <endpoint> <urlstyle> <sig> <region> [b64cred] */
+	ret = fprintf(f, "S3_OBJECT %s %s %d %d %s %s\n",
+		      source->device_path,
+		      source->s3cfg.endpoint,
+		      source->s3cfg.url_style,
+		      source->s3cfg.sig,
+		      source->s3cfg.region ?: "(nil)",
+		      b64cred ?: "");
+	free(b64cred);
+	return ret < 0 ? -ENOMEM : 0;
+}
+#else
+static int erofsmount_write_recovery_s3(FILE *f, struct erofsmount_source *source)
+{
+	return -EOPNOTSUPP;
+}
+#endif
+
 static char *erofsmount_write_recovery_info(struct erofsmount_source *source)
 {
 	char recp[] = "/var/run/erofs/mountnbd_XXXXXX";
@@ -978,6 +1009,8 @@ static char *erofsmount_write_recovery_info(struct erofsmount_source *source)
 
 	if (source->type == EROFSMOUNT_SOURCE_OCI)
 		err = erofsmount_write_recovery_oci(f, source);
+	else if (source->type == EROFSMOUNT_SOURCE_S3_OBJECT)
+		err = erofsmount_write_recovery_s3(f, source);
 	else if (source->type == EROFSMOUNT_SOURCE_LOCAL)
 		err = erofsmount_write_recovery_local(f, source);
 
@@ -1099,6 +1132,76 @@ static int erofsmount_reattach_oci(struct erofs_vfile *vf,
 #else
 static int erofsmount_reattach_oci(struct erofs_vfile *vf,
 				   const char *type, char *source)
+{
+	return -EOPNOTSUPP;
+}
+#endif
+
+#ifdef S3EROFS_ENABLED
+static int erofsmount_reattach_s3(struct erofsmount_nbd_ctx *ctx, char *source)
+{
+	char *tokens[5] = {0}, *p = source;
+	char *bucket = NULL, *key = NULL;
+	struct erofs_s3 *s3cfg = &mountsrc.s3cfg;
+	int token_count = 0, err;
+	struct erofs_vfile *vf;
+
+	while (token_count < 5 && (p = strchr(p, ' ')) != NULL) {
+		*p++ = '\0';
+		while (*p == ' ')
+			p++;
+		if (*p == '\0')
+			break;
+		tokens[token_count++] = p;
+	}
+
+	if (token_count < 4)
+		return -EINVAL;
+
+	s3cfg->endpoint = strdup(tokens[0]);
+	s3cfg->url_style = atoi(tokens[1]);
+	s3cfg->sig = atoi(tokens[2]);
+	s3cfg->region = strdup(tokens[3]);
+	if (!s3cfg->endpoint || !s3cfg->region)
+		return -ENOMEM;
+
+	err = erofsmount_parse_s3_source(s3cfg, source, &bucket, &key);
+	if (err)
+		return err;
+
+	if (token_count > 4 && tokens[4][0]) {
+		char *tmp_access = NULL, *tmp_secret = NULL;
+
+		err = s3erofs_decode_cred(tokens[4], &tmp_access, &tmp_secret);
+		if (err)
+			goto err_out;
+		if (tmp_access) {
+			strncpy(s3cfg->access_key, tmp_access, S3_ACCESS_KEY_LEN);
+			s3cfg->access_key[S3_ACCESS_KEY_LEN] = '\0';
+			free(tmp_access);
+		}
+		if (tmp_secret) {
+			strncpy(s3cfg->secret_key, tmp_secret, S3_SECRET_KEY_LEN);
+			s3cfg->secret_key[S3_SECRET_KEY_LEN] = '\0';
+			free(tmp_secret);
+		}
+	}
+	vf = s3erofs_io_open(s3cfg, bucket, key);
+	free(bucket);
+	free(key);
+	if (IS_ERR(vf))
+		return PTR_ERR(vf);
+	ctx->vd = vf;
+	return 0;
+err_out:
+	free(bucket);
+	free(key);
+	free(s3cfg->region);
+	free(s3cfg->endpoint);
+	return err;
+}
+#else
+static int erofsmount_reattach_s3(struct erofsmount_nbd_ctx *ctx, char *source)
 {
 	return -EOPNOTSUPP;
 }
@@ -1348,6 +1451,10 @@ static int erofsmount_reattach(const char *target)
 			goto err_line;
 	} else if (!strcmp(line, "OCI_LAYER") || !strcmp(line, "OCI_NATIVE_BLOB")) {
 		err = erofsmount_reattach_oci(ctx.vd, line, source);
+		if (err)
+			goto err_line;
+	} else if (!strcmp(line, "S3_OBJECT")) {
+		err = erofsmount_reattach_s3(&ctx, source);
 		if (err)
 			goto err_line;
 	} else {
