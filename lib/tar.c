@@ -1043,6 +1043,10 @@ out_eot:
 			ret = PTR_ERR(d2);
 			goto out;
 		}
+		if (!d2) {
+			ret = -EISDIR;
+			goto out;
+		}
 		if (d2->type == EROFS_FT_UNKNOWN) {
 			ret = -ENOENT;
 			goto out;

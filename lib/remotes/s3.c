@@ -1129,7 +1129,10 @@ int s3erofs_build_trees(struct erofs_importer *im, struct erofs_s3 *s3,
 			ret = PTR_ERR(d);
 			goto err_iter;
 		}
-		if (d->type == EROFS_FT_DIR) {
+		if (!d) {
+			inode = root;
+			inode->i_mode = S_IFDIR | 0755;
+		} else if (d->type == EROFS_FT_DIR) {
 			inode = d->inode;
 			inode->i_mode = S_IFDIR | 0755;
 		} else {
