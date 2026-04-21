@@ -1,0 +1,60 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+#
+# Regression test for a NULL dentry crash in mkfs.erofs --tar when
+# a tar hardlink entry's linkname resolves to the root directory
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f $SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+rm -rf $localdir
+mkdir -p $localdir
+
+footar="$localdir/foo.tar"
+
+# two empty regular files; tar lays the second header at offset 512.
+: > $localdir/a
+: > $localdir/b
+(cd $localdir && tar --format=ustar -cf $footar a b) || \
+	_fail "failed to build input tar"
+
+# rewrite the second entry as a hardlink whose target is "."
+printf '1' | dd of=$footar bs=1 seek=668 count=1 conv=notrunc 2>/dev/null
+printf '.' | dd of=$footar bs=1 seek=669 count=1 conv=notrunc 2>/dev/null
+dd if=/dev/zero of=$footar bs=1 seek=670 count=99 conv=notrunc 2>/dev/null
+
+# recompute the ustar checksum (chksum field treated as 8 spaces)
+printf '        ' | dd of=$footar bs=1 seek=660 count=8 conv=notrunc 2>/dev/null
+sum=`dd if=$footar bs=512 skip=1 count=1 2>/dev/null | \
+	od -An -tu1 -v | awk '{for(i=1;i<=NF;i++)s+=$i}END{printf "%06o",s}'`
+printf '%s\000 ' "$sum" | dd of=$footar bs=1 seek=660 count=8 conv=notrunc 2>/dev/null
+
+$MKFS_EROFS_PROG --tar $SCRATCH_DEV $footar >> $seqres.full 2>&1
+rc=$?
+[ $rc -ge 128 ] && _fail "mkfs.erofs crashed on hardlink-to-root (rc=$rc)"
+[ $rc -eq 0 ] && _fail "mkfs.erofs unexpectedly accepted hardlink-to-root"
+
+echo Silence is golden
+status=0
+exit 0

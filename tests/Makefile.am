@@ -126,6 +126,9 @@ TESTS += erofs/028
 # 029 - test FUSE daemon and kernel error handling on corrupted inodes
 TESTS += erofs/029
 
+# 030 - regression test for NULL dentry on hardlink-to-root tar entry
+TESTS += erofs/030
+
 # NEW TEST CASE HERE
 # TESTS += erofs/999
 
