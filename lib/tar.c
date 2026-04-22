@@ -21,6 +21,7 @@
 #include "liberofs_cache.h"
 #include "liberofs_gzran.h"
 #include "liberofs_rebuild.h"
+#include "sha256.h"
 
 /* This file is a tape/volume header.  Ignore it on extraction.  */
 #define GNUTYPE_VOLHDR 'V'
@@ -631,10 +632,13 @@ static int tarerofs_write_uncompressed_file(struct erofs_inode *inode,
 					    struct erofs_tarfile *tar)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
+	u8 ishare_xattr_prefix_id = sbi->ishare_xattr_prefix_id;
 	erofs_blk_t nblocks;
 	erofs_off_t pos;
 	void *buf;
 	int ret;
+	struct sha256_state md;
+	u8 out[32 + sizeof("sha256:") - 1];
 
 	inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 	nblocks = DIV_ROUND_UP(inode->i_size, 1U << sbi->blkszbits);
@@ -642,6 +646,9 @@ static int tarerofs_write_uncompressed_file(struct erofs_inode *inode,
 	ret = erofs_allocate_inode_bh_data(inode, nblocks, false);
 	if (ret)
 		return ret;
+
+	if (ishare_xattr_prefix_id)
+		erofs_sha256_init(&md);
 
 	for (pos = 0; pos < inode->i_size; pos += ret) {
 		ret = erofs_iostream_read(&tar->ios, &buf, inode->i_size - pos);
@@ -656,11 +663,23 @@ static int tarerofs_write_uncompressed_file(struct erofs_inode *inode,
 			ret = -EIO;
 			break;
 		}
+		if (ishare_xattr_prefix_id)
+			erofs_sha256_process(&md, buf, ret);
 	}
 	inode->idata_size = 0;
 	inode->datasource = EROFS_INODE_DATA_SOURCE_NONE;
 	if (ret < 0)
 		return ret;
+
+	if (ishare_xattr_prefix_id) {
+		erofs_sha256_done(&md, out + sizeof("sha256:") - 1);
+		memcpy(out, "sha256:", sizeof("sha256:") - 1);
+		ret = erofs_setxattr(inode, ishare_xattr_prefix_id, "",
+				     out, sizeof(out));
+		if (ret < 0)
+			return ret;
+	}
+
 	return 0;
 }
 
