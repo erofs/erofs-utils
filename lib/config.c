@@ -69,13 +69,16 @@ void erofs_set_fs_root(const char *rootdir)
 
 const char *erofs_fspath(const char *fullpath)
 {
-	const char *s = fullpath + fullpath_prefix;
+	const char *s;
 
+	if (!fullpath)
+		return "";
+
+	s = fullpath + fullpath_prefix;
 	while (*s == '/')
 		s++;
 	return s;
 }
-
 #ifdef HAVE_LIBSELINUX
 int erofs_selabel_open(const char *file_contexts)
 {

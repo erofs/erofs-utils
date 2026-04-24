@@ -514,6 +514,8 @@ int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi,
 		return ret;
 	}
 	inode.i_srcpath = strdup("/");
+	if (!inode.i_srcpath)
+		return -ENOMEM;
 
 	ctx = (struct erofs_rebuild_dir_context) {
 		.ctx.dir = &inode,

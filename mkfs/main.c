@@ -926,8 +926,11 @@ static int mkfs_parse_one_compress_alg(char *alg)
 			}
 		}
 	}
-	if (i)
+	if (i) {
 		zset->extraopts = strdup(extraopts);
+		if (!zset->extraopts)
+			return -ENOMEM;
+	}
 	return mkfscfg.total_zcfgs++;
 }
 

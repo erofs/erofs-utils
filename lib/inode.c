@@ -2473,7 +2473,12 @@ struct erofs_inode *erofs_make_empty_root_inode(struct erofs_importer *im,
 	root = erofs_new_inode(sbi);
 	if (IS_ERR(root))
 		return root;
+
 	root->i_srcpath = strdup("/");
+	if (!root->i_srcpath) {
+		erofs_iput(root);
+		return ERR_PTR(-ENOMEM);
+	}
 	root->i_mode = S_IFDIR | 0777;
 	root->i_uid = (!params || params->fixed_uid == -1) ? getuid() :
 							     params->fixed_uid;

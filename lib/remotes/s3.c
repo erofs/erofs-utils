@@ -723,9 +723,13 @@ static int s3erofs_parse_list_objects_one(xmlNodePtr node,
 				tm.tm_isdst = -1;
 				info->mtime = mktime(&tm);
 			}
-			if (xmlStrEqual(child->name, (const xmlChar *)"Key"))
+			if (xmlStrEqual(child->name, (const xmlChar *)"Key")) {
 				info->key = strdup((char *)str);
-			else if (xmlStrEqual(child->name, (const xmlChar *)"Size"))
+				if (!info->key) {
+					xmlFree(str);
+					return -ENOMEM;
+				}
+			} else if (xmlStrEqual(child->name, (const xmlChar *)"Size"))
 				info->size = atoll((char *)str);
 			xmlFree(str);
 		}
@@ -901,37 +905,6 @@ static int s3erofs_list_objects(struct s3erofs_object_iterator *it)
 	return ret;
 }
 
-static struct s3erofs_object_iterator *
-s3erofs_create_object_iterator(struct erofs_s3 *s3, const char *path,
-			       const char *delimiter)
-{
-	struct s3erofs_object_iterator *iter;
-	const char *prefix;
-
-	iter = calloc(1, sizeof(struct s3erofs_object_iterator));
-	if (!iter)
-		return ERR_PTR(-ENOMEM);
-	iter->s3 = s3;
-	prefix = strchr(path, '/');
-	if (!prefix) {
-		iter->bucket = strdup(path);
-		iter->prefix = NULL;
-	} else if (prefix == path) {
-		iter->bucket = NULL;
-		iter->prefix = strdup(path + 1);
-	} else {
-		if (++prefix - path > S3EROFS_PATH_MAX) {
-			free(iter);
-			return ERR_PTR(-EINVAL);
-		}
-		iter->bucket = strndup(path, prefix - path);
-		iter->prefix = strdup(prefix);
-	}
-	iter->delimiter = delimiter;
-	iter->is_truncated = true;
-	return iter;
-}
-
 static void s3erofs_destroy_object_iterator(struct s3erofs_object_iterator *it)
 {
 	int i;
@@ -946,6 +919,47 @@ static void s3erofs_destroy_object_iterator(struct s3erofs_object_iterator *it)
 	free(it->prefix);
 	free(it->bucket);
 	free(it);
+}
+
+static struct s3erofs_object_iterator *
+s3erofs_create_object_iterator(struct erofs_s3 *s3, const char *path,
+			       const char *delimiter)
+{
+	struct s3erofs_object_iterator *iter;
+	const char *prefix;
+	int ret;
+
+	iter = calloc(1, sizeof(struct s3erofs_object_iterator));
+	if (!iter)
+		return ERR_PTR(-ENOMEM);
+	iter->s3 = s3;
+	prefix = strchr(path, '/');
+	if (!prefix) {
+		iter->bucket = strdup(path);
+		iter->prefix = NULL;
+	} else if (prefix == path) {
+		iter->bucket = NULL;
+		iter->prefix = strdup(path + 1);
+	} else {
+		if (++prefix - path > S3EROFS_PATH_MAX) {
+			ret = -EINVAL;
+			goto err;
+		}
+		iter->bucket = strndup(path, prefix - path);
+		iter->prefix = strdup(prefix);
+	}
+
+	if ((!iter->bucket && prefix != path) ||
+	    (!iter->prefix && prefix)) {
+		ret = -ENOMEM;
+		goto err;
+	}
+	iter->delimiter = delimiter;
+	iter->is_truncated = true;
+	return iter;
+err:
+	s3erofs_destroy_object_iterator(iter);
+	return ERR_PTR(ret);
 }
 
 static struct s3erofs_object_info *
