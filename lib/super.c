@@ -131,6 +131,8 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 		sbi->root_nid = le16_to_cpu(dsb->rb.rootnid_2b);
 	}
 	sbi->packed_nid = le64_to_cpu(dsb->packed_nid);
+	if (sbi->packed_nid & BIT_ULL(EROFS_DIRENT_NID_METABOX_BIT))
+		return -EFSCORRUPTED;
 	if (erofs_sb_has_metabox(sbi)) {
 		if (sbi->sb_size <= offsetof(struct erofs_super_block,
 					     metabox_nid))
