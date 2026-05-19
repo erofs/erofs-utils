@@ -1043,7 +1043,7 @@ noinline:
 		if (is_inode_layout_compression(inode)) {
 			DBG_BUGON(!params->ztailpacking);
 			erofs_dbg("Inline %scompressed data (%u bytes) to %s",
-				  inode->compressed_idata ? "" : "un",
+				  inode->idata_type == EROFS_IDATA_TYPE_RAW ? "un": "",
 				  inode->idata_size, inode->i_srcpath);
 			erofs_sb_set_ztailpacking(sbi);
 		} else {
@@ -1149,7 +1149,8 @@ static int erofs_write_tail_end(struct erofs_importer *im,
 		pos = erofs_btell(bh, true) - erofs_blksiz(sbi);
 
 		/* 0'ed data should be padded at head for 0padding conversion */
-		h0 = erofs_sb_has_lz4_0padding(sbi) && inode->compressed_idata;
+		h0 = erofs_sb_has_lz4_0padding(sbi) &&
+			inode->idata_type != EROFS_IDATA_TYPE_RAW;
 		DBG_BUGON(inode->idata_size > erofs_blksiz(sbi));
 
 		iov[h0] = (struct iovec) { .iov_base = inode->idata,

@@ -210,6 +210,12 @@ struct erofs_diskbuf;
 #define EROFS_INODE_DATA_SOURCE_RESVSP		3
 #define EROFS_INODE_DATA_SOURCE_REBUILD_BLOB	4
 
+enum erofs_idata_type {
+	EROFS_IDATA_TYPE_RAW,
+	EROFS_IDATA_TYPE_COMPRESSED_DEFAULT,
+	EROFS_IDATA_TYPE_COMPRESSED_END_OF_2B,
+};
+
 #define EROFS_I_BLKADDR_DEV_ID_BIT		48
 
 struct erofs_inode {
@@ -262,7 +268,7 @@ struct erofs_inode {
 	unsigned short idata_size;
 	char datasource;
 	bool in_metabox;
-	bool compressed_idata;
+	char idata_type;
 	bool lazy_tailblock;
 	bool opaque;
 	/* OVL: non-merge dir that may contain whiteout entries */

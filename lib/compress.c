@@ -483,7 +483,7 @@ static int z_erofs_fill_inline_data(struct erofs_inode *inode, void *data,
 {
 	inode->z_advise |= Z_EROFS_ADVISE_INLINE_PCLUSTER;
 	inode->idata_size = len;
-	inode->compressed_idata = !raw;
+	inode->idata_type = EROFS_IDATA_TYPE_COMPRESSED_DEFAULT;
 
 	inode->idata = malloc(inode->idata_size);
 	if (!inode->idata)
@@ -973,14 +973,17 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 	DBG_BUGON(compacted_4b_initial);
 
 	/* generate compacted_2b */
-	while (compacted_2b) {
-		in = parse_legacy_indexes(cv, 16, in);
-		out = write_compacted_indexes(out, cv, &blkaddr,
-					      2, logical_clusterbits, false,
-					      &dummy_head, big_pcluster);
-		compacted_2b -= 16;
+	if (compacted_2b) {
+		if (!compacted_4b_end && inode->idata_size)
+			inode->idata_type = EROFS_IDATA_TYPE_COMPRESSED_END_OF_2B;
+		do {
+			in = parse_legacy_indexes(cv, 16, in);
+			out = write_compacted_indexes(out, cv, &blkaddr,
+						      2, logical_clusterbits, false,
+						      &dummy_head, big_pcluster);
+			compacted_2b -= 16;
+		} while(compacted_2b);
 	}
-	DBG_BUGON(compacted_2b);
 
 	/* generate compacted_4b_end */
 	while (compacted_4b_end > 1) {
@@ -1210,10 +1213,11 @@ void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 
 	h->h_advise = cpu_to_le16(le16_to_cpu(h->h_advise) &
 				  ~Z_EROFS_ADVISE_INLINE_PCLUSTER);
+	DBG_BUGON(inode->idata_size != le16_to_cpu(h->h_idata_size));
 	h->h_idata_size = 0;
 	if (!inode->eof_tailraw)
 		return;
-	DBG_BUGON(inode->compressed_idata != true);
+	DBG_BUGON(inode->idata_type == EROFS_IDATA_TYPE_RAW);
 
 	/* patch the EOF lcluster to uncompressed type first */
 	if (inode->datalayout == EROFS_INODE_COMPRESSED_FULL) {
@@ -1223,19 +1227,29 @@ void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 
 		di->di_advise = cpu_to_le16(type);
 	} else if (inode->datalayout == EROFS_INODE_COMPRESSED_COMPACT) {
-		/* handle the last compacted 4B pack */
-		unsigned int eofs, base, pos, v, lo;
+		/* handle the last compacted 4B/2B pack */
+		unsigned int lclusterbits = inode->z_lclusterbits;
+		unsigned int lobits, eofs, base, pos, v;
 		u8 *out;
 
-		eofs = inode->extent_isize -
-			(4 << (BLK_ROUND_UP(sbi, inode->i_size) & 1));
-		base = round_down(eofs, 8);
-		pos = 16 /* encodebits */ * ((eofs - base) / 4);
-		out = inode->compressmeta + base;
-		lo = erofs_blkoff(sbi, get_unaligned_le32(out + pos / 8));
-		v = (type << sbi->blkszbits) | lo;
-		out[pos / 8] = v & 0xff;
-		out[pos / 8 + 1] = v >> 8;
+		lobits = max(lclusterbits, ilog2(Z_EROFS_LI_D0_CBLKCNT) + 1U);
+
+		if (inode->idata_type == EROFS_IDATA_TYPE_COMPRESSED_DEFAULT) {
+			eofs = inode->extent_isize -
+				(4 << (BLK_ROUND_UP(sbi, inode->i_size) & 1));
+			base = round_down(eofs, 8);
+			pos = 16 /* encodebits */ * ((eofs - base) / 4);
+			out = inode->compressmeta + base + pos / 8;
+		} else {
+			out = inode->compressmeta + inode->extent_isize -
+				sizeof(__le32) - sizeof(__le16);
+			lobits = 16 - 14 /* encodebits */ + lobits;
+		}
+
+		v = (get_unaligned_le16(out) & (BIT(lobits) - 1)) |
+			(type << lobits);
+		*out = v & 0xff;
+		*(out + 1) = v >> 8;
 	} else {
 		DBG_BUGON(1);
 		return;
@@ -1244,7 +1258,7 @@ void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 	/* replace idata with prepared uncompressed data */
 	inode->idata = inode->eof_tailraw;
 	inode->idata_size = inode->eof_tailrawsize;
-	inode->compressed_idata = false;
+	inode->idata_type = EROFS_IDATA_TYPE_RAW;
 	inode->eof_tailraw = NULL;
 }
 
