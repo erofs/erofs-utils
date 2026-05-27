@@ -42,9 +42,6 @@ $ ./configure --enable-lzma
 $ make
 ```
 
-Additionally, you could specify liblzma target paths with
-`--with-liblzma-incdir` and `--with-liblzma-libdir` manually.
-
 ## How to build erofsfuse
 
 It's disabled by default as an experimental feature for now due

@@ -808,13 +808,6 @@ fi
 
 if test "x${have_liblzma}" = "xyes"; then
   AC_DEFINE([HAVE_LIBLZMA], [1], [Define to 1 if liblzma is enabled.])
-  liblzma_LIBS="-llzma"
-  test -z "${with_liblzma_libdir}" ||
-    liblzma_LIBS="-L${with_liblzma_libdir} $liblzma_LIBS"
-  test -z "${with_liblzma_incdir}" ||
-    liblzma_CFLAGS="-I${with_liblzma_incdir}"
-  AC_SUBST([liblzma_LIBS])
-  AC_SUBST([liblzma_CFLAGS])
 fi
 
 if test "x$have_zlib" = "xyes"; then
