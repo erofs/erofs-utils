@@ -23,6 +23,7 @@
 #include "../lib/liberofs_fanotify.h"
 #endif
 #include "../lib/liberofs_s3.h"
+#include "../lib/liberofs_ublk.h"
 
 #ifdef HAVE_LINUX_LOOP_H
 #include <linux/loop.h>
@@ -59,12 +60,19 @@ struct loop_info {
 #define EROFSMOUNT_FANOTIFY_HELP	""
 #endif
 
+#ifdef HAVE_LIBURING
+#define EROFSMOUNT_UBLK_HELP		", ublk"
+#else
+#define EROFSMOUNT_UBLK_HELP		""
+#endif
+
 enum erofs_backend_drv {
 	EROFSAUTO,
 	EROFSLOCAL,
 	EROFSFUSE,
 	EROFSNBD,
 	EROFSFANOTIFY,
+	EROFSUBLK,
 };
 
 enum erofsmount_mode {
@@ -118,7 +126,7 @@ static void usage(int argc, char **argv)
 		" -d <0-9>                   set output verbosity; 0=quiet, 9=verbose (default=%i)\n"
 		" -o options                 comma-separated list of mount options\n"
 		" -t type[.subtype]          filesystem type (and optional subtype)\n"
-		"                            subtypes: fuse, local, nbd" EROFSMOUNT_FANOTIFY_HELP "\n"
+		"                            subtypes: fuse, local, nbd" EROFSMOUNT_FANOTIFY_HELP EROFSMOUNT_UBLK_HELP "\n"
 		" -u                         unmount the filesystem\n"
 		"    --disconnect            abort an existing NBD device forcibly\n"
 		"    --reattach              reattach to an existing NBD device\n"
@@ -466,6 +474,12 @@ static int erofsmount_parse_options(int argc, char **argv)
 #else
 					erofs_err("fanotify backend support is not built-in");
 					return -EINVAL;
+#endif
+				} else if (!strcmp(dot + 1, "ublk")) {
+#ifdef HAVE_LIBURING
+					mountcfg.backend = EROFSUBLK;
+#else
+					erofs_err("ublk backend support is not built-in");
 #endif
 				} else {
 					erofs_err("invalid filesystem subtype `%s`", dot + 1);
@@ -1404,6 +1418,26 @@ out_fork:
 	return num;
 }
 
+static int erofsmount_ublk_handler(void *ctx, struct erofs_ublk_request *rq)
+{
+	struct erofs_vfile *vf = ctx;
+	ssize_t ret;
+
+	if (rq->op != EROFS_UBLK_OP_READ) {
+		rq->result = -EROFS;
+		return -EOPNOTSUPP;
+	}
+
+	ret = erofs_io_pread(vf, rq->buf, rq->nr_sectors << 9,
+			     rq->start_sector << 9);
+	if (ret < 0) {
+		rq->result = -EIO;
+		return (int)ret;
+	}
+	rq->result = ret;
+	return 0;
+}
+
 static int erofsmount_reattach(const char *target)
 {
 	struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
@@ -2039,6 +2073,109 @@ out:
 }
 #endif
 
+static int erofsmount_ublk(struct erofsmount_source *source,
+			   const char *mountpoint, const char *fstype,
+			   int flags, const char *options)
+{
+	char *dev_path, ready;
+	int dev_id, err;
+	int pipefd[2];
+	pid_t pid;
+
+	err = erofs_ublk_init();
+	if (err) {
+		erofs_err("ublk not supported");
+		return err;
+	}
+
+	if (pipe(pipefd) < 0)
+		return -errno;
+
+	pid = fork();
+	if (pid < 0) {
+		close(pipefd[0]);
+		close(pipefd[1]);
+		return -errno;
+	}
+
+	if (pid == 0) {
+		struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
+		struct erofs_ublk_dev_info info;
+		struct stat st;
+
+		close(pipefd[0]);
+		err = erofsmount_open_source(&ctx, source);
+		if (err)
+			exit(EXIT_FAILURE);
+
+		info = (struct erofs_ublk_dev_info) {
+			.nr_hw_queues = EROFS_UBLK_DEF_NR_HW_QUEUES,
+			.queue_depth = EROFS_UBLK_DEF_QUEUE_DEPTH,
+			.max_io_buf_bytes = EROFS_UBLK_DEF_MAX_IO_BUF_BYTES,
+			.dev_id = -1,
+			.blkbits = EROFS_UBLK_DEF_BLK_BITS,
+			.flags = 0,
+			.dev_size = source->type == EROFSMOUNT_SOURCE_LOCAL &&
+				erofs_io_fstat(ctx.vd, &st) == 0 ?
+					st.st_size : INT64_MAX,
+		};
+
+		dev_id = erofs_ublk_create_dev(&info, erofsmount_ublk_handler,
+					       ctx.vd);
+		if (dev_id < 0) {
+			erofs_err("erofs_ublk_create_dev failed: %s",
+				  strerror(-dev_id));
+			exit(EXIT_FAILURE);
+		}
+
+		if (write(pipefd[1], &dev_id,
+			  sizeof(dev_id)) != sizeof(dev_id))
+			exit(EXIT_FAILURE);
+
+		err = erofs_ublk_start(dev_id, pipefd[1]);
+		if (err)
+			erofs_err("erofs_ublk_start: %s", strerror(-err));
+		erofs_ublk_destroy(dev_id);
+		erofs_io_close(ctx.vd);
+		exit(EXIT_SUCCESS);
+	}
+
+	close(pipefd[1]);
+	if (read(pipefd[0], &dev_id, sizeof(dev_id)) != sizeof(dev_id)) {
+		waitpid(pid, NULL, 0);
+		close(pipefd[0]);
+		return -EIO;
+	}
+
+	if (read(pipefd[0], &ready, 1) != 1) {
+		waitpid(pid, NULL, 0);
+		close(pipefd[0]);
+		return -EIO;
+	}
+	close(pipefd[0]);
+
+	if (asprintf(&dev_path, "/dev/ublkb%d", dev_id) < 0)
+		err = -ENOMEM;
+	else
+		err = mount(dev_path, mountpoint, fstype, flags, options);
+	if (err < 0) {
+		err = -errno;
+		kill(pid, SIGTERM);
+		waitpid(pid, NULL, 0);
+		return err;
+	}
+	return 0;
+}
+
+static int ublk_dev_id_from_path(const char *path)
+{
+	int dev_id;
+
+	if (sscanf(path, "/dev/ublkb%d", &dev_id) == 1)
+		return dev_id;
+	return -1;
+}
+
 int erofsmount_umount(char *target)
 {
 	char *device = NULL, *mountpoint = NULL;
@@ -2112,12 +2249,30 @@ int erofsmount_umount(char *target)
 		goto err_out;
 	}
 
-	if (isblk && !mountpoint &&
-	    S_ISBLK(st.st_mode) && major(st.st_rdev) == EROFS_NBD_MAJOR) {
-		nbdnum = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
-		err = erofs_nbd_nl_disconnect(nbdnum);
-		if (err != -EOPNOTSUPP)
-			return err;
+	if (isblk && !mountpoint && S_ISBLK(st.st_mode)) {
+		if (major(st.st_rdev) == EROFS_NBD_MAJOR) {
+			nbdnum = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
+			err = erofs_nbd_nl_disconnect(nbdnum);
+			if (err != -EOPNOTSUPP)
+				goto err_out;
+		} else if ((nbdnum = ublk_dev_id_from_path(target)) >= 0) {
+			err = erofs_ublk_del_dev_by_id(nbdnum);
+			goto err_out;
+		}
+	}
+
+	/* XXX: ublk doesn't have autoclose feature */
+	nbdnum = ublk_dev_id_from_path(device);
+	if (nbdnum >= 0) {
+		if (mountpoint) {
+			err = umount(mountpoint);
+			if (err) {
+				err = -errno;
+				goto err_out;
+			}
+		}
+		err = erofs_ublk_del_dev_by_id(nbdnum);
+		goto err_out;
 	}
 
 	/* Avoid TOCTOU issue with NBD_CFLAG_DISCONNECT_ON_CLOSE */
@@ -2229,13 +2384,20 @@ int main(int argc, char *argv[])
 		goto exit;
 	}
 
-	if (mountcfg.backend == EROFSNBD) {
+	if (mountcfg.backend == EROFSNBD || mountcfg.backend == EROFSUBLK) {
 		if (mountsrc.type == EROFSMOUNT_SOURCE_OCI)
 			mountsrc.ocicfg.image_ref = mountcfg.device;
 		else
 			mountsrc.device_path = mountcfg.device;
-		err = erofsmount_nbd(&mountsrc, mountcfg.target,
-				     mountcfg.fstype, mountcfg.flags, mountcfg.options);
+
+		if (mountcfg.backend == EROFSNBD)
+			err = erofsmount_nbd(&mountsrc, mountcfg.target,
+					     mountcfg.fstype, mountcfg.flags,
+					     mountcfg.options);
+		else
+			err = erofsmount_ublk(&mountsrc, mountcfg.target,
+					      mountcfg.fstype, mountcfg.flags,
+					      mountcfg.options);
 		goto exit;
 	}
 
