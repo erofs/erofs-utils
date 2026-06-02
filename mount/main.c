@@ -46,8 +46,12 @@ struct loop_info {
 /* Device boundary probe */
 #define EROFSMOUNT_NBD_DISK_SIZE	(INT64_MAX >> 9)
 #define EROFSMOUNT_CACHE_DIR	"/var/cache/erofsmount"
-#define EROFSMOUNT_RUNTIME_DIR	"/run/erofsmount"
-#define EROFSMOUNT_FANOTIFY_STATE_DIR	EROFSMOUNT_RUNTIME_DIR "/fanotify"
+
+#define EROFSMOUNT_RUNDIR		"/var/run/erofsmount"
+#define EROFSMOUNT_NBD_RUNDIR		EROFSMOUNT_RUNDIR "/nbd"
+#define EROFSMOUNT_NBD_REC_FMT		EROFSMOUNT_NBD_RUNDIR "/mountnbd_nbd%d"
+
+#define EROFSMOUNT_FANOTIFY_STATE_DIR	EROFSMOUNT_RUNDIR "/fanotify"
 
 #ifdef EROFS_FANOTIFY_ENABLED
 #define EROFSMOUNT_FANOTIFY_HELP	", fanotify"
@@ -758,6 +762,43 @@ struct erofsmount_nbd_ctx {
 	struct erofs_vfile *vd;
 };
 
+static int erofsmount_open_source(struct erofsmount_nbd_ctx *ctx,
+				  struct erofsmount_source *source)
+{
+	int err;
+
+	if (source->type == EROFSMOUNT_SOURCE_OCI) {
+		if (source->ocicfg.tarindex_path || source->ocicfg.zinfo_path)
+			return erofsmount_tarindex_open(ctx->vd, &source->ocicfg,
+							source->ocicfg.tarindex_path,
+							source->ocicfg.zinfo_path);
+		return ocierofs_io_open(ctx->vd, &source->ocicfg);
+#ifdef S3EROFS_ENABLED
+	} else if (source->type == EROFSMOUNT_SOURCE_S3_OBJECT) {
+		char *bucket = NULL, *key = NULL;
+		struct erofs_vfile *s3vf;
+
+		err = erofsmount_parse_s3_source(&source->s3cfg, source->device_path,
+						 &bucket, &key);
+		if (err)
+			return err;
+
+		s3vf = s3erofs_io_open(&source->s3cfg, bucket, key);
+		free(bucket);
+		free(key);
+		if (IS_ERR(s3vf))
+			return PTR_ERR(s3vf);
+		ctx->vd = s3vf;
+		return 0;
+#endif
+	}
+	err = open(source->device_path, O_RDONLY);
+	if (err < 0)
+		return err;
+	ctx->_vd.fd = err;
+	return 0;
+}
+
 static void *erofsmount_nbd_loopfn(void *arg)
 {
 	struct erofsmount_nbd_ctx *ctx = arg;
@@ -811,45 +852,9 @@ static int erofsmount_startnbd(int nbdfd, struct erofsmount_source *source)
 	pthread_t th;
 	int err, err2;
 
-	if (source->type == EROFSMOUNT_SOURCE_OCI) {
-		if (source->ocicfg.tarindex_path || source->ocicfg.zinfo_path) {
-			err = erofsmount_tarindex_open(ctx.vd, &source->ocicfg,
-						       source->ocicfg.tarindex_path,
-						       source->ocicfg.zinfo_path);
-			if (err)
-				goto out_closefd;
-		} else {
-			err = ocierofs_io_open(ctx.vd, &source->ocicfg);
-			if (err)
-				goto out_closefd;
-		}
-#ifdef S3EROFS_ENABLED
-	} else if (source->type == EROFSMOUNT_SOURCE_S3_OBJECT) {
-		char *bucket = NULL, *key = NULL;
-		struct erofs_vfile *s3vf;
-
-		err = erofsmount_parse_s3_source(&source->s3cfg, source->device_path,
-						 &bucket, &key);
-		if (err)
-			goto out_closefd;
-
-		s3vf = s3erofs_io_open(&source->s3cfg, bucket, key);
-		free(bucket);
-		free(key);
-		if (IS_ERR(s3vf)) {
-			err = PTR_ERR(s3vf);
-			goto out_closefd;
-		}
-		ctx.vd = s3vf;
-#endif
-	} else {
-		err = open(source->device_path, O_RDONLY);
-		if (err < 0) {
-			err = -errno;
-			goto out_closefd;
-		}
-		ctx._vd.fd = err;
-	}
+	err = erofsmount_open_source(&ctx, source);
+	if (err)
+		goto out_closefd;
 
 	err = erofs_nbd_connect(nbdfd, 9, EROFSMOUNT_NBD_DISK_SIZE);
 	if (err < 0) {
@@ -987,14 +992,16 @@ static int erofsmount_write_recovery_s3(FILE *f, struct erofsmount_source *sourc
 
 static char *erofsmount_write_recovery_info(struct erofsmount_source *source)
 {
-	char recp[] = "/var/run/erofs/mountnbd_XXXXXX";
+	char recp[] = EROFSMOUNT_NBD_RUNDIR "/mountnbd_XXXXXX";
 	int fd, err;
 	FILE *f;
 
 	fd = mkstemp(recp);
 	if (fd < 0 && errno == ENOENT) {
-		err = mkdir("/var/run/erofs", 0700);
-		if (err)
+		if (mkdir(EROFSMOUNT_RUNDIR, 0700) < 0 && errno != EEXIST)
+			return ERR_PTR(-errno);
+		if (mkdir(EROFSMOUNT_NBD_RUNDIR, 0700) < 0 &&
+		    errno != EEXIST)
 			return ERR_PTR(-errno);
 		fd = mkstemp(recp);
 	}
@@ -1013,6 +1020,8 @@ static char *erofsmount_write_recovery_info(struct erofsmount_source *source)
 		err = erofsmount_write_recovery_s3(f, source);
 	else if (source->type == EROFSMOUNT_SOURCE_LOCAL)
 		err = erofsmount_write_recovery_local(f, source);
+	else
+		err = -EOPNOTSUPP;
 
 	fclose(f);
 	if (err)
@@ -1261,6 +1270,55 @@ static int erofsmount_reattach_gzran_oci(struct erofsmount_nbd_ctx *ctx,
 	return err;
 }
 
+static int erofsmount_open_recovery_source(struct erofsmount_nbd_ctx *ctx,
+					   FILE *f)
+{
+	char *line = NULL, *source;
+	size_t n = 0;
+	int err;
+
+	err = getline(&line, &n, f);
+	if (err <= 0) {
+		err = -errno;
+		fclose(f);
+		goto out;
+	}
+	fclose(f);
+	if (err && line[err - 1] == '\n')
+		line[err - 1] = '\0';
+
+	source = strchr(line, ' ');
+	if (!source) {
+		erofs_err("invalid source in recovery file: %s", line);
+		err = -EINVAL;
+		goto out;
+	}
+	*(source++) = '\0';
+
+	if (!strcmp(line, "LOCAL")) {
+		err = open(source, O_RDONLY);
+		if (err < 0) {
+			err = -errno;
+			goto out;
+		}
+		ctx->vd->fd = err;
+		err = 0;
+	} else if (!strcmp(line, "TARINDEX_OCI_BLOB")) {
+		err = erofsmount_reattach_gzran_oci(ctx, source);
+	} else if (!strcmp(line, "OCI_LAYER") || !strcmp(line, "OCI_NATIVE_BLOB")) {
+		err = erofsmount_reattach_oci(ctx->vd, line, source);
+	} else if (!strcmp(line, "S3_OBJECT")) {
+		err = erofsmount_reattach_s3(ctx, source);
+	} else {
+		erofs_err("unsupported source type %s in recovery file",
+			  line);
+		err = -EOPNOTSUPP;
+	}
+out:
+	free(line);
+	return err;
+}
+
 static int erofsmount_nbd_fix_backend_linkage(int num, char **recp)
 {
 	char *newrecp;
@@ -1275,7 +1333,7 @@ static int erofsmount_nbd_fix_backend_linkage(int num, char **recp)
 		return err;
 	}
 
-	if (asprintf(&newrecp, "/var/run/erofs/mountnbd_nbd%d", num) <= 0)
+	if (asprintf(&newrecp, EROFSMOUNT_NBD_REC_FMT, num) <= 0)
 		return -ENOMEM;
 
 	if (rename(*recp, newrecp) < 0) {
@@ -1304,41 +1362,9 @@ static int erofsmount_startnbd_nl(pid_t *pid, struct erofsmount_source *source)
 		if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
 			exit(EXIT_FAILURE);
 
-		if (source->type == EROFSMOUNT_SOURCE_OCI) {
-			if (source->ocicfg.tarindex_path || source->ocicfg.zinfo_path) {
-				err = erofsmount_tarindex_open(ctx.vd, &source->ocicfg,
-							       source->ocicfg.tarindex_path,
-							       source->ocicfg.zinfo_path);
-				if (err)
-					exit(EXIT_FAILURE);
-			} else {
-				err = ocierofs_io_open(ctx.vd, &source->ocicfg);
-				if (err)
-					exit(EXIT_FAILURE);
-			}
-#ifdef S3EROFS_ENABLED
-		} else if (source->type == EROFSMOUNT_SOURCE_S3_OBJECT) {
-			char *bucket = NULL, *key = NULL;
-			struct erofs_vfile *s3vf;
-
-			err = erofsmount_parse_s3_source(&source->s3cfg, source->device_path,
-							 &bucket, &key);
-			if (err)
-				exit(EXIT_FAILURE);
-
-			s3vf = s3erofs_io_open(&source->s3cfg, bucket, key);
-			free(bucket);
-			free(key);
-			if (IS_ERR(s3vf))
-				exit(EXIT_FAILURE);
-			ctx.vd = s3vf;
-#endif
-		} else {
-			err = open(source->device_path, O_RDONLY);
-			if (err < 0)
-				exit(EXIT_FAILURE);
-			ctx._vd.fd = err;
-		}
+		err = erofsmount_open_source(&ctx, source);
+		if (err)
+			exit(EXIT_FAILURE);
 		recp = erofsmount_write_recovery_info(source);
 		if (IS_ERR(recp)) {
 			erofs_io_close(ctx.vd);
@@ -1380,11 +1406,10 @@ out_fork:
 
 static int erofsmount_reattach(const char *target)
 {
-	char *identifier, *line, *source, *recp = NULL;
 	struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
+	char *identifier;
 	int nbdnum, err;
 	struct stat st;
-	size_t n;
 	FILE *f;
 
 	err = lstat(target, &st);
@@ -1405,69 +1430,31 @@ static int erofsmount_reattach(const char *target)
 		identifier = NULL;
 	}
 
-	if (!identifier &&
-	    (asprintf(&recp, "/var/run/erofs/mountnbd_nbd%d", nbdnum) <= 0)) {
-		err = -ENOMEM;
-		goto err_identifier;
-	}
+	if (!identifier) {
+		char *recp;
 
-	f = fopen(identifier ?: recp, "r");
+		if (asprintf(&recp, EROFSMOUNT_NBD_REC_FMT, nbdnum) <= 0) {
+			err = -ENOMEM;
+			goto err_identifier;
+		}
+		f = fopen(recp, "r");
+		free(recp);
+	} else {
+		f = fopen(identifier, "r");
+	}
 	if (!f) {
 		err = -errno;
-		free(recp);
 		goto err_identifier;
 	}
-	free(recp);
 
-	line = NULL;
-	if ((err = getline(&line, &n, f)) <= 0) {
-		err = -errno;
-		fclose(f);
+	err = erofsmount_open_recovery_source(&ctx, f);
+	if (err)
 		goto err_identifier;
-	}
-	fclose(f);
-	if (err && line[err - 1] == '\n')
-		line[err - 1] = '\0';
-
-	source = strchr(line, ' ');
-	if (!source) {
-		erofs_err("invalid source recorded in recovery file: %s", line);
-		err = -EINVAL;
-		goto err_line;
-	} else {
-		*(source++) = '\0';
-	}
-
-	if (!strcmp(line, "LOCAL")) {
-		err = open(source, O_RDONLY);
-		if (err < 0) {
-			err = -errno;
-			goto err_line;
-		}
-		ctx.vd->fd = err;
-	} else if (!strcmp(line, "TARINDEX_OCI_BLOB")) {
-		err = erofsmount_reattach_gzran_oci(&ctx, source);
-		if (err)
-			goto err_line;
-	} else if (!strcmp(line, "OCI_LAYER") || !strcmp(line, "OCI_NATIVE_BLOB")) {
-		err = erofsmount_reattach_oci(ctx.vd, line, source);
-		if (err)
-			goto err_line;
-	} else if (!strcmp(line, "S3_OBJECT")) {
-		err = erofsmount_reattach_s3(&ctx, source);
-		if (err)
-			goto err_line;
-	} else {
-		err = -EOPNOTSUPP;
-		erofs_err("unsupported source type %s recorded in recovery file", line);
-		goto err_line;
-	}
 
 	err = erofs_nbd_nl_reconnect(nbdnum, identifier);
 	if (err >= 0) {
 		ctx.sk.fd = err;
 		if (fork() == 0) {
-			free(line);
 			free(identifier);
 			if ((uintptr_t)erofsmount_nbd_loopfn(&ctx))
 				return EXIT_FAILURE;
@@ -1477,8 +1464,6 @@ static int erofsmount_reattach(const char *target)
 		err = 0;
 	}
 	erofs_io_close(ctx.vd);
-err_line:
-	free(line);
 err_identifier:
 	free(identifier);
 	return err;
@@ -1649,7 +1634,7 @@ static int erofsmount_write_fanotify_state(const char *state_path, pid_t pid,
 	FILE *f = NULL;
 	int fd = -1, err;
 
-	if (mkdir(EROFSMOUNT_RUNTIME_DIR, 0700) < 0 && errno != EEXIST)
+	if (mkdir(EROFSMOUNT_RUNDIR, 0700) < 0 && errno != EEXIST)
 		return -errno;
 	if (mkdir(EROFSMOUNT_FANOTIFY_STATE_DIR, 0700) < 0 &&
 	    errno != EEXIST)
