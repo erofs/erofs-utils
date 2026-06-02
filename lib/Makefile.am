@@ -33,7 +33,8 @@ noinst_HEADERS = $(top_srcdir)/include/erofs_fs.h \
       $(top_srcdir)/lib/liberofs_gzran.h \
       $(top_srcdir)/lib/liberofs_metabox.h \
       $(top_srcdir)/lib/liberofs_nbd.h \
-      $(top_srcdir)/lib/liberofs_s3.h
+      $(top_srcdir)/lib/liberofs_s3.h \
+      $(top_srcdir)/lib/liberofs_ublk.h
 
 noinst_HEADERS += compressor.h
 if ENABLE_FANOTIFY
@@ -95,6 +96,12 @@ liberofs_la_SOURCES += backends/nbd.c
 if ENABLE_FANOTIFY
 liberofs_la_SOURCES += backends/fanotify.c
 endif
+endif
+
+if ENABLE_UBLK
+liberofs_la_CFLAGS += ${liburing_CFLAGS}
+liberofs_la_LDFLAGS += ${liburing_LIBS}
+liberofs_la_SOURCES += backends/ublk.c
 endif
 liberofs_la_SOURCES += remotes/oci.c remotes/docker_config.c
 liberofs_la_CFLAGS += ${json_c_CFLAGS}
