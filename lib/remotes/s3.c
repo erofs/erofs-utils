@@ -1325,7 +1325,11 @@ static int s3erofs_get_object_size(struct s3erofs_vfile *s3vf)
 	struct erofs_s3 *s3 = s3vf->s3;
 	CURL *curl = s3->easy_curl;
 	long http_code = 0;
+#if (LIBCURL_VERSION_NUM >= 0x073700)
+	curl_off_t content_length;
+#else
 	double content_length = 0;
+#endif
 	int ret;
 
 	ret = s3erofs_prepare_url(&req, s3->endpoint, s3vf->bucket,
@@ -1349,7 +1353,11 @@ static int s3erofs_get_object_size(struct s3erofs_vfile *s3vf)
 		return -EIO;
 	}
 
+#if (LIBCURL_VERSION_NUM >= 0x073700)
+	ret = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T,
+#else
 	ret = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD,
+#endif
 				&content_length);
 	if (ret != CURLE_OK)
 		return -EIO;
