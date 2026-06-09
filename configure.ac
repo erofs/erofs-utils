@@ -818,6 +818,15 @@ AM_CONDITIONAL([ENABLE_OCI], [test "x${have_oci}" = "xyes"])
 AM_CONDITIONAL([ENABLE_FANOTIFY], [test "x${have_fanotify}" = "xyes"])
 AM_CONDITIONAL([ENABLE_UBLK], [test "x${have_ublk}" = "xyes"])
 
+LIBEROFS_LIBS="${libselinux_LIBS} ${libuuid_LIBS} ${liblz4_LIBS} \
+${liblzma_LIBS} ${zlib_LIBS} ${libdeflate_LIBS} ${libzstd_LIBS} \
+${libqpl_LIBS} ${libxxhash_LIBS} ${libcurl_LIBS} ${openssl_LIBS} \
+${libxml2_LIBS} ${libnl3_LIBS} ${liburing_LIBS} ${json_c_LIBS}"
+AS_IF([test "x${enable_multithreading}" != "xno"], [
+  LIBEROFS_LIBS="${LIBEROFS_LIBS} -lpthread"
+])
+AC_SUBST([LIBEROFS_LIBS])
+
 if test "x$have_uuid" = "xyes"; then
   AC_DEFINE([HAVE_LIBUUID], 1, [Define to 1 if libuuid is found])
 fi
