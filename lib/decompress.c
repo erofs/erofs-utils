@@ -466,17 +466,11 @@ static int z_erofs_decompress_lz4(struct z_erofs_decompress_req *rq)
 	char *dest = rq->out;
 	char *src = rq->in;
 	char *buff = NULL;
-	bool support_0padding = false;
 	unsigned int inputmargin = 0;
-	struct erofs_sb_info *sbi = rq->sbi;
 
-	if (erofs_sb_has_lz4_0padding(sbi)) {
-		support_0padding = true;
-
-		inputmargin = z_erofs_fixup_insize((u8 *)src, rq->inputsize);
-		if (inputmargin >= rq->inputsize)
-			return -EFSCORRUPTED;
-	}
+	inputmargin = z_erofs_fixup_insize((u8 *)src, rq->inputsize);
+	if (inputmargin >= rq->inputsize)
+		return -EFSCORRUPTED;
 
 	if (rq->decodedskip) {
 		buff = malloc(rq->decodedlength);
@@ -485,7 +479,7 @@ static int z_erofs_decompress_lz4(struct z_erofs_decompress_req *rq)
 		dest = buff;
 	}
 
-	if (rq->partial_decoding || !support_0padding)
+	if (rq->partial_decoding)
 		ret = LZ4_decompress_safe_partial(src + inputmargin, dest,
 				rq->inputsize - inputmargin,
 				rq->decodedlength, rq->decodedlength);
@@ -589,7 +583,10 @@ static int z_erofs_load_lz4_config(struct erofs_sb_info *sbi,
 			sbi->lz4.max_pclusterblks = 1;	/* reserved case */
 	} else {
 		distance = le16_to_cpu(dsb->u1.lz4_max_distance);
+		if (!distance && !erofs_sb_has_lz4_0padding(sbi))
+			return 0;
 		sbi->lz4.max_pclusterblks = 1;
+		sbi->available_compr_algs = 1 << Z_EROFS_COMPRESSION_LZ4;
 	}
 	sbi->lz4.max_distance = distance;
 	return 0;
@@ -601,10 +598,8 @@ int z_erofs_parse_cfgs(struct erofs_sb_info *sbi, struct erofs_super_block *dsb)
 	erofs_off_t offset;
 	int size, ret = 0;
 
-	if (!erofs_sb_has_compr_cfgs(sbi)) {
-		sbi->available_compr_algs = 1 << Z_EROFS_COMPRESSION_LZ4;
+	if (!erofs_sb_has_compr_cfgs(sbi))
 		return z_erofs_load_lz4_config(sbi, dsb, NULL, 0);
-	}
 
 	sbi->available_compr_algs = le16_to_cpu(dsb->u1.available_compr_algs);
 	if (sbi->available_compr_algs & ~Z_EROFS_ALL_COMPR_ALGS) {
