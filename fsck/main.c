@@ -191,7 +191,7 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 					return -ENAMETOOLONG;
 				}
 
-				fsckcfg.extract_path = malloc(PATH_MAX);
+				fsckcfg.extract_path = malloc(PATH_MAX + 1);
 				if (!fsckcfg.extract_path)
 					return -ENOMEM;
 				strncpy(fsckcfg.extract_path, optarg, len);
@@ -902,9 +902,9 @@ static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 	prev_pos = fsckcfg.extract_pos;
 	curr_pos = prev_pos;
 
-	if (prev_pos + ctx->de_namelen >= PATH_MAX) {
+	if (prev_pos + ctx->de_namelen + 1 >= PATH_MAX) {
 		erofs_err("unable to fsck since the path is too long (%llu)",
-			  (curr_pos + ctx->de_namelen) | 0ULL);
+			  (curr_pos + ctx->de_namelen + 1) | 0ULL);
 		return -EOPNOTSUPP;
 	}
 
@@ -915,7 +915,7 @@ static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 		curr_pos += ctx->de_namelen;
 		fsckcfg.extract_path[curr_pos] = '\0';
 	} else {
-		curr_pos += ctx->de_namelen;
+		curr_pos += ctx->de_namelen + 1;
 	}
 	fsckcfg.extract_pos = curr_pos;
 	ret = erofsfsck_check_inode(ctx->dir->nid, ctx->de_nid);
