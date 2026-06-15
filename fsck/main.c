@@ -513,7 +513,7 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	bool compressed;
 	erofs_off_t pos = 0;
 	u64 pchunk_len = 0;
-	unsigned int raw_size = 0, buffer_size = 0;
+	u64 raw_size = 0, buffer_size = 0;
 	char *raw = NULL, *buffer = NULL;
 
 	erofs_dbg("verify data chunk of nid(%llu): type(%d)",
