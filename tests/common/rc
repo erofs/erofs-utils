@@ -81,6 +81,12 @@ _notrun()
     exit 77
 }
 
+_require_bash()
+{
+	[ -n "$BASH_VERSION" ] || _notrun "Not running in Bash"
+	set +o posix
+}
+
 _require_root()
 {
 	[ "$(id -u)" = "0" ] || _notrun "must be run as root"

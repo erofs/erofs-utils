@@ -1,0 +1,146 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+#
+# Test chunk-based mapping with shared chunks across inodes
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_bash
+_require_erofs
+_require_fssum
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+if [ -z $SCRATCH_DEV ]; then
+	SCRATCH_DEV=$tmp/erofs_$seq.img
+	rm -f SCRATCH_DEV
+fi
+
+localdir="$tmp/$seq"
+
+# emit $1 bytes of random byte value to stdout
+gen_random_chunk()
+{
+	dd if=/dev/urandom bs="$1" count=1 2>/dev/null
+}
+
+write_chunk()
+{
+	dd of="$1" bs=$2 seek=$3 count=1 conv=notrunc 2>/dev/null
+}
+
+prepare_files()
+{
+	local dir="$1"
+	local chunksz="$2"
+
+	rm -rf "$dir"
+	mkdir -p "$dir"
+
+	#           0    1    2    3      4      5      6    7      8      9     10     11     12   13   14
+	#   fileA: A1 | S1 | A2 | A3 | hole | hole |   S2 | S3 | hole | hole |   S4 | hole |   A4 | A5 | hole
+	#   fileB: B1 | S1 | B1 | B2 | B3   | hole | hole | S2 |   S3 | hole | hole |   S4 | hole | B4 | B5
+	#
+	# S1,S2,S3,S4 are identical in both files (dedup'd by mkfs).
+	# ----------------------------------------------------------
+
+	truncate -s $((15*chunksz)) "$dir/fileA"
+
+	# unique data for fileA
+	for i in 0 2 3 12 13; do
+		gen_random_chunk $chunksz | \
+			write_chunk "$dir/fileA" $chunksz $i
+	done
+
+	# unique data for fileB
+	for i in 0 2 3 4 12 13 14; do
+		gen_random_chunk $chunksz | \
+			write_chunk "$dir/fileB" $chunksz $i
+	done
+
+	# shared data in both fileA and fileB
+	gen_random_chunk $chunksz | \
+		tee >(write_chunk "$dir/fileB" $chunksz 1) | \
+		write_chunk "$dir/fileA" $chunksz 1
+	gen_random_chunk $chunksz | \
+		tee >(write_chunk "$dir/fileB" $chunksz 7) | \
+		write_chunk "$dir/fileA" $chunksz 6
+	gen_random_chunk $chunksz | \
+		tee >(write_chunk "$dir/fileB" $chunksz 8) | \
+		write_chunk "$dir/fileA" $chunksz 7
+	gen_random_chunk $chunksz | \
+		tee >(write_chunk "$dir/fileB" $chunksz 11) | \
+		write_chunk "$dir/fileA" $chunksz 10
+
+	# fileC: C1 | C2 | C3 | HOLE | C1 | C2 | C1 | C2 | C3 | C2 | C1
+	dd if="$dir/fileB" bs=$chunksz skip=2 count=1 2>/dev/null | \
+		tee >(write_chunk "$dir/fileC" $chunksz 0) \
+		  >(write_chunk "$dir/fileC" $chunksz 4) \
+		  >(write_chunk "$dir/fileC" $chunksz 6) | \
+		(write_chunk "$dir/fileC" $chunksz 10)
+	dd if="$dir/fileB" bs=$chunksz skip=3 count=1 2>/dev/null | \
+		tee >(write_chunk "$dir/fileC" $chunksz 1) \
+		  >(write_chunk "$dir/fileC" $chunksz 5) \
+		  >(write_chunk "$dir/fileC" $chunksz 7) | \
+		(write_chunk "$dir/fileC" $chunksz 9)
+	dd if="$dir/fileB" bs=$chunksz skip=12 count=1 2>/dev/null | \
+		tee >(write_chunk "$dir/fileC" $chunksz 2) | \
+		  (write_chunk "$dir/fileC" $chunksz 8)
+}
+
+old_MKFS_OPTIONS="$MKFS_OPTIONS"
+
+FSSUM_OPTS="-MAC"
+[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
+
+c=4096
+while [ $c -le 1048576 ]; do
+	prepare_files "$localdir" "$c"
+
+	# block-map chunk format
+	echo "Test block-map chunk format in $c-byte chunks" >>$seqres.full
+	MKFS_OPTIONS="$old_MKFS_OPTIONS --chunksize=$c -Eforce-inode-blockmap"
+	_scratch_mkfs "$localdir" >> $seqres.full 2>&1 || \
+		_fail "failed to mkfs (blockmap)"
+	_scratch_mount 2>>$seqres.full
+
+	sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+	echo "$localdir checksum is $sum1" >>$seqres.full
+	sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
+	echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+	_scratch_unmount
+	[ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+
+	# chunk-index format
+	echo "Test chunk-index format in $c-byte chunks" >>$seqres.full
+	MKFS_OPTIONS="$old_MKFS_OPTIONS --chunksize=$c -Eforce-chunk-indexes"
+	_scratch_mkfs "$localdir" >> $seqres.full 2>&1 || \
+		_fail "failed to mkfs (blockmap)"
+	_scratch_mount 2>>$seqres.full
+
+	sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+	echo "$localdir checksum is $sum1" >>$seqres.full
+	sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
+	echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+	_scratch_unmount
+	[ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+	c=$((c*2))
+done
+
+echo Silence is golden
+status=0
+exit 0
