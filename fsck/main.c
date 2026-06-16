@@ -784,6 +784,7 @@ static inline int erofs_extract_symlink(struct erofs_inode *inode)
 {
 	struct erofs_vfile vf;
 	bool tryagain = true;
+	erofs_off_t bufsz;
 	int ret;
 	char *buf = NULL;
 
@@ -794,8 +795,8 @@ static inline int erofs_extract_symlink(struct erofs_inode *inode)
 	if (ret)
 		return ret;
 
-	buf = malloc(inode->i_size + 1);
-	if (!buf) {
+	if (check_add_overflow(inode->i_size, (erofs_off_t)1, &bufsz) ||
+	    !(buf = malloc(bufsz))) {
 		ret = -ENOMEM;
 		goto out;
 	}
