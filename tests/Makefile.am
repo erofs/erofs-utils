@@ -129,6 +129,9 @@ TESTS += erofs/029
 # 030 - regression test for NULL dentry on hardlink-to-root tar entry
 TESTS += erofs/030
 
+# 031 - test chunk-based mapping with shared chunks across inodes
+TESTS += erofs/031
+
 # NEW TEST CASE HERE
 # TESTS += erofs/999
 
