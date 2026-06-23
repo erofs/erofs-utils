@@ -1375,7 +1375,7 @@ int erofs_commit_compressed_file(struct z_erofs_compress_ictx *ictx,
 	    legacymetasize >= inode->i_size) {
 		z_erofs_dedupe_ext_commit(true);
 		z_erofs_dedupe_commit(true);
-		ret = -ENOSPC;
+		ret = EROFS_RETVAL_FALLBACK;
 		goto err_free_meta;
 	}
 	z_erofs_dedupe_ext_commit(false);
@@ -2031,7 +2031,11 @@ err_free_idata:
 out:
 #ifdef EROFS_MT_ENABLED
 	pthread_mutex_lock(&ictx->mutex);
-	ictx->seg_num = ret < 0 ? INT_MAX : 0;
+	if (ret < 0 && ret != EROFS_RETVAL_FALLBACK)
+		/* mark as failed to avoid further processing */
+		ictx->seg_num = INT_MAX;
+	else
+		ictx->seg_num = 0;
 	pthread_cond_signal(&ictx->cond);
 	pthread_mutex_unlock(&ictx->mutex);
 #endif
@@ -2044,7 +2048,7 @@ int erofs_begin_compress_dir(struct erofs_importer *im,
 {
 	if (!im->params->compress_dir ||
 	    inode->i_size < Z_EROFS_LEGACY_MAP_HEADER_SIZE)
-		return -ENOSPC;
+		return EROFS_RETVAL_FALLBACK;
 
 	inode->z_advise |= Z_EROFS_ADVISE_FRAGMENT_PCLUSTER;
 	erofs_sb_set_fragments(inode->sbi);

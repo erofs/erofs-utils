@@ -53,6 +53,9 @@ static inline void * ERR_CAST(const void *ptr)
 	return (void *) ptr;
 }
 
+/* EROFS-specific error codes */
+#define EROFS_RETVAL_FALLBACK		MAX_ERRNO
+
 #ifdef __cplusplus
 }
 #endif

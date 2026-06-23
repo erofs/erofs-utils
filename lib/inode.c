@@ -1507,7 +1507,7 @@ static int erofs_mkfs_job_write_file(struct erofs_mkfs_job_ndir_ctx *ctx)
 
 	if (ctx->ictx) {
 		ret = erofs_write_compressed_file(ctx->ictx);
-		if (ret != -ENOSPC)
+		if (ret != EROFS_RETVAL_FALLBACK)
 			goto out;
 		if (lseek(ctx->fd, ctx->fpos, SEEK_SET) < 0) {
 			ret = -errno;
@@ -1594,7 +1594,7 @@ static int erofs_mkfs_create_directory(const struct erofs_mkfs_btctx *ctx,
 		inode->datalayout = EROFS_INODE_FLAT_INLINE;
 
 		ret = erofs_begin_compress_dir(ctx->im, inode);
-		if (ret && ret != -ENOSPC)
+		if (ret && ret != EROFS_RETVAL_FALLBACK)
 			return ret;
 	} else {
 		DBG_BUGON(inode->datalayout != EROFS_INODE_FLAT_PLAIN);
@@ -2391,7 +2391,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_importer *im,
 		ret = erofs_write_compressed_file(ictx);
 		if (!ret)
 			goto out;
-		if (ret != -ENOSPC)
+		if (ret != EROFS_RETVAL_FALLBACK)
 			 return ERR_PTR(ret);
 
 		ret = lseek(fd, 0, SEEK_SET);
