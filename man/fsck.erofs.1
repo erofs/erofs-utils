@@ -48,6 +48,10 @@ Specify the target inode by its path for checking or extraction. If both
 .BI "--[no-]xattrs"
 Whether to dump extended attributes during extraction (default off).
 .TP
+.B "\-\-xattr-inode-digest"
+Verify per-inode digests recorded as extended attributes during image
+creation with \fBmkfs.erofs \-\-xattr-inode-digest\fR.
+.TP
 \fB\-h\fR, \fB\-\-help\fR
 Display help string and exit.
 .TP

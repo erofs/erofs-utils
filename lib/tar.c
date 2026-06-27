@@ -21,7 +21,7 @@
 #include "liberofs_cache.h"
 #include "liberofs_gzran.h"
 #include "liberofs_rebuild.h"
-#include "sha256.h"
+#include "liberofs_sha256.h"
 
 /* This file is a tape/volume header.  Ignore it on extraction.  */
 #define GNUTYPE_VOLHDR 'V'

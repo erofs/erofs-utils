@@ -1410,8 +1410,8 @@ static int erofs_xattr_iter_shared(struct erofs_xattr_iter *it,
 	return ret;
 }
 
-int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
-		   size_t buffer_size)
+int __erofs_getxattr(struct erofs_inode *vi, const char *name,
+		     char *buffer, size_t buffer_size, bool hidden)
 {
 	int ret;
 	unsigned int prefix, prefixlen;
@@ -1424,8 +1424,12 @@ int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
 	if (ret)
 		return ret;
 
-	if (!erofs_xattr_prefix_matches(name, &prefix, &prefixlen))
-		return -ENODATA;
+	if (!erofs_xattr_prefix_matches(name, &prefix, &prefixlen)) {
+		if (!hidden)
+			return -ENODATA;
+		prefixlen = 0;
+		prefix = 0;
+	}
 	it.index = prefix;
 	it.name = name + prefixlen;
 	it.len = strlen(it.name);
@@ -1443,6 +1447,12 @@ int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
 		ret = erofs_xattr_iter_shared(&it, vi, true);
 	erofs_put_metabuf(&it.buf);
 	return ret ? ret : it.buffer_ofs;
+}
+
+int erofs_getxattr(struct erofs_inode *vi, const char *name,
+		   char *buffer, size_t buffer_size)
+{
+	return __erofs_getxattr(vi, name, buffer, buffer_size, false);
 }
 
 int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size)
@@ -1513,6 +1523,44 @@ int erofs_xattr_set_ishare_prefix(struct erofs_sb_info *sbi,
 	sbi->ishare_xattr_prefix_id = EROFS_XATTR_LONG_PREFIX | err;
 	erofs_sb_set_ishare_xattrs(sbi);
 	return 0;
+}
+
+char *erofs_xattr_get_ishare_prefix(struct erofs_sb_info *sbi)
+{
+	struct erofs_xattr_prefix_item *pf = NULL;
+	unsigned int idx, base_index;
+	size_t base_len, infix_len;
+	char *name;
+
+	if (!erofs_sb_has_ishare_xattrs(sbi))
+		return NULL;
+
+	if (sbi->ishare_xattr_prefix_id & EROFS_XATTR_LONG_PREFIX) {
+		idx = sbi->ishare_xattr_prefix_id & EROFS_XATTR_LONG_PREFIX_MASK;
+		if (idx >= sbi->xattr_prefix_count)
+			return NULL;
+
+		pf = &sbi->xattr_prefixes[idx];
+		base_index = pf->prefix->base_index;
+		infix_len = pf->infix_len;
+	} else {
+		base_index = sbi->ishare_xattr_prefix_id &
+			EROFS_XATTR_LONG_PREFIX_MASK;
+		infix_len = 0;
+	}
+	if (base_index >= ARRAY_SIZE(xattr_types))
+		return ERR_PTR(-EFSCORRUPTED);
+
+	base_len = xattr_types[base_index].prefix_len;
+	name = malloc(base_len + infix_len + 1);
+	if (!name)
+		return ERR_PTR(-ENOMEM);
+
+	memcpy(name, xattr_types[base_index].prefix, base_len);
+	if (infix_len)
+		memcpy(name + base_len, pf->prefix->infix, infix_len);
+	name[base_len + infix_len] = '\0';
+	return name;
 }
 
 void erofs_xattr_cleanup_name_prefixes(void)

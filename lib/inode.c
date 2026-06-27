@@ -31,7 +31,7 @@
 #include "liberofs_metabox.h"
 #include "liberofs_private.h"
 #include "liberofs_rebuild.h"
-#include "sha256.h"
+#include "liberofs_sha256.h"
 
 static inline bool erofs_is_special_identifier(const char *path)
 {

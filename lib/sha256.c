@@ -4,7 +4,7 @@
  *
  * (copied from LibTomCrypt with adaption.)
  */
-#include "sha256.h"
+#include "liberofs_sha256.h"
 #include <string.h>
 
 #ifdef __USE_OPENSSL_SHA256

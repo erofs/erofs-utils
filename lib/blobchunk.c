@@ -11,7 +11,7 @@
 #include "erofs/importer.h"
 #include "liberofs_cache.h"
 #include "liberofs_private.h"
-#include "sha256.h"
+#include "liberofs_sha256.h"
 #include <unistd.h>
 
 struct erofs_blobchunk {
