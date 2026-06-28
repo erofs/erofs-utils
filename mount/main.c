@@ -772,13 +772,13 @@ err_out:
 	return err;
 }
 
-struct erofsmount_nbd_ctx {
-	struct erofs_vfile _vd;		/* virtual device */
-	struct erofs_vfile sk;		/* socket file */
+struct erofsmount_ctx {
+	struct erofs_vfile _vd;		/* backing source */
+	struct erofs_vfile sk;		/* NBD socket (NBD backend only) */
 	struct erofs_vfile *vd;
 };
 
-static int erofsmount_open_source(struct erofsmount_nbd_ctx *ctx,
+static int erofsmount_open_source(struct erofsmount_ctx *ctx,
 				  struct erofsmount_source *source)
 {
 	int err;
@@ -817,7 +817,7 @@ static int erofsmount_open_source(struct erofsmount_nbd_ctx *ctx,
 
 static void *erofsmount_nbd_loopfn(void *arg)
 {
-	struct erofsmount_nbd_ctx *ctx = arg;
+	struct erofsmount_ctx *ctx = arg;
 	int err;
 
 	while (1) {
@@ -863,7 +863,7 @@ out:
 
 static int erofsmount_startnbd(int nbdfd, struct erofsmount_source *source)
 {
-	struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
+	struct erofsmount_ctx ctx = { .vd = &ctx._vd };
 	uintptr_t retcode;
 	pthread_t th;
 	int err, err2;
@@ -1190,7 +1190,7 @@ static int erofsmount_reattach_oci(struct erofs_vfile *vf,
 #endif
 
 #ifdef S3EROFS_ENABLED
-static int erofsmount_reattach_s3(struct erofsmount_nbd_ctx *ctx, char *source)
+static int erofsmount_reattach_s3(struct erofsmount_ctx *ctx, char *source)
 {
 	char *tokens[5] = {0}, *p = source;
 	char *bucket = NULL, *key = NULL;
@@ -1253,13 +1253,13 @@ err_out:
 	return err;
 }
 #else
-static int erofsmount_reattach_s3(struct erofsmount_nbd_ctx *ctx, char *source)
+static int erofsmount_reattach_s3(struct erofsmount_ctx *ctx, char *source)
 {
 	return -EOPNOTSUPP;
 }
 #endif
 
-static int erofsmount_reattach_gzran_oci(struct erofsmount_nbd_ctx *ctx,
+static int erofsmount_reattach_gzran_oci(struct erofsmount_ctx *ctx,
 					 char *source)
 {
 	char *tokens[6] = {0}, *p = source, *space, *oci_source;
@@ -1313,7 +1313,7 @@ static int erofsmount_reattach_gzran_oci(struct erofsmount_nbd_ctx *ctx,
 	return err;
 }
 
-static int erofsmount_open_recovery_source(struct erofsmount_nbd_ctx *ctx,
+static int erofsmount_open_recovery_source(struct erofsmount_ctx *ctx,
 					   FILE *f)
 {
 	char *line = NULL, *source;
@@ -1398,7 +1398,7 @@ static int erofsmount_startnbd_nl(pid_t *pid, struct erofsmount_source *source)
 		return -errno;
 
 	if ((*pid = fork()) == 0) {
-		struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
+		struct erofsmount_ctx ctx = { .vd = &ctx._vd };
 		char *recp;
 
 		/* Otherwise, NBD disconnect sends SIGPIPE, skipping cleanup */
@@ -1478,7 +1478,7 @@ static int ublk_dev_id_from_path(const char *path)
 
 static int erofsmount_ublk_reattach(int dev_id)
 {
-	struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
+	struct erofsmount_ctx ctx = { .vd = &ctx._vd };
 	char *recp;
 	FILE *f;
 	int err;
@@ -1525,9 +1525,9 @@ static int erofsmount_ublk_reattach(int dev_id)
 
 static int erofsmount_reattach(const char *target)
 {
-	struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
+	struct erofsmount_ctx ctx = { .vd = &ctx._vd };
 	char *identifier;
-	int nbdnum, err;
+	int dev_id, err;
 	struct stat st;
 	FILE *f;
 
@@ -1538,17 +1538,17 @@ static int erofsmount_reattach(const char *target)
 	if (!S_ISBLK(st.st_mode))
 		return -ENOTBLK;
 
-	nbdnum = ublk_dev_id_from_path(target);
-	if (nbdnum >= 0)
-		return erofsmount_ublk_reattach(nbdnum);
+	dev_id = ublk_dev_id_from_path(target);
+	if (dev_id >= 0)
+		return erofsmount_ublk_reattach(dev_id);
 
 	if (major(st.st_rdev) != EROFS_NBD_MAJOR)
 		return -ENOTBLK;
 
-	nbdnum = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
-	if (nbdnum < 0)
-		return nbdnum;
-	identifier = erofs_nbd_get_identifier(nbdnum);
+	dev_id = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
+	if (dev_id < 0)
+		return dev_id;
+	identifier = erofs_nbd_get_identifier(dev_id);
 	if (IS_ERR(identifier)) {
 		identifier = NULL;
 	} else if (identifier && *identifier == '\0') {
@@ -1559,7 +1559,7 @@ static int erofsmount_reattach(const char *target)
 	if (!identifier) {
 		char *recp;
 
-		if (asprintf(&recp, EROFSMOUNT_NBD_REC_FMT, nbdnum) <= 0) {
+		if (asprintf(&recp, EROFSMOUNT_NBD_REC_FMT, dev_id) <= 0) {
 			err = -ENOMEM;
 			goto err_identifier;
 		}
@@ -1577,7 +1577,7 @@ static int erofsmount_reattach(const char *target)
 	if (err)
 		goto err_identifier;
 
-	err = erofs_nbd_nl_reconnect(nbdnum, identifier);
+	err = erofs_nbd_nl_reconnect(dev_id, identifier);
 	if (err >= 0) {
 		ctx.sk.fd = err;
 		if (fork() == 0) {
@@ -2191,7 +2191,7 @@ static int erofsmount_ublk(struct erofsmount_source *source,
 	}
 
 	if (pid == 0) {
-		struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
+		struct erofsmount_ctx ctx = { .vd = &ctx._vd };
 		struct erofs_ublk_dev_info info;
 		char *recp = NULL;
 		struct stat st;
@@ -2275,7 +2275,7 @@ static int erofsmount_ublk(struct erofsmount_source *source,
 int erofsmount_umount(char *target)
 {
 	char *device = NULL, *mountpoint = NULL;
-	int err, fd, nbdnum;
+	int err, fd, dev_id;
 	struct stat st;
 	FILE *mounts;
 	size_t n;
@@ -2347,19 +2347,22 @@ int erofsmount_umount(char *target)
 
 	if (isblk && !mountpoint && S_ISBLK(st.st_mode)) {
 		if (major(st.st_rdev) == EROFS_NBD_MAJOR) {
-			nbdnum = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
-			err = erofs_nbd_nl_disconnect(nbdnum);
+			dev_id = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
+			err = erofs_nbd_nl_disconnect(dev_id);
 			if (err != -EOPNOTSUPP)
 				goto err_out;
-		} else if ((nbdnum = ublk_dev_id_from_path(target)) >= 0) {
-			err = erofs_ublk_del_dev_by_id(nbdnum);
-			goto err_out;
+		} else {
+			dev_id = ublk_dev_id_from_path(target);
+			if (dev_id >= 0) {
+				err = erofs_ublk_del_dev_by_id(dev_id);
+				goto err_out;
+			}
 		}
 	}
 
 	/* XXX: ublk doesn't have autoclose feature */
-	nbdnum = ublk_dev_id_from_path(device);
-	if (nbdnum >= 0) {
+	dev_id = ublk_dev_id_from_path(device);
+	if (dev_id >= 0) {
 		if (mountpoint) {
 			err = umount(mountpoint);
 			if (err) {
@@ -2367,7 +2370,7 @@ int erofsmount_umount(char *target)
 				goto err_out;
 			}
 		}
-		err = erofs_ublk_del_dev_by_id(nbdnum);
+		err = erofs_ublk_del_dev_by_id(dev_id);
 		goto err_out;
 	}
 
@@ -2398,8 +2401,8 @@ int erofsmount_umount(char *target)
 	if (err < 0)
 		err = -errno;
 	else if (S_ISBLK(st.st_mode) && major(st.st_rdev) == EROFS_NBD_MAJOR) {
-		nbdnum = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
-		err = erofs_nbd_nl_disconnect(nbdnum);
+		dev_id = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
+		err = erofs_nbd_nl_disconnect(dev_id);
 		if (err == -EOPNOTSUPP)
 			err = erofs_nbd_disconnect(fd);
 	}
@@ -2413,7 +2416,7 @@ err_out:
 
 static int erofsmount_disconnect(const char *target)
 {
-	int nbdnum, err, fd;
+	int dev_id, err, fd;
 	struct stat st;
 
 	err = lstat(target, &st);
@@ -2423,8 +2426,8 @@ static int erofsmount_disconnect(const char *target)
 	if (!S_ISBLK(st.st_mode) || major(st.st_rdev) != EROFS_NBD_MAJOR)
 		return -ENOTBLK;
 
-	nbdnum = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
-	err = erofs_nbd_nl_disconnect(nbdnum);
+	dev_id = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
+	err = erofs_nbd_nl_disconnect(dev_id);
 	if (err == -EOPNOTSUPP) {
 		fd = open(target, O_RDWR);
 		if (fd < 0) {
