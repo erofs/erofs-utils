@@ -258,8 +258,15 @@ static unsigned int erofsublk_formalize_cmd_op(unsigned int op)
 	DBG_BUGON(_IOC_DIR(op) != 0);
 	DBG_BUGON(_IOC_SIZE(op) != 0);
 
-	if (op < ARRAY_SIZE(ctrl_cmd_op) && !erofs_ublk_use_legacy_cmds)
-		return ctrl_cmd_op[op];
+	if (!erofs_ublk_use_legacy_cmds) {
+		/* IO opcodes live above the ctrl table and need explicit encoding */
+		if (op == UBLK_IO_FETCH_REQ)
+			return UBLK_U_IO_FETCH_REQ;
+		if (op == UBLK_IO_COMMIT_AND_FETCH_REQ)
+			return UBLK_U_IO_COMMIT_AND_FETCH_REQ;
+		if (op < ARRAY_SIZE(ctrl_cmd_op))
+			return ctrl_cmd_op[op];
+	}
 	return op;
 }
 
@@ -492,8 +499,14 @@ static int ublk_get_dev_info(struct erofs_ublk_dev *dev, int dev_id)
 	int ret;
 
 	ret = ublk_dev_ctrl_cmd(dev, UBLK_CMD_GET_DEV_INFO, &cmd);
-	if (ret < 0)
-		erofs_err("GET_DEV_INFO failed: %s", strerror(-ret));
+	if ((ret == -ENODEV || ret == -EOPNOTSUPP) &&
+	    !erofs_ublk_use_legacy_cmds) {
+		erofs_ublk_use_legacy_cmds = true;
+		ret = ublk_dev_ctrl_cmd(dev, UBLK_CMD_GET_DEV_INFO, &cmd);
+		if (ret < 0)
+			erofs_err("GET_DEV_INFO failed for device %d: %s",
+				  dev_id, erofs_strerror(ret));
+	}
 	return ret;
 }
 
@@ -526,11 +539,6 @@ static inline u64 build_user_data(unsigned int tag, unsigned int op,
 static inline unsigned int user_data_to_tag(u64 user_data)
 {
 	return user_data & 0xffff;
-}
-
-static inline unsigned int user_data_to_op(u64 user_data)
-{
-	return (user_data >> 16) & 0xff;
 }
 
 static inline struct io_uring_sqe *erofsublk_alloc_sqe(struct io_uring *r)
@@ -1259,7 +1267,14 @@ int erofs_ublk_is_recoverable(int dev_id)
 	memset(&dev, 0, sizeof(dev));
 	dev.ctrl_fd = ctrl_fd;
 
+	ret = ublk_ctrl_ring_init(&dev.ctrl_ring);
+	if (ret < 0) {
+		close(ctrl_fd);
+		return 0;
+	}
+
 	ret = ublk_get_dev_info(&dev, dev_id);
+	io_uring_queue_exit(&dev.ctrl_ring);
 	close(ctrl_fd);
 
 	if (ret < 0)

@@ -51,6 +51,8 @@ struct loop_info {
 #define EROFSMOUNT_RUNDIR		"/var/run/erofsmount"
 #define EROFSMOUNT_NBD_RUNDIR		EROFSMOUNT_RUNDIR "/nbd"
 #define EROFSMOUNT_NBD_REC_FMT		EROFSMOUNT_NBD_RUNDIR "/mountnbd_nbd%d"
+#define EROFSMOUNT_UBLK_RUNDIR		EROFSMOUNT_RUNDIR "/ublk"
+#define EROFSMOUNT_UBLK_REC_FMT		EROFSMOUNT_UBLK_RUNDIR "/mountublk_ublk%d"
 
 #define EROFSMOUNT_FANOTIFY_STATE_DIR	EROFSMOUNT_RUNDIR "/fanotify"
 
@@ -1004,6 +1006,17 @@ static int erofsmount_write_recovery_s3(FILE *f, struct erofsmount_source *sourc
 }
 #endif
 
+static int erofsmount_write_recovery_fp(FILE *f, struct erofsmount_source *source)
+{
+	if (source->type == EROFSMOUNT_SOURCE_OCI)
+		return erofsmount_write_recovery_oci(f, source);
+	if (source->type == EROFSMOUNT_SOURCE_S3_OBJECT)
+		return erofsmount_write_recovery_s3(f, source);
+	if (source->type == EROFSMOUNT_SOURCE_LOCAL)
+		return erofsmount_write_recovery_local(f, source);
+	return -EOPNOTSUPP;
+}
+
 static char *erofsmount_write_recovery_info(struct erofsmount_source *source)
 {
 	char recp[] = EROFSMOUNT_NBD_RUNDIR "/mountnbd_XXXXXX";
@@ -1028,19 +1041,35 @@ static char *erofsmount_write_recovery_info(struct erofsmount_source *source)
 		return ERR_PTR(-errno);
 	}
 
-	if (source->type == EROFSMOUNT_SOURCE_OCI)
-		err = erofsmount_write_recovery_oci(f, source);
-	else if (source->type == EROFSMOUNT_SOURCE_S3_OBJECT)
-		err = erofsmount_write_recovery_s3(f, source);
-	else if (source->type == EROFSMOUNT_SOURCE_LOCAL)
-		err = erofsmount_write_recovery_local(f, source);
-	else
-		err = -EOPNOTSUPP;
-
+	err = erofsmount_write_recovery_fp(f, source);
 	fclose(f);
 	if (err)
 		return ERR_PTR(err);
 	return strdup(recp) ?: ERR_PTR(-ENOMEM);
+}
+
+static int erofsmount_ublk_write_recovery(struct erofsmount_source *source,
+					  const char *path)
+{
+	FILE *f;
+	int err;
+
+	f = fopen(path, "w");
+	if (!f && errno == ENOENT) {
+		if (mkdir(EROFSMOUNT_RUNDIR, 0700) < 0 && errno != EEXIST)
+			return -errno;
+		if (mkdir(EROFSMOUNT_UBLK_RUNDIR, 0700) < 0 && errno != EEXIST)
+			return -errno;
+		f = fopen(path, "w");
+	}
+	if (!f)
+		return -errno;
+
+	err = erofsmount_write_recovery_fp(f, source);
+	fclose(f);
+	if (err)
+		(void)unlink(path);
+	return err;
 }
 
 #ifdef OCIEROFS_ENABLED
@@ -1438,6 +1467,62 @@ static int erofsmount_ublk_handler(void *ctx, struct erofs_ublk_request *rq)
 	return 0;
 }
 
+static int ublk_dev_id_from_path(const char *path)
+{
+	int dev_id;
+
+	if (sscanf(path, "/dev/ublkb%d", &dev_id) == 1)
+		return dev_id;
+	return -1;
+}
+
+static int erofsmount_ublk_reattach(int dev_id)
+{
+	struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
+	char *recp;
+	FILE *f;
+	int err;
+
+	if (!erofs_ublk_is_recoverable(dev_id))
+		return -EINVAL;
+
+	if (asprintf(&recp, EROFSMOUNT_UBLK_REC_FMT, dev_id) <= 0)
+		return -ENOMEM;
+
+	f = fopen(recp, "r");
+	if (!f) {
+		err = -errno;
+		free(recp);
+		return err;
+	}
+
+	err = erofsmount_open_recovery_source(&ctx, f);
+	if (err) {
+		free(recp);
+		return err;
+	}
+
+	if (fork() == 0) {
+		err = erofs_ublk_recover_dev(dev_id, erofsmount_ublk_handler,
+					     ctx.vd);
+		if (err) {
+			erofs_err("ublk recover dev %d failed: %s",
+				  dev_id, strerror(-err));
+			erofs_io_close(ctx.vd);
+			exit(EXIT_FAILURE);
+		}
+		err = erofs_ublk_start(dev_id, -1);
+		erofs_ublk_destroy(dev_id);
+		erofs_io_close(ctx.vd);
+		(void)unlink(recp);
+		exit(err ? EXIT_FAILURE : EXIT_SUCCESS);
+	}
+
+	erofs_io_close(ctx.vd);
+	free(recp);
+	return 0;
+}
+
 static int erofsmount_reattach(const char *target)
 {
 	struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
@@ -1450,7 +1535,14 @@ static int erofsmount_reattach(const char *target)
 	if (err < 0)
 		return -errno;
 
-	if (!S_ISBLK(st.st_mode) || major(st.st_rdev) != EROFS_NBD_MAJOR)
+	if (!S_ISBLK(st.st_mode))
+		return -ENOTBLK;
+
+	nbdnum = ublk_dev_id_from_path(target);
+	if (nbdnum >= 0)
+		return erofsmount_ublk_reattach(nbdnum);
+
+	if (major(st.st_rdev) != EROFS_NBD_MAJOR)
 		return -ENOTBLK;
 
 	nbdnum = erofs_nbd_get_index_from_minor(minor(st.st_rdev));
@@ -2101,6 +2193,7 @@ static int erofsmount_ublk(struct erofsmount_source *source,
 	if (pid == 0) {
 		struct erofsmount_nbd_ctx ctx = { .vd = &ctx._vd };
 		struct erofs_ublk_dev_info info;
+		char *recp = NULL;
 		struct stat st;
 
 		close(pipefd[0]);
@@ -2114,7 +2207,7 @@ static int erofsmount_ublk(struct erofsmount_source *source,
 			.max_io_buf_bytes = EROFS_UBLK_DEF_MAX_IO_BUF_BYTES,
 			.dev_id = -1,
 			.blkbits = EROFS_UBLK_DEF_BLK_BITS,
-			.flags = 0,
+			.flags = EROFS_UBLK_F_USER_RECOVERY,
 			.dev_size = source->type == EROFSMOUNT_SOURCE_LOCAL &&
 				erofs_io_fstat(ctx.vd, &st) == 0 ?
 					st.st_size : INT64_MAX,
@@ -2123,9 +2216,16 @@ static int erofsmount_ublk(struct erofsmount_source *source,
 		dev_id = erofs_ublk_create_dev(&info, erofsmount_ublk_handler,
 					       ctx.vd);
 		if (dev_id < 0) {
-			erofs_err("erofs_ublk_create_dev failed: %s",
-				  strerror(-dev_id));
+			erofs_err("failed to erofs_ublk_create_dev: %s",
+				  erofs_strerror(dev_id));
 			exit(EXIT_FAILURE);
+		}
+
+		if (asprintf(&recp, EROFSMOUNT_UBLK_REC_FMT, dev_id) > 0) {
+			err = erofsmount_ublk_write_recovery(source, recp);
+			if (err)
+				erofs_warn("failed to write recovery info for ublk %d: %s",
+					   dev_id, erofs_strerror(err));
 		}
 
 		if (write(pipefd[1], &dev_id,
@@ -2134,9 +2234,14 @@ static int erofsmount_ublk(struct erofsmount_source *source,
 
 		err = erofs_ublk_start(dev_id, pipefd[1]);
 		if (err)
-			erofs_err("erofs_ublk_start: %s", strerror(-err));
+			erofs_err("failed to erofs_ublk_start: %s",
+				  erofs_strerror(err));
 		erofs_ublk_destroy(dev_id);
 		erofs_io_close(ctx.vd);
+		if (recp) {
+			(void)unlink(recp);
+			free(recp);
+		}
 		exit(EXIT_SUCCESS);
 	}
 
@@ -2165,15 +2270,6 @@ static int erofsmount_ublk(struct erofsmount_source *source,
 		return err;
 	}
 	return 0;
-}
-
-static int ublk_dev_id_from_path(const char *path)
-{
-	int dev_id;
-
-	if (sscanf(path, "/dev/ublkb%d", &dev_id) == 1)
-		return dev_id;
-	return -1;
 }
 
 int erofsmount_umount(char *target)
