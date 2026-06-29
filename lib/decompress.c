@@ -28,57 +28,78 @@ static unsigned int z_erofs_fixup_insize(const u8 *padbuf, unsigned int padbufsi
 /* also a very preliminary userspace version */
 static int z_erofs_decompress_zstd(struct z_erofs_decompress_req *rq)
 {
-	int ret = 0;
+	ZSTD_DStream *dstream;
+	ZSTD_inBuffer in;
+	ZSTD_outBuffer out;
 	char *dest = rq->out;
 	char *src = rq->in;
 	char *buff = NULL;
-	unsigned int inputmargin = 0;
-	unsigned long long total;
+	unsigned int inputmargin;
+	int err = 0;
+	size_t ret;
 
 	inputmargin = z_erofs_fixup_insize((u8 *)src, rq->inputsize);
 	if (inputmargin >= rq->inputsize)
 		return -EFSCORRUPTED;
 
-#ifdef HAVE_ZSTD_GETFRAMECONTENTSIZE
-	total = ZSTD_getFrameContentSize(src + inputmargin,
-					 rq->inputsize - inputmargin);
-	if (total == ZSTD_CONTENTSIZE_UNKNOWN ||
-	    total == ZSTD_CONTENTSIZE_ERROR)
-		return -EFSCORRUPTED;
-#else
-	total = ZSTD_getDecompressedSize(src + inputmargin,
-					 rq->inputsize - inputmargin);
-#endif
-	if (rq->decodedskip || total != rq->decodedlength) {
-		buff = malloc(total);
+	if (rq->decodedskip) {
+		buff = malloc(rq->decodedlength);
 		if (!buff)
 			return -ENOMEM;
 		dest = buff;
 	}
 
-	ret = ZSTD_decompress(dest, total,
-			      src + inputmargin, rq->inputsize - inputmargin);
-	if (ZSTD_isError(ret)) {
-		erofs_err("ZSTD decompress failed %d: %s", ZSTD_getErrorCode(ret),
-			  ZSTD_getErrorName(ret));
-		ret = -EIO;
-		goto out;
+	dstream = ZSTD_createDStream();
+	if (!dstream) {
+		err = -ENOMEM;
+		goto out_free_buff;
 	}
 
-	if (ret != (int)total) {
-		erofs_err("ZSTD decompress length mismatch %d, expected %d",
-			  ret, total);
-		ret = -EIO;
-		goto out;
+	ZSTD_initDStream(dstream);
+	in = (ZSTD_inBuffer) {
+		.src = src + inputmargin,
+		.size = rq->inputsize - inputmargin,
+	};
+	out = (ZSTD_outBuffer) {
+		.dst = dest,
+		.size = rq->decodedlength,
+	};
+
+	ret = ZSTD_decompressStream(dstream, &out, &in);
+	if (ZSTD_isError(ret)) {
+		erofs_err("ZSTD decompress failed: %s", ZSTD_getErrorName(ret));
+		err = -EFSCORRUPTED;
+		goto out_free_dstream;
 	}
-	if (rq->decodedskip || total != rq->decodedlength)
+
+	if (rq->partial_decoding) {
+		if (out.pos < rq->decodedlength) {
+			erofs_err("ZSTD decompress length mismatch: got %zu, expected %u",
+				  out.pos, rq->decodedlength);
+			err = -EFSCORRUPTED;
+			goto out_free_dstream;
+		}
+	} else if (ret != 0) {
+		erofs_err("ZSTD frame not fully decoded");
+		err = -EFSCORRUPTED;
+		goto out_free_dstream;
+	} else if (out.pos != rq->decodedlength) {
+		erofs_err("ZSTD decompress length mismatch: got %zu, expected %u",
+			  out.pos, rq->decodedlength);
+		err = -EFSCORRUPTED;
+		goto out_free_dstream;
+	}
+
+	if (buff)
 		memcpy(rq->out, dest + rq->decodedskip,
 		       rq->decodedlength - rq->decodedskip);
-	ret = 0;
-out:
+
+out_free_dstream:
+	ZSTD_freeDStream(dstream);
+out_free_buff:
 	if (buff)
 		free(buff);
-	return ret;
+	return err;
 }
 #endif
 
