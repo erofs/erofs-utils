@@ -17,7 +17,13 @@
 #include "../lib/liberofs_private.h"
 #include "../lib/liberofs_uuid.h"
 
+struct erofsdump_dirstack {
+       erofs_nid_t dirs[PATH_MAX];
+       int top;
+};
+
 struct erofsdump_cfg {
+	struct erofsdump_dirstack dirstack;
 	unsigned int totalshow;
 	bool show_inode;
 	bool show_extent;
@@ -359,7 +365,6 @@ static int erofsdump_readdir(struct erofs_dir_context *ctx)
 		update_file_size_statistics(occupied_size, false);
 	}
 
-	/* XXXX: the dir depth should be restricted in order to avoid loops */
 	if (S_ISDIR(vi.i_mode)) {
 		struct erofs_dir_context nctx = {
 			.flags = ctx->dir ? EROFS_READDIR_VALID_PNID : 0,
@@ -367,8 +372,18 @@ static int erofsdump_readdir(struct erofs_dir_context *ctx)
 			.dir = &vi,
 			.cb = erofsdump_dirent_iter,
 		};
+		int i, ret;
 
-		return erofs_iterate_dir(&nctx, false);
+		/* XXX: support the deeper cases later */
+		if (dumpcfg.dirstack.top >= ARRAY_SIZE(dumpcfg.dirstack.dirs))
+			return -ENAMETOOLONG;
+		for (i = 0; i < dumpcfg.dirstack.top; ++i)
+			if (vi.nid == dumpcfg.dirstack.dirs[i])
+				return -ELOOP;
+		dumpcfg.dirstack.dirs[dumpcfg.dirstack.top++] = nctx.pnid;
+		ret = erofs_iterate_dir(&nctx, false);
+		--dumpcfg.dirstack.top;
+		return ret;
 	}
 	return 0;
 }
