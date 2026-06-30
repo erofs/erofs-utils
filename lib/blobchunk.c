@@ -361,8 +361,9 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 				  erofs_strerror(ret));
 			goto err;
 		}
-		erofs_dbg("Align /%s on block #%d (0x%llx)",
-			  erofs_fspath(inode->i_srcpath), erofs_blknr(sbi, off), off);
+		erofs_dbg("Align /%s on block #%llu (0x%llx)",
+			  erofs_fspath(inode->i_srcpath),
+			  erofs_blknr(sbi, off) | 0ULL, off);
 	}
 
 	for (pos = 0; pos < inode->i_size; pos += len) {
