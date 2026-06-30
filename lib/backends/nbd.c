@@ -82,6 +82,7 @@ long erofs_nbd_in_service(int nbdnum)
 		return err;
 	}
 	close(fd);
+	s[sizeof(s) - 1] = '\0';
 	return strtol(s, NULL, 10);
 }
 
