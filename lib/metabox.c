@@ -133,6 +133,10 @@ int erofs_metazone_flush(struct erofs_sb_info *sbi)
 		return PTR_ERR(bh);
 	erofs_mapbh(NULL, bh->block);
 	pos_out = erofs_btell(bh, false);
+	if (__erofs_unlikely(pos_out == EROFS_NULL_ADDR)) {
+		erofs_bdrop(bh, true);
+		return -EFAULT;
+	}
 	meta_blkaddr = pos_out >> sbi->blkszbits;
 	sbi->metazone_startblk = meta_blkaddr;
 
@@ -148,7 +152,7 @@ int erofs_metazone_flush(struct erofs_sb_info *sbi)
 
 	do {
 		count = min_t(erofs_off_t, length, INT_MAX);
-		ret = erofs_io_xcopy(sbi->bmgr->vf, pos_out,
+		ret = erofs_io_xcopy(sbi->bmgr->vf, (off_t)pos_out,
 				     &m2gr->vf, count, false);
 		if (ret < 0)
 			break;
