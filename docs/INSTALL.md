@@ -1,68 +1,63 @@
-This document describes how to configure and build erofs-utils from
-source.
+# Building and Installing erofs-utils
 
-See the [README](../README) file in the top level directory about
-the brief overview of erofs-utils.
+## Dependencies
 
-## Dependencies & build
+The following libraries are required or optional, depending on the features you want to enable:
 
-LZ4 1.9.3+ for LZ4(HC) enabled [^1].
+* `zlib` for DEFLATE and GZIP support
+* `libuuid` for UUID generation
+* `LZ4` 1.9.3 or later for LZ4/LZ4HC support[^1]
+* `libzstd` for Zstandard support
+* `XZ Utils` 5.3.2alpha or later for MicroLZMA support (5.4 or later is strongly recommended)
+* `libfuse` 2.6 or later, or `libfuse3`, for `erofsfuse`
+* `libxml2` and `json-c` for OCI registry support
+* `libcurl` and `OpenSSL` for S3 object storage support
 
-[XZ Utils 5.3.2alpha+](https://tukaani.org/xz/xz-5.3.2alpha.tar.gz) for
-LZMA enabled, [XZ Utils 5.4+](https://tukaani.org/xz/xz-5.4.1.tar.gz)
-highly recommended.
+[^1]: LZ4 versions earlier than 1.9.3 are not recommended due to known bugs in `LZ4_compress_destSize()`,
+`LZ4_compress_HC_destSize()`, and `LZ4_decompress_safe_partial()`.
 
-libfuse 2.6+ for erofsfuse enabled.
+## Configure and Build
 
-[^1]: It's not recommended to use LZ4 versions under 1.9.3 since
-unexpected crashes could make trouble to end users due to broken
-LZ4_compress_destSize() (fixed in v1.9.2),
-[LZ4_compress_HC_destSize()](https://github.com/lz4/lz4/commit/660d21272e4c8a0f49db5fc1e6853f08713dff82) or
-[LZ4_decompress_safe_partial()](https://github.com/lz4/lz4/issues/783).
-
-## How to build with LZ4
-
-To build, the following commands can be used in order:
-
-``` sh
-$ ./autogen.sh
-$ ./configure
-$ make
+```sh
+./autogen.sh
+./configure
+make
 ```
 
-`mkfs.erofs`, `dump.erofs` and `fsck.erofs` binaries will be
-generated under the corresponding folders.
+To display all available build options and their default values:
 
-## How to build with liblzma
-
-In order to enable LZMA support, build with the following commands:
-
-``` sh
-$ ./configure --enable-lzma
-$ make
+```sh
+./configure --help
 ```
 
-## How to build erofsfuse
+Many optional features can be controlled using `--enable-*`/`--disable-*` and `--with-*`/`--without-*` options.
+For example:
 
-It's disabled by default as an experimental feature for now due
-to the extra libfuse dependency, to enable and build it manually:
-
-``` sh
-$ ./configure --enable-fuse
-$ make
+```sh
+./configure --enable-lz4 \
+    --enable-lzma \
+    --enable-fuse
 ```
 
-`erofsfuse` binary will be generated under `fuse` folder.
+Depending on the selected configuration, the following binaries may be built:
 
-## How to install erofs-utils manually
+* `mkfs.erofs`
+* `dump.erofs`
+* `fsck.erofs`
+* `mount.erofs`
+* `erofsfuse`
 
-Use the following command to install erofs-utils binaries:
+## Install
 
-``` sh
-# make install
+```sh
+sudo make install
 ```
 
-By default, `make install` will install all the files in
-`/usr/local/bin`, `/usr/local/lib` etc.  You can specify an
-installation prefix other than `/usr/local` using `--prefix`,
-for instance `--prefix=$HOME`.
+By default, files are installed under `/usr/local`.
+To install into a different location:
+
+```sh
+./configure --prefix=$HOME/.local
+make
+make install
+```
