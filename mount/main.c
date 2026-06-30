@@ -1698,8 +1698,11 @@ static int erofsmount_loopmount(const char *source, const char *mountpoint,
 		return -errno;
 
 	num = ioctl(fd, LOOP_CTL_GET_FREE);
-	if (num < 0)
-		return -errno;
+	if (num < 0) {
+		dfd = -errno;
+		close(fd);
+		return dfd;
+	}
 	close(fd);
 
 	snprintf(device, sizeof(device), "/dev/loop%d", num);
