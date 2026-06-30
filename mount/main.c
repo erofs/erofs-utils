@@ -552,6 +552,7 @@ static int erofsmount_fuse(const char *source, const char *mountpoint,
 
 	/* execvp() doesn't work for external mount helpers here */
 	err = execl("/bin/sh", "/bin/sh", "-c", command, NULL);
+	free(command);
 	if (err < 0) {
 		perror("failed to execute /bin/sh");
 		return -errno;
