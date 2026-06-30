@@ -1881,8 +1881,7 @@ void *erofs_prepare_compressed_file(struct erofs_importer *im,
 			if (!erofs_sb_has_48bit(sbi)) {
 				erofs_err("Unaligned compressed extents must be used with the 48bit encoded extent layout",
 					  ictx->max_compressed_extent_size);
-				free(ictx);
-				return ERR_PTR(-EINVAL);
+				goto err_out;
 			}
 			ictx->data_unaligned = true;
 		} else {
@@ -1894,7 +1893,7 @@ void *erofs_prepare_compressed_file(struct erofs_importer *im,
 		if (ictx->max_compressed_extent_size < erofs_blksiz(sbi)) {
 			erofs_err("Maximum compressed extent size (%u) must be at least the block size (%u)",
 				  ictx->max_compressed_extent_size, erofs_blksiz(sbi));
-			return ERR_PTR(-EINVAL);
+			goto err_out;
 		}
 	} else {
 		ictx->max_compressed_extent_size =
@@ -1910,6 +1909,9 @@ void *erofs_prepare_compressed_file(struct erofs_importer *im,
 	ictx->fragemitted = false;
 	ictx->dedupe = false;
 	return ictx;
+err_out:
+	free(ictx);
+	return ERR_PTR(-EINVAL);
 }
 
 void erofs_bind_compressed_file_with_fd(struct z_erofs_compress_ictx *ictx,
