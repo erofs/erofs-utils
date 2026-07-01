@@ -34,6 +34,8 @@
 #include "../lib/liberofs_s3.h"
 #include "../lib/liberofs_uuid.h"
 
+#define EROFS_EA_INODE_DIGEST_DEFAULT "erofs.fingerprint.v1"
+
 static struct option long_options[] = {
 	{"version", no_argument, 0, 'V'},
 	{"help", no_argument, 0, 'h'},
@@ -102,7 +104,7 @@ static struct option long_options[] = {
 	{"zD", optional_argument, NULL, 536},
 	{"MZ", optional_argument, NULL, 537},
 	{"xattr-prefix", required_argument, NULL, 538},
-	{"xattr-inode-digest", required_argument, NULL, 539},
+	{"xattr-inode-digest", optional_argument, NULL, 539},
 	{0, 0, 0, 0},
 };
 
@@ -256,7 +258,7 @@ static void usage(int argc, char **argv)
 #ifdef EROFS_MT_ENABLED
 		" --workers=#            set the number of worker threads to # (default: %u)\n"
 #endif
-		" --xattr-inode-digest=X specify extended attribute name X to record inode digests\n"
+		" --xattr-inode-digest=X specify extended attribute name X (\"" EROFS_EA_INODE_DIGEST_DEFAULT "\" if omitted) to record inode digests\n"
 		" --xattr-prefix=X       X=extra xattr name prefix\n"
 		" --zfeature-bits=#      toggle filesystem compression features according to given bits #\n"
 #ifdef WITH_ANDROID
@@ -1483,6 +1485,8 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			cfg.c_extra_ea_name_prefixes = true;
 			break;
 		case 539:
+			if (!optarg)
+				optarg = EROFS_EA_INODE_DIGEST_DEFAULT;
 			err = erofs_xattr_set_ishare_prefix(&g_sbi, optarg);
 			if (err < 0) {
 				erofs_err("failed to parse ishare name: %s",
