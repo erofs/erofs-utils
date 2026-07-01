@@ -1,3 +1,20 @@
+erofs-utils 1.9.2
+
+ * This release includes the following updates:
+
+  - (mount.erofs) Add support for mounting EROFS images stored as S3 objects;
+  - (mkfs.erofs) Add FULLDATA rebuild support for combining multiple layered
+                 EROFS filesystems (Lucas Karpinski);
+  - (mount.erofs) Add support for Fanotify (Yifan Zhao) and UBLK (Chengyu Zhu)
+                  backends;
+  - (mkfs.erofs, tarerofs) Support inode digest generation when using
+                           `--sort=none` (Yuezhang Mo);
+  - Replace the Apache-2.0 license with the MIT license for broader adoption,
+    and dual-license liberofs under GPL-2.0+ OR MIT;
+  - Various bug fixes and other improvements.
+
+ -- Gao Xiang <xiang@kernel.org>  Thu, 02 Jul 2026 00:00:00 +0800
+
 erofs-utils 1.9.1
 
  * A quick maintenance release includes the following fixes:
