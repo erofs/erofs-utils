@@ -2026,7 +2026,7 @@ static void erofsmount_fanotify_ctx_cleanup(struct erofs_fanotify_ctx *ctx)
 static int erofsmount_fanotify_child(struct erofs_fanotify_ctx *ctx,
 				     int pipefd)
 {
-	int err;
+	int err, err2;
 
 	ctx->fan_fd = erofs_fanotify_init_precontent();
 	if (ctx->fan_fd < 0) {
@@ -2040,7 +2040,9 @@ static int erofsmount_fanotify_child(struct erofs_fanotify_ctx *ctx,
 
 	err = 0;
 notify:
-	write(pipefd, &err, sizeof(err));
+	err2 = write(pipefd, &err, sizeof(err));
+	if (err2 < 0)
+		erofs_err("failed to notify parent: %s", strerror(errno));
 	close(pipefd);
 
 	if (err)

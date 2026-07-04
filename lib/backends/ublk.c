@@ -755,7 +755,10 @@ static void *ublk_queue_thread(void *arg)
 	if (q->dev->stop_efd >= 0) {
 		uint64_t val = 1;
 
-		(void)write(q->dev->stop_efd, &val, sizeof(val));
+		ret = write(q->dev->stop_efd, &val, sizeof(val));
+		if (ret < 0)
+			erofs_err("failed to write stop event for queue %d: %s",
+				  q->q_id, strerror(errno));
 	}
 	return NULL;
 }
