@@ -29,6 +29,11 @@
 #include <liburing.h>
 #endif
 
+#ifndef HAVE_GETTID
+#include <sys/syscall.h>
+#define gettid() syscall(__NR_gettid)
+#endif
+
 /* (Legacy) Admin commands, issued by ublk server, and handled by ublk driver */
 #define UBLK_CMD_GET_QUEUE_AFFINITY	0x01
 #define UBLK_CMD_GET_DEV_INFO		0x02

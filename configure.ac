@@ -284,6 +284,7 @@ AC_CHECK_FUNCS(m4_flatten([
 	fallocate
 	getrandom
 	getrlimit
+	gettid
 	gettimeofday
 	lgetxattr
 	llistxattr
