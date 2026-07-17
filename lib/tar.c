@@ -886,6 +886,13 @@ out_eot:
 			goto invalid_tar;
 	}
 
+	if ((s64)st.st_size < 0) {
+		erofs_err("invalid negative size=%lld @ %lld",
+			  (s64)st.st_size, tar_offset);
+		ret = -EFSCORRUPTED;
+		goto out;
+	}
+
 	if (th->typeflag <= '7' && !eh.path) {
 		eh.path = path;
 		j = 0;
