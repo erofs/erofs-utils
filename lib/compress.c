@@ -483,7 +483,8 @@ static int z_erofs_fill_inline_data(struct erofs_inode *inode, void *data,
 {
 	inode->z_advise |= Z_EROFS_ADVISE_INLINE_PCLUSTER;
 	inode->idata_size = len;
-	inode->idata_type = EROFS_IDATA_TYPE_COMPRESSED_DEFAULT;
+	inode->idata_type = raw ? EROFS_IDATA_TYPE_RAW :
+				EROFS_IDATA_TYPE_COMPRESSED_DEFAULT;
 
 	inode->idata = malloc(inode->idata_size);
 	if (!inode->idata)
@@ -974,7 +975,8 @@ int z_erofs_convert_to_compacted_format(struct erofs_inode *inode,
 
 	/* generate compacted_2b */
 	if (compacted_2b) {
-		if (!compacted_4b_end && inode->idata_size)
+		if (!compacted_4b_end && inode->idata_size &&
+		    inode->idata_type != EROFS_IDATA_TYPE_RAW)
 			inode->idata_type = EROFS_IDATA_TYPE_COMPRESSED_END_OF_2B;
 		do {
 			in = parse_legacy_indexes(cv, 16, in);
