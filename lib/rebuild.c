@@ -403,13 +403,15 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 		ret = erofs_read_inode_from_disk(&src);
 		if (ret)
 			goto out;
+		mergedir = d->inode;
 		if (erofs_inode_is_whiteout(&src)) {
-			d->inode->opaque = true;
+			mergedir->opaque = true;
 			goto out;
 		}
 		if (!S_ISDIR(src.i_mode))
 			goto out;
-		mergedir = d->inode;
+		mergedir->opaque |= erofs_get_opaque_from_disk(&src);
+		erofs_inode_free_xattrs(&src);
 		inode = dir = &src;
 	} else {
 		u64 nid;

@@ -47,12 +47,14 @@ int erofs_vfs_setxattr(struct erofs_inode *inode, const char *name,
 		       const void *value, size_t size);
 int erofs_set_opaque_xattr(struct erofs_inode *inode);
 void erofs_clear_opaque_xattr(struct erofs_inode *inode);
+bool erofs_get_opaque_from_disk(struct erofs_inode *inode);
 int erofs_set_origin_xattr(struct erofs_inode *inode);
 int erofs_read_xattrs_from_disk(struct erofs_inode *inode);
 
 bool erofs_xattr_prefix_matches(const char *key, unsigned int *index,
 				unsigned int *len);
 void erofs_xattr_exit(struct erofs_sb_info *sbi);
+void erofs_inode_free_xattrs(struct erofs_inode *inode);
 
 #ifdef __cplusplus
 }

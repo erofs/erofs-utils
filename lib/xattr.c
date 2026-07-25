@@ -576,6 +576,11 @@ void erofs_clear_opaque_xattr(struct erofs_inode *inode)
 	erofs_removexattr(inode, OVL_XATTR_OPAQUE);
 }
 
+bool erofs_get_opaque_from_disk(struct erofs_inode *inode)
+{
+	return (erofs_getxattr(inode, OVL_XATTR_OPAQUE, NULL, 0) >= 0);
+}
+
 int erofs_set_origin_xattr(struct erofs_inode *inode)
 {
 	return erofs_vfs_setxattr(inode, OVL_XATTR_ORIGIN, NULL, 0);
@@ -1121,6 +1126,17 @@ char *erofs_export_xattr_ibody(struct erofs_inode *inode)
 		return ERR_PTR(-EFAULT);
 	}
 	return buf;
+}
+
+void erofs_inode_free_xattrs(struct erofs_inode *inode)
+{
+	DBG_BUGON(inode->i_count > 0);
+
+	if (erofs_atomic_read(&inode->flags) & EROFS_I_EA_INITED) {
+		free(inode->xattr_shared_xattrs);
+		inode->xattr_shared_xattrs = NULL;
+		inode->xattr_shared_count = 0;
+	}
 }
 
 struct erofs_xattr_iter {
