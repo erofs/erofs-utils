@@ -1605,7 +1605,8 @@ static int erofs_mkfs_create_directory(const struct erofs_mkfs_btctx *ctx,
 	}
 
 	/* it will be used in erofs_prepare_inode_buffer */
-	if (inode->datalayout == EROFS_INODE_FLAT_INLINE)
+	if (inode->datalayout == EROFS_INODE_FLAT_INLINE ||
+	    inode->datalayout == EROFS_INODE_FLAT_PLAIN)
 		inode->idata_size = inode->i_size & (bsz - 1);
 
 	/*
