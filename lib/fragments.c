@@ -325,6 +325,10 @@ int erofs_fragment_commit(struct erofs_inode *inode, u32 tofh)
 
 	if (fi->pos) {
 		inode->fragmentoff = fi->pos - len;
+		if (list_empty(&fi->list)) {
+			free(fi->data);
+			free(fi);
+		}
 		return 0;
 	}
 
