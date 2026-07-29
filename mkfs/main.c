@@ -1228,7 +1228,7 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 #endif
 		case 'C':
 			err = erofs_mkfs_strtol(optarg, &endptr, &i, 0);
-			if (err < 0 || *endptr != '\0' || i <= 0) {
+			if (err || *endptr != '\0' || i <= 0) {
 				erofs_err("invalid physical clustersize %s",
 					  optarg);
 				return -EINVAL;
@@ -1250,7 +1250,7 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 				}
 			}
 			err = erofs_mkfs_strtol(optarg, &endptr, &i, 0);
-			if (err < 0 || (*endptr != '\0' && algid != endptr) ||
+			if (err || (*endptr != '\0' && algid != endptr) ||
 			    i <= 0) {
 				erofs_err("invalid metabox option %s", optarg);
 				return -EINVAL;
