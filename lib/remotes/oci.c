@@ -1119,6 +1119,8 @@ const char *ocierofs_get_platform_spec(void)
 #define EROFS_OCI_OS "windows"
 #elif defined(__FreeBSD__)
 #define EROFS_OCI_OS "freebsd"
+#else
+#define EROFS_OCI_OS "unknown"
 #endif
 
 #if defined(__x86_64__) || defined(__amd64__)
