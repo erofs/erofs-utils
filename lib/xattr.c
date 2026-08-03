@@ -400,17 +400,43 @@ static struct erofs_xattritem *erofs_get_selabel_xattr(struct erofs_sb_info *sbi
 	return NULL;
 }
 
+static int erofs_comp_xattritem(const void *a, const void *b)
+{
+	const struct erofs_xattritem *ia, *ib;
+	unsigned int la, lb;
+	int ret;
+
+	ia = *((const struct erofs_xattritem **)a);
+	ib = *((const struct erofs_xattritem **)b);
+	la = EROFS_XATTR_KVSIZE(ia->len);
+	lb = EROFS_XATTR_KVSIZE(ib->len);
+
+	ret = memcmp(ia->kvbuf, ib->kvbuf, min(la, lb));
+	if (ret != 0)
+		return ret;
+	return cmpsgn(la, lb);
+}
+
 static int erofs_inode_xattr_add(struct list_head *hlist,
 				 struct erofs_xattritem *item)
 {
-	struct erofs_inode_xattr_node *node;
+	struct erofs_inode_xattr_node *node, *pos;
 
 	node = malloc(sizeof(*node));
 	if (!node)
 		return -ENOMEM;
 	init_list_head(&node->list);
 	node->item = item;
-	list_add(&node->list, hlist);
+
+	/*
+	 * Order each inode's xattrs by name so that images stay reproducible.
+	 * listxattr(2) makes no promise about the order it reports, and
+	 * filesystems disagree: insertion order, on-disk order, or random.
+	 */
+	list_for_each_entry(pos, hlist, list)
+		if (erofs_comp_xattritem(&item, &pos->item) < 0)
+			break;
+	list_add_tail(&node->list, &pos->list);
 	return 0;
 }
 
@@ -848,24 +874,6 @@ static unsigned int erofs_cleanxattrs(struct erofs_xattrmgr *xamgr,
 	return count;
 }
 
-static int comp_shared_xattritem(const void *a, const void *b)
-{
-	const struct erofs_xattritem *ia, *ib;
-	unsigned int la, lb;
-	int ret;
-
-	ia = *((const struct erofs_xattritem **)a);
-	ib = *((const struct erofs_xattritem **)b);
-	la = EROFS_XATTR_KVSIZE(ia->len);
-	lb = EROFS_XATTR_KVSIZE(ib->len);
-
-	ret = memcmp(ia->kvbuf, ib->kvbuf, min(la, lb));
-	if (ret != 0)
-		return ret;
-
-	return la > lb;
-}
-
 int erofs_xattr_flush_name_prefixes(struct erofs_importer *im, bool plain)
 {
 	const struct erofs_importer_params *params = im->params;
@@ -1015,7 +1023,7 @@ int erofs_load_shared_xattrs_from_path(struct erofs_sb_info *sbi, const char *pa
 	}
 	DBG_BUGON(i != sharedxattr_count);
 	sorted_n[i] = NULL;
-	qsort(sorted_n, sharedxattr_count, sizeof(n), comp_shared_xattritem);
+	qsort(sorted_n, sharedxattr_count, sizeof(n), erofs_comp_xattritem);
 
 	buf = calloc(1, shared_xattrs_size);
 	if (!buf) {
@@ -1096,10 +1104,10 @@ char *erofs_export_xattr_ibody(struct erofs_inode *inode)
 		item = node->item;
 		list_del(&node->list);
 
-		/* move inline xattrs to the onstack list */
+		/* move inline xattrs to the onstack list, order preserved */
 		if (item->shared_xattr_id < 0 ||
 		    header->h_shared_count >= UCHAR_MAX) {
-			list_add(&node->list, &ilst);
+			list_add_tail(&node->list, &ilst);
 			continue;
 		}
 
