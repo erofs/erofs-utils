@@ -1,3 +1,17 @@
+erofs-utils 1.9.3
+
+* A quick maintenance release includes the following fixes:
+
+  - (mkfs.erofs) Sort inline xattrs for reproducible builds (Martin Pitt);
+  - (mkfs.erofs) Fix rebuild mode handling for opaque directories;
+  - (mkfs.erofs) Fix `--incremental=data` functionality;
+  - (mkfs.erofs) Fix raw inline handling with `-Eztailpacking` (Yifan Zhao);
+  - (mkfs.erofs) Harden tar index parsing against invalid sizes;
+  - (mkfs.erofs) Fix memory leaks for small fragments (Bingwu Zhang);
+  - Fix various build errors and warnings.
+
+ -- Gao Xiang <xiang@kernel.org>  Wed, 05 Aug 2026 00:00:00 +0800
+
 erofs-utils 1.9.2
 
  * This release includes the following updates:
