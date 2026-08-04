@@ -137,7 +137,7 @@ TESTS += erofs/031
 
 # NOTE: When adding a new test case or updating an existing one, please write
 # POSIX-compliant shell scripts and avoid using Linux-specific features unless
-# unless the test case is expected to run only on Linux platforms.
+# the test case is expected to run only on Linux platforms.
 
 EXTRA_DIST = common/rc erofs
 

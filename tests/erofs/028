@@ -42,9 +42,9 @@ check_ishare()
 _require_erofs
 _require_erofs_inode_sharing
 _require_erofs_compression "-zlz4"
-which strace > /dev/null 2>&1 || _notrun "strace is not found"
-which fincore > /dev/null 2>&1 || _notrun "fincore is not found"
-which fadvise > /dev/null 2>&1 || _notrun "fadvise is not found"
+command -v strace > /dev/null 2>&1 || _notrun "strace is not found"
+command -v fincore > /dev/null 2>&1 || _notrun "fincore is not found"
+command -v fadvise > /dev/null 2>&1 || _notrun "fadvise is not found"
 
 # remove previous $seqres.full before test
 rm -f $seqres.full

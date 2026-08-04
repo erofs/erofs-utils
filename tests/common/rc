@@ -48,10 +48,10 @@ _fatal()
     exit 1
 }
 
-export MOUNT_PROG="$(which mount)"
+export MOUNT_PROG="$(command -v mount)"
 [ "$MOUNT_PROG" = "" ] && _fatal "mount not found"
 
-export UMOUNT_PROG="$(which umount)"
+export UMOUNT_PROG="$(command -v umount)"
 [ "$UMOUNT_PROG" = "" ] && _fatal "umount not found"
 [ "$MKFS_EROFS_PROG" = "" ] && _fatal "mkfs.erofs not found"
 
@@ -94,7 +94,7 @@ _require_root()
 
 _require_xattr()
 {
-	which setfattr >/dev/null 2>&1 ||
+	command -v setfattr >/dev/null 2>&1 ||
 		_notrun "attr isn't installed, skipped."
 }
 
@@ -309,7 +309,7 @@ _do_unmount()
 {
 	local mnt_path=$1
 
-	if [ "$FSTYP" = "erofsfuse" -a "$(which fusermount > /dev/null && echo ok)" = "ok" ]; then
+	if [ "$FSTYP" = "erofsfuse" ] && command -v fusermount > /dev/null 2>&1; then
 		fusermount -u $mnt_path
 	else
 		$UMOUNT_PROG $mnt_path
