@@ -39,7 +39,7 @@ mkdir -p $localdir
 # cross the block boundary; besides set three xattrs to ensure at least
 # one xattr name crosses the block boundary
 touch $localdir/file1
-for i in {1..3}; do
+for i in 1 2 3; do
 	setfattr -n user.p$(_random 249) -v $(_random 512) $localdir/file1 \
 		|| _notrun "no space for xattrs"
 done
