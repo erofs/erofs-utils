@@ -1,0 +1,77 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0+
+#
+# Check that the xattr layout does not depend on listxattr(2) order
+#
+# listxattr(2) makes no promise about the order it reports, and filesystems
+# disagree: tmpfs reports the order the attributes were set in, while ext4 and
+# btrfs report their own on-disk order. The same set of attributes must end up
+# in the same layout however mkfs.erofs is handed them, otherwise images are
+# not reproducible. The names also differ in length and share prefixes, which
+# exercises the length tiebreak.
+#
+# On a filesystem that reports its own order rather than the insertion order
+# this check cannot fail, so it needs $tmp on a filesystem that keeps insertion
+# order or randomizes it, like tmpfs, which /tmp normally is.
+#
+seq=`basename $0`
+seqres=$RESULT_DIR/$(echo $0 | awk '{print $((NF-1))"/"$NF}' FS="/")
+
+# get standard environment, filters and checks
+. "${srcdir}/common/rc"
+
+cleanup()
+{
+	cd /
+	rm -rf $tmp.*
+}
+
+_require_xattr
+
+# remove previous $seqres.full before test
+rm -f $seqres.full
+
+# real QA test starts here
+echo "QA output created by $seq"
+
+attrs="user.aa=1 user.mm=22 user.mm_long=333 user.zz=4444
+user.a_long_attribute_name=55555 user.growfs=666666 user.roothash=7777777
+user.verity=88888888 user.gpt_label=999999999 user.gpt_type_uuid=aaaaaaaaaa"
+
+localdir=$tmp/$seq
+rm -rf $localdir
+
+# same tree and same attributes twice, set in opposite order
+for pass in forward reverse; do
+	tree=$localdir/$pass
+	mkdir -p $tree/dir
+	echo payload > $tree/dir/file
+
+	list=$attrs
+	if [ $pass = reverse ]; then
+		list=
+		for attr in $attrs; do
+			list="$attr $list"
+		done
+	fi
+	for attr in $list; do
+		setfattr -n "${attr%%=*}" -v "${attr#*=}" $tree ||
+			_fail "failed to set ${attr%%=*}"
+	done
+
+	# pin the timestamps and the filesystem UUID, so the attribute order
+	# is the only thing that can differ
+	$MKFS_EROFS_PROG -T1739577600 -U 5230d7cf-f2ce-43ed-9ae2-39e7e2fe48ca \
+		$localdir/$pass.erofs $tree >> $seqres.full 2>&1 ||
+		_fail "failed to mkfs"
+done
+
+cmp -s $localdir/forward.erofs $localdir/reverse.erofs ||
+	_fail "the image depends on the order listxattr(2) reported"
+
+$FSCK_EROFS_PROG --extract $localdir/forward.erofs >> $seqres.full 2>&1 ||
+	_fail "fsck failed"
+
+echo Silence is golden
+status=0
+exit 0

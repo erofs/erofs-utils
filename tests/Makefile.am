@@ -132,6 +132,9 @@ TESTS += erofs/030
 # 031 - test chunk-based mapping with shared chunks across inodes
 TESTS += erofs/031
 
+# 032 - check that the xattr layout does not depend on listxattr(2) order
+TESTS += erofs/032
+
 # NEW TEST CASE HERE
 # TESTS += erofs/999
 
