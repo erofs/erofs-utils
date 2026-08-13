@@ -577,7 +577,11 @@ extern const char *erofs_frags_packedname;
 
 static inline bool erofs_is_packed_inode(struct erofs_inode *inode)
 {
-	return inode->i_srcpath == EROFS_PACKED_INODE;
+	if (inode->i_srcpath == EROFS_PACKED_INODE)
+		return true;
+	return erofs_sb_has_fragments(inode->sbi) &&
+		inode->sbi->packed_nid > 0 &&
+		inode->nid == inode->sbi->packed_nid;
 }
 
 int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs);
