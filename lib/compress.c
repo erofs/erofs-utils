@@ -110,7 +110,9 @@ static struct {
 	struct erofs_workqueue wq;
 	struct erofs_compress_work *idle;
 	pthread_mutex_t mutex;
-} z_erofs_mt_ctrl;
+} z_erofs_mt_ctrl = {
+	.mutex = PTHREAD_MUTEX_INITIALIZER,
+};
 
 struct z_erofs_compress_fslot {
 	struct list_head pending;
