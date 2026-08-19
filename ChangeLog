@@ -1,3 +1,14 @@
+erofs-utils 1.9.4
+
+* A quick maintenance release includes the following fixes:
+
+ - (fsck.erofs, dump.erofs) Fix image extraction when `-Efragments` is
+                            enabled (Seula Lee);
+ - (mkfs.erofs) Fix multi-threaded compression crashes on macOS
+                (Isaiah DeRose-Wilson).
+
+ -- Gao Xiang <xiang@kernel.org>  Wed, 19 Aug 2026 19:30:00 +0800
+
 erofs-utils 1.9.3
 
 * A quick maintenance release includes the following fixes:
