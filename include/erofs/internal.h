@@ -93,11 +93,9 @@ struct erofs_metamgr;
 
 struct erofs_sb_info {
 	struct erofs_sb_lz4_info lz4;
-	struct erofs_device_info *devs;
-	char *devname;
+	struct erofs_device_info *devs, dif0;
 
 	u64 total_blocks;
-	u64 primarydevice_blocks;
 
 	s32 meta_blkaddr;
 	u32 xattr_blkaddr;

@@ -233,7 +233,7 @@ static int erofs_rebuild_write_full_data(struct erofs_inode *inode)
 				return -EFSCORRUPTED;
 			return 0;
 		}
-		inode->rebuild_blobpath = strdup(src_sbi->devname);
+		inode->rebuild_blobpath = strdup(src_sbi->dif0.src_path);
 		if (!inode->rebuild_blobpath)
 			return -ENOMEM;
 		inode->rebuild_src_dataoff =
@@ -244,7 +244,7 @@ static int erofs_rebuild_write_full_data(struct erofs_inode *inode)
 		unsigned int inline_size = inode->i_size % erofs_blksiz(src_sbi);
 
 		if (nblocks > 0 && inode->u.i_blkaddr != EROFS_NULL_ADDR) {
-			inode->rebuild_blobpath = strdup(src_sbi->devname);
+			inode->rebuild_blobpath = strdup(src_sbi->dif0.src_path);
 			if (!inode->rebuild_blobpath)
 				return -ENOMEM;
 			inode->rebuild_src_dataoff =
@@ -500,7 +500,7 @@ int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi,
 	struct erofs_inode inode = {};
 	struct erofs_rebuild_dir_context ctx;
 	char uuid_str[37];
-	char *fsid = sbi->devname;
+	char *fsid = sbi->dif0.src_path;
 	int ret;
 
 	if (!fsid) {

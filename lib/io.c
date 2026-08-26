@@ -368,8 +368,8 @@ repeat:
 	}
 
 out:
-	sbi->devname = strdup(dev);
-	if (!sbi->devname) {
+	sbi->dif0.src_path = strdup(dev);
+	if (!sbi->dif0.src_path) {
 		close(fd);
 		return -ENOMEM;
 	}
@@ -381,8 +381,8 @@ out:
 void erofs_dev_close(struct erofs_sb_info *sbi)
 {
 	erofs_io_close(&sbi->bdev);
-	free(sbi->devname);
-	sbi->devname = NULL;
+	free(sbi->dif0.src_path);
+	sbi->dif0.src_path = NULL;
 	sbi->bdev.fd = -1;
 }
 

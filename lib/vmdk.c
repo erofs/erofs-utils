@@ -51,8 +51,8 @@ int erofs_dump_vmdk_desc(FILE *f, struct erofs_sb_info *sbi)
 	int ret, i;
 
 	fprintf(f, desc_template_1, cid, parent_cid, subformat);
-	sectors = sbi->primarydevice_blocks << (sbi->blkszbits - 9);
-	ret = erofs_vmdk_desc_add_extent(f, sectors, (char *)sbi->devname, 0);
+	sectors = sbi->dif0.blocks << (sbi->blkszbits - 9);
+	ret = erofs_vmdk_desc_add_extent(f, sectors, (char *)sbi->dif0.src_path, 0);
 	if (ret)
 		return ret;
 	total_sectors = sectors;

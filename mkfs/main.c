@@ -1685,12 +1685,12 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 		ret = erofs_rebuild_load_tree(root, src, datamode);
 		src->xamgr = NULL;
 		if (ret) {
-			erofs_err("failed to load %s", src->devname);
+			erofs_err("failed to load %s", src->dif0.src_path);
 			return ret;
 		}
 		if (src->extra_devices > 1) {
 			erofs_err("%s: unsupported number %u of extra devices",
-				  src->devname, src->extra_devices);
+				  src->dif0.src_path, src->extra_devices);
 			return -EOPNOTSUPP;
 		}
 		extra_devices += src->extra_devices;
@@ -1723,8 +1723,8 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 			nblocks = src->devs[0].blocks;
 			tag = src->devs[0].tag;
 		} else {
-			nblocks = src->primarydevice_blocks;
-			devs[idx].src_path = strdup(src->devname);
+			nblocks = src->dif0.blocks;
+			devs[idx].src_path = strdup(src->dif0.src_path);
 		}
 		devs[idx].blocks = nblocks;
 		if (tag && *tag)
@@ -1849,7 +1849,7 @@ int main(int argc, char **argv)
 			goto exit;
 		err = erofs_read_superblock(src);
 		if (err) {
-			erofs_err("failed to read superblock of %s", src->devname);
+			erofs_err("failed to read superblock of %s", src->dif0.src_path);
 			goto exit;
 		}
 		mkfs_blkszbits = src->blkszbits;
@@ -2051,7 +2051,7 @@ int main(int argc, char **argv)
 	if (err)
 		goto exit;
 
-	err = erofs_dev_resize(&g_sbi, g_sbi.primarydevice_blocks);
+	err = erofs_dev_resize(&g_sbi, g_sbi.dif0.blocks);
 
 	if (!err && erofs_sb_has_sb_chksum(&g_sbi)) {
 		err = erofs_enable_sb_chksum(&g_sbi, &crc);

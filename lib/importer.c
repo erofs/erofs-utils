@@ -126,8 +126,7 @@ int erofs_importer_flush_all(struct erofs_importer *im)
 
 	fsalignblks = im->params->fsalignblks ?
 		roundup_pow_of_two(im->params->fsalignblks) : 1;
-	sbi->primarydevice_blocks = roundup(erofs_mapbh(sbi->bmgr, NULL),
-					    fsalignblks);
+	sbi->dif0.blocks = roundup(erofs_mapbh(sbi->bmgr, NULL), fsalignblks);
 	err = erofs_write_device_table(sbi);
 	if (err)
 		return err;
