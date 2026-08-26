@@ -193,7 +193,7 @@ static int erofs_rebuild_write_blob_index(struct erofs_sb_info *dst_sb,
 	inode->chunkindexes = idx;
 
 	for (i = 0; i < count; i++) {
-		struct erofs_blobchunk *chunk;
+		struct erofs_chunkitem *chunk;
 		struct erofs_map_blocks map = {
 			.buf = __EROFS_BUF_INITIALIZER,
 		};
@@ -204,7 +204,7 @@ static int erofs_rebuild_write_blob_index(struct erofs_sb_info *dst_sb,
 			goto err;
 
 		blkaddr = erofs_blknr(dst_sb, map.m_pa);
-		chunk = erofs_get_unhashed_chunk(inode->dev, blkaddr, 0);
+		chunk = erofs_get_unhashed_chunk(dst_sb, inode->dev, blkaddr, 0);
 		if (IS_ERR(chunk)) {
 			ret = PTR_ERR(chunk);
 			goto err;

@@ -189,8 +189,18 @@ void erofs_put_super(struct erofs_sb_info *sbi)
 		int i;
 
 		DBG_BUGON(!sbi->extra_devices);
-		for (i = 0; i < sbi->extra_devices; ++i)
+		for (i = 0; i < sbi->extra_devices; ++i) {
+			struct erofs_bufmgr *bmgr = sbi->devs[i].bmgr;
+			struct erofs_vfile *vf;
+
+			if (bmgr) {
+				vf = bmgr->vf;
+				erofs_buffer_exit(bmgr);
+				close(vf->fd);
+				free(vf);
+			}
 			free(sbi->devs[i].src_path);
+		}
 		free(sbi->devs);
 		sbi->devs = NULL;
 	}

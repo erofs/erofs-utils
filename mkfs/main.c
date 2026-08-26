@@ -1915,12 +1915,6 @@ int main(int argc, char **argv)
 	}
 
 	cfg.c_dedupe = importer_params.dedupe;
-	if (cfg.c_chunkbits) {
-		err = erofs_blob_init(cfg.c_blobdev_path, 1 << cfg.c_chunkbits);
-		if (err)
-			goto exit;
-	}
-
 	if (tar_index_512b || cfg.c_blobdev_path) {
 		err = erofs_mkfs_init_devices(&g_sbi, 1);
 		if (err) {
@@ -1928,6 +1922,24 @@ int main(int argc, char **argv)
 				  erofs_strerror(err));
 			goto exit;
 		}
+	}
+
+	if (tar_index_512b || cfg.c_chunkbits) {
+		if (g_sbi.extra_devices && cfg.c_blobdev_path) {
+			g_sbi.devs[0].src_path = strdup(cfg.c_blobdev_path);
+			if (!g_sbi.devs[0].src_path) {
+				err = -ENOMEM;
+				goto exit;
+			}
+
+			err = erofs_blob_init_device(&g_sbi, 1);
+			if (err)
+				goto exit;
+
+		}
+		err = erofs_blob_init(&g_sbi, cfg.c_blobdev_path ? 1 : 0, cfg.c_chunkbits);
+		if (err)
+			goto exit;
 	}
 
 	if (source_mode == EROFS_MKFS_SOURCE_LOCALDIR) {
@@ -2072,8 +2084,7 @@ exit:
 		fclose(blklst);
 	erofs_cleanup_compress_hints();
 	erofs_cleanup_exclude_rules();
-	if (cfg.c_chunkbits || source_mode == EROFS_MKFS_SOURCE_REBUILD)
-		erofs_blob_exit();
+	erofs_blob_exit(&g_sbi);
 	erofs_xattr_cleanup_name_prefixes();
 	erofs_rebuild_cleanup();
 	erofs_diskbuf_exit();
