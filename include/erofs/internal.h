@@ -89,7 +89,7 @@ struct erofs_mkfs_dfops;
 struct erofs_packed_inode;
 struct erofs_xattrmgr;
 struct z_erofs_mgr;
-struct erofs_metaboxmgr;
+struct erofs_metamgr;
 
 struct erofs_sb_info {
 	struct erofs_sb_lz4_info lz4;
