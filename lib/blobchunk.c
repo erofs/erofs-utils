@@ -373,12 +373,7 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 	for (pos = 0; pos < inode->i_size; pos += len) {
 		off_t offset = lseek(fd, pos + startoff, SEEK_DATA);
 
-		if (offset < 0) {
-			if (errno != ENXIO)
-				offset = pos;
-			else
-				offset = ((pos >> chunkbits) + 1) << chunkbits;
-		} else {
+		if (offset >= 0 && offset < startoff + inode->i_size) {
 			offset -= startoff;
 
 			if (offset != (offset & ~(chunksize - 1))) {
@@ -389,6 +384,12 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 					goto err;
 				}
 			}
+		} else if (offset < 0 && errno != ENXIO) {
+			/* SEEK_DATA doesn't work as expected (unimplemented) */
+			offset = pos;
+		} else {
+			/* lseek returns ENXIO or OOB (considering diskbuf) */
+			offset = ((pos >> chunkbits) + 1) << chunkbits;
 		}
 
 		if (offset > pos) {
