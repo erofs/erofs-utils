@@ -1,0 +1,78 @@
+name: release
+
+on:
+  push:
+    branches:
+      - 'master'
+      - 'dev'
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  getvers:
+    name: Get a formalized version string
+    runs-on: ubuntu-latest
+    outputs:
+      string: ${{ steps.getvers.outputs.str }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Get the valid version string
+        id: getvers
+        run: echo "str=$(./scripts/get-version-number)" >> $GITHUB_OUTPUT
+
+  linux-static-build:
+    name: Static binaries for linux/${{ matrix.arch }}
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    needs: [getvers]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build static release
+        id: rel
+        run: |
+          VERSION=${{ needs.getvers.outputs.string }}-linux-${{ matrix.arch }}
+          echo "VERS_OSARCH=${VERSION}" >> $GITHUB_ENV
+          docker build -o - . | xz -e9 > erofs-utils-static-${VERSION}.tar.xz
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: erofs-utils-static-${{ env.VERS_OSARCH }}
+          path: erofs-utils-static-${{ env.VERS_OSARCH }}.tar.xz
+          archive: false
+
+  release:
+    name: Draft a Github release
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    needs: [getvers, linux-static-build]
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - name: Publish a draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.tar.xz
+          name: erofs-utils ${{ needs.getvers.outputs.string }}
+          draft: true
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
