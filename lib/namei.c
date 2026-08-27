@@ -96,7 +96,7 @@ int erofs_read_inode_from_disk(struct erofs_inode *vi)
 		vi->i_nlink = le32_to_cpu(die->i_nlink);
 
 		vi->i_mtime = le64_to_cpu(die->i_mtime);
-		vi->i_mtime_nsec = le64_to_cpu(die->i_mtime_nsec);
+		vi->i_mtime_nsec = le32_to_cpu(die->i_mtime_nsec);
 		vi->i_size = le64_to_cpu(die->i_size);
 		break;
 	case EROFS_INODE_LAYOUT_COMPACT:

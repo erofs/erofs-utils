@@ -694,7 +694,7 @@ static void erofsdump_show_superblock(void)
 	for (i = 0; i < ARRAY_SIZE(feature_lists); i++) {
 		if (!feature_lists[i].compat)
 			continue;
-		if (le32_to_cpu(g_sbi.feature_compat) & feature_lists[i].flag) {
+		if (g_sbi.feature_compat & feature_lists[i].flag) {
 			fprintf(stdout, "%s ", feature_lists[i].name);
 			if (feature_lists[i].lkver > minkver)
 				minkver = feature_lists[i].lkver;
@@ -704,7 +704,7 @@ static void erofsdump_show_superblock(void)
 	for (i = 0; i < ARRAY_SIZE(feature_lists); i++) {
 		if (feature_lists[i].compat)
 			continue;
-		if (le32_to_cpu(g_sbi.feature_incompat) & feature_lists[i].flag) {
+		if (g_sbi.feature_incompat & feature_lists[i].flag) {
 			fprintf(stdout, "%s ", feature_lists[i].name);
 			if (feature_lists[i].lkver > minkver)
 				minkver = feature_lists[i].lkver;

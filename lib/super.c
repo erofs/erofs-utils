@@ -222,7 +222,7 @@ int erofs_writesb(struct erofs_sb_info *sbi)
 		.rb.rootnid_2b  = cpu_to_le16(sbi->root_nid),
 		.inos      = cpu_to_le64(sbi->inos),
 		.epoch     = cpu_to_le64(sbi->epoch),
-		.build_time = cpu_to_le64(sbi->build_time),
+		.build_time = cpu_to_le32(sbi->build_time),
 		.fixed_nsec = cpu_to_le32(sbi->fixed_nsec),
 		.meta_blkaddr  = cpu_to_le32(sbi->meta_blkaddr),
 		.xattr_blkaddr = cpu_to_le32(sbi->xattr_blkaddr),

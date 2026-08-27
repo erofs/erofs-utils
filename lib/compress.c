@@ -2153,9 +2153,9 @@ static int z_erofs_build_compr_cfgs(struct erofs_importer *im,
 		} __packed zalg = {
 			.size = cpu_to_le16(sizeof(struct z_erofs_deflate_cfgs)),
 			.z = {
-				.windowbits = cpu_to_le32(ilog2(
+				.windowbits = ilog2(
 					max_dict_size
-						[Z_EROFS_COMPRESSION_DEFLATE])),
+						[Z_EROFS_COMPRESSION_DEFLATE]),
 			}
 		};
 

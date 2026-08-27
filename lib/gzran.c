@@ -208,7 +208,7 @@ struct erofs_gzran_iostream {
 	struct erofs_vfile *vin;
 	struct erofs_gzran_cutpoint *cp;
 	u32 entries;
-	u32 span_size;
+	u64 span_size;
 };
 
 static void erofs_gzran_ios_vfclose(struct erofs_vfile *vf)
@@ -346,7 +346,7 @@ struct erofs_vfile *erofs_gzran_zinfo_open(struct erofs_vfile *vin,
 	ios = (struct erofs_gzran_iostream *)vf->payload;
 	h = zinfo_buf;
 	ios->entries = le32_to_cpu(h->have);
-	ios->span_size = le32_to_cpu(h->span_size);
+	ios->span_size = le64_to_cpu(h->span_size);
 
 	v2_size = sizeof(*c) * ios->entries + sizeof(*h);
 	if (!len || v2_size == len) {
