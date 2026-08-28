@@ -245,7 +245,7 @@ int erofs_write_chunk_indexes(struct erofs_inode *inode, struct erofs_vfile *vf,
 		startblk &= addrmask;
 		idx.device_id = cpu_to_le16(chunk->device_id);
 		idx.startblk_lo = cpu_to_le32(startblk);
-		idx.startblk_hi = cpu_to_le32(startblk >> 32);
+		idx.startblk_hi = cpu_to_le16(startblk >> 32);
 		DBG_BUGON(!_48bit && idx.startblk_hi);
 
 		if (unit == EROFS_BLOCK_MAP_ENTRY_SIZE)
