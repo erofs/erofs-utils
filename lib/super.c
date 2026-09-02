@@ -414,15 +414,30 @@ int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices)
 	return 0;
 }
 
+int erofs_update_all_devices(struct erofs_sb_info *sbi)
+{
+	struct erofs_device_info *di;
+	erofs_blk_t last_uniaddr = sbi->dif0.blocks;
+
+	for (di = sbi->devs; di < sbi->devs + sbi->extra_devices; ++di) {
+		if (di->bmgr)
+			di->blocks = erofs_mapbh(di->bmgr, NULL);
+		di->uniaddr = last_uniaddr;
+		last_uniaddr += di->blocks;
+	}
+	sbi->total_blocks = last_uniaddr;
+	return 0;
+}
+
 int erofs_write_device_table(struct erofs_sb_info *sbi)
 {
-	erofs_blk_t nblocks = sbi->dif0.blocks;
 	struct erofs_buffer_head *bh = sbi->bh_devt;
+	struct erofs_device_info *di = sbi->devs;
 	erofs_off_t pos;
-	unsigned int i, ret;
+	unsigned int ret;
 
 	if (!sbi->extra_devices)
-		goto out;
+		return 0;
 	if (!bh) {
 		if (erofs_sb_has_device_table(sbi))
 			return 0;
@@ -435,28 +450,24 @@ int erofs_write_device_table(struct erofs_sb_info *sbi)
 		return -EINVAL;
 	}
 
-	i = 0;
 	do {
 		struct erofs_deviceslot dis = {
-			.uniaddr_lo = cpu_to_le32(nblocks),
-			.blocks_lo = cpu_to_le32(sbi->devs[i].blocks),
-			.blocks_hi = cpu_to_le16(sbi->devs[i].blocks >> 32),
-			.uniaddr_hi = cpu_to_le16(nblocks >> 32),
+			.uniaddr_lo = cpu_to_le32(di->uniaddr),
+			.blocks_lo = cpu_to_le32(di->blocks),
+			.blocks_hi = cpu_to_le16(di->blocks >> 32),
+			.uniaddr_hi = cpu_to_le16(di->uniaddr >> 32),
 		};
 
-		memcpy(dis.tag, sbi->devs[i].tag, sizeof(dis.tag));
+		memcpy(dis.tag, di->tag, sizeof(dis.tag));
 		ret = erofs_dev_write(sbi, &dis, pos, sizeof(dis));
 		if (ret)
 			return ret;
 		pos += sizeof(dis);
-		nblocks += sbi->devs[i].blocks;
-	} while (++i < sbi->extra_devices);
+	} while (++di < sbi->devs + sbi->extra_devices);
 
 	bh->op = &erofs_drop_directly_bhops;
 	erofs_bdrop(bh, false);
 	sbi->bh_devt = NULL;
-out:
-	sbi->total_blocks = nblocks;
 	return 0;
 }
 

@@ -1508,11 +1508,6 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 		}
 	}
 
-	if (mkfscfg.blobdev_path && mkfscfg.chunkbits < mkfs_blkszbits) {
-		erofs_err("--blobdev must be used together with --chunksize");
-		return -EINVAL;
-	}
-
 	/* TODO: can be implemented with (deviceslot) mapped_blkaddr */
 	if (mkfscfg.blobdev_path &&
 	    cfg.c_force_chunkformat == FORCE_INODE_BLOCK_MAP) {
@@ -1533,6 +1528,11 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 		err = mkfs_parse_sources(argc, argv, optind);
 		if (err)
 			return err;
+
+		if (mkfscfg.blobdev_path && source_mode == EROFS_MKFS_SOURCE_REBUILD) {
+			erofs_err("--blobdev is currently incompatible with rebuild mode");
+			return -EINVAL;
+		}
 	} else if (source_mode != EROFS_MKFS_SOURCE_TAR) {
 		erofs_err("missing argument: SOURCE(s)");
 		return -EINVAL;
@@ -1926,10 +1926,7 @@ int main(int argc, char **argv)
 				  erofs_strerror(err));
 			goto exit;
 		}
-	}
-
-	if (tar_index_512b || mkfscfg.chunkbits) {
-		if (g_sbi.extra_devices && mkfscfg.blobdev_path) {
+		if (mkfscfg.blobdev_path) {
 			g_sbi.devs[0].src_path = strdup(mkfscfg.blobdev_path);
 			if (!g_sbi.devs[0].src_path) {
 				err = -ENOMEM;
@@ -1942,6 +1939,9 @@ int main(int argc, char **argv)
 
 		}
 		importer_params.ddev_id_def = mkfscfg.blobdev_path ? 1 : 0;
+	}
+
+	if (tar_index_512b || mkfscfg.chunkbits) {
 		err = erofs_blob_init(&g_sbi, mkfscfg.chunkbits);
 		if (err)
 			goto exit;
@@ -2050,12 +2050,6 @@ int main(int argc, char **argv)
 					BLK_ROUND_UP(&g_sbi, erofstar.offset);
 			}
 		}
-	}
-
-	if (erofstar.index_mode || mkfscfg.chunkbits || g_sbi.extra_devices) {
-		err = erofs_mkfs_dump_blobs(&g_sbi);
-		if (err)
-			goto exit;
 	}
 
 	err = erofs_importer_flush_all(&importer);

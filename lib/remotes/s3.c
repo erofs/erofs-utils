@@ -1058,7 +1058,7 @@ static int s3erofs_remote_getobject(struct erofs_importer *im,
 		inode->idata_size = 0;
 		ret = erofs_allocate_inode_bh_data(inode,
 				DIV_ROUND_UP(inode->i_size, 1U << sbi->blkszbits),
-				false);
+				im->params->ddev_id_def);
 		if (ret)
 			return ret;
 		resp.vf = &sbi->bdev;

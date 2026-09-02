@@ -198,24 +198,31 @@ struct erofs_dentry *erofs_d_alloc(struct erofs_inode *parent,
 
 /* allocate main data for an inode */
 int erofs_allocate_inode_bh_data(struct erofs_inode *inode, erofs_blk_t nblocks,
-				 bool in_metazone)
+				 int device_id)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
-	struct erofs_bufmgr *bmgr = in_metazone ?
+	struct erofs_bufmgr *bmgr = device_id ?
 		erofs_metadata_bmgr(sbi, false) : sbi->bmgr;
 	struct erofs_buffer_head *bh;
 	int ret, type;
+
+	if (device_id < 0)
+		bmgr = erofs_metadata_bmgr(sbi, false);
+	else if (!device_id)
+		bmgr = sbi->bmgr;
+	else
+		bmgr = sbi->devs[device_id - 1].bmgr;
+
+	if (!bmgr) {
+		erofs_err("cannot allocate data on unavailable device %d for %s",
+			  device_id, inode->i_srcpath);
+		return -EINVAL;
+	}
 
 	if (!nblocks) {
 		/* it has only tail-end data */
 		inode->u.i_blkaddr = EROFS_NULL_ADDR;
 		return 0;
-	}
-
-	if (in_metazone && !bmgr) {
-		erofs_err("cannot allocate data in the metazone when unavailable for %s",
-			  inode->i_srcpath);
-		return -EINVAL;
 	}
 
 	/* allocate main data buffer */
@@ -232,8 +239,10 @@ int erofs_allocate_inode_bh_data(struct erofs_inode *inode, erofs_blk_t nblocks,
 	DBG_BUGON(ret < 0);
 
 	/* write blocks except for the tail-end block */
-	inode->u.i_blkaddr = bh->block->blkaddr | (in_metazone ?
-		(sbi->extra_devices + 1ULL) << EROFS_I_BLKADDR_DEV_ID_BIT : 0);
+	if (device_id < 0)
+		device_id = sbi->extra_devices + 1;
+	inode->u.i_blkaddr = bh->block->blkaddr |
+		((u64)device_id << EROFS_I_BLKADDR_DEV_ID_BIT);
 	return 0;
 }
 
@@ -604,7 +613,7 @@ int erofs_write_file_from_buffer(struct erofs_inode *inode, char *buf)
 
 	inode->datalayout = EROFS_INODE_FLAT_INLINE;
 
-	ret = erofs_allocate_inode_bh_data(inode, nblocks, false);
+	ret = erofs_allocate_inode_bh_data(inode, nblocks, 0);
 	if (ret)
 		return ret;
 
@@ -635,7 +644,7 @@ static bool erofs_file_is_compressible(struct erofs_importer *im,
 
 static int erofs_write_unencoded_data(struct erofs_inode *inode,
 				      struct erofs_vfile *vf, erofs_off_t fpos,
-				      bool noseek, bool in_metazone)
+				      bool noseek, int device_id)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
 	struct erofs_buffer_head *bh;
@@ -646,7 +655,7 @@ static int erofs_write_unencoded_data(struct erofs_inode *inode,
 
 	if (!noseek && erofs_sb_has_48bit(sbi)) {
 		if (erofs_io_lseek(vf, fpos, SEEK_DATA) == -ENXIO) {
-			ret = erofs_allocate_inode_bh_data(inode, 0, false);
+			ret = erofs_allocate_inode_bh_data(inode, 0, 0);
 			if (ret)
 				return ret;
 			inode->datalayout = EROFS_INODE_FLAT_PLAIN;
@@ -663,7 +672,7 @@ static int erofs_write_unencoded_data(struct erofs_inode *inode,
 	remaining = inode->i_size - inode->idata_size;
 
 	ret = erofs_allocate_inode_bh_data(inode, remaining >> sbi->blkszbits,
-					   in_metazone);
+					   device_id);
 	if (ret)
 		return ret;
 
@@ -724,13 +733,14 @@ static int erofs_write_unencoded_file(const struct erofs_importer *im,
 	if (inode->datasource == EROFS_INODE_DATA_SOURCE_REBUILD_BLOB) {
 		if (erofs_io_lseek(&vf, fpos, SEEK_SET) != (off_t)fpos)
 			return -EIO;
-		return erofs_write_unencoded_data(inode, &vf, fpos, true, false);
+		return erofs_write_unencoded_data(inode, &vf, fpos, true, device_id);
 	}
 
 	inode->datalayout = EROFS_INODE_FLAT_INLINE;
 	/* fallback to all data uncompressed */
 	return erofs_write_unencoded_data(inode, &vf, fpos,
-			inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF, false);
+			inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF,
+			device_id);
 }
 
 static int erofs_write_dir_file(const struct erofs_importer *im,
@@ -749,7 +759,7 @@ static int erofs_write_dir_file(const struct erofs_importer *im,
 	} else {
 		DBG_BUGON(dir->idata_size != (dir->i_size & (bsz - 1)));
 		err = erofs_write_unencoded_data(dir, vf, 0, true,
-					im->params->dirdata_in_metazone);
+				im->params->dirdata_in_metazone ? -1 : 0);
 	}
 	erofs_io_close(vf);
 	return err;
@@ -1135,7 +1145,7 @@ static int erofs_write_tail_end(struct erofs_importer *im,
 				params->dirdata_in_metazone;
 
 			ret = erofs_allocate_inode_bh_data(inode, 1,
-							   in_metazone);
+					in_metazone ? -1 : params->ddev_id_def);
 			if (ret)
 				return ret;
 			bh = inode->bh_data;
@@ -2412,7 +2422,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_importer *im,
 	ret = erofs_write_unencoded_data(inode,
 			&(struct erofs_vfile){ .fd = fd }, 0,
 			inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF,
-			false);
+			0);
 	if (ret)
 		return ERR_PTR(ret);
 out:

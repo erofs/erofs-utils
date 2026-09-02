@@ -554,18 +554,6 @@ int tarerofs_write_chunkes(struct erofs_inode *inode, erofs_off_t data_offset)
 	return 0;
 }
 
-int erofs_mkfs_dump_blobs(struct erofs_sb_info *sbi)
-{
-	struct erofs_device_info *di;
-
-	for (di = sbi->devs; di < sbi->devs + sbi->extra_devices; ++di) {
-		if (!di->bmgr)
-			continue;
-		di->blocks = erofs_mapbh(di->bmgr, NULL);
-	}
-	return 0;
-}
-
 static int erofs_insert_zerochunk(struct erofs_chunkmgr *cmgr,
 				  unsigned int cbitsdef)
 {
