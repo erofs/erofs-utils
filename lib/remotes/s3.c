@@ -15,7 +15,7 @@
 #include "erofs/internal.h"
 #include "erofs/print.h"
 #include "erofs/inode.h"
-#include "erofs/blobchunk.h"
+#include "../liberofs_chunk.h"
 #include "erofs/diskbuf.h"
 #include "erofs/importer.h"
 #include "liberofs_rebuild.h"

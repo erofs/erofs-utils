@@ -6,10 +6,10 @@
  */
 #define _GNU_SOURCE
 #include "erofs/print.h"
-#include "erofs/blobchunk.h"
 #include "erofs/block_list.h"
 #include "erofs/importer.h"
 #include "liberofs_cache.h"
+#include "liberofs_chunk.h"
 #include "liberofs_private.h"
 #include "liberofs_sha256.h"
 #include <unistd.h>
@@ -665,7 +665,7 @@ err_out:
 	return ret;
 }
 
-int erofs_blob_exit(struct erofs_sb_info *sbi)
+int erofs_chunkmgr_exit(struct erofs_sb_info *sbi)
 {
 	struct erofs_chunkmgr *cmgr = sbi->chunkmgr;
 	struct erofs_chunkitem *bc, *n;

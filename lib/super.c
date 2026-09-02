@@ -7,6 +7,7 @@
 #include "erofs/print.h"
 #include "erofs/xattr.h"
 #include "liberofs_cache.h"
+#include "liberofs_chunk.h"
 #include "liberofs_compress.h"
 #include "liberofs_metabox.h"
 
@@ -185,6 +186,7 @@ int erofs_read_superblock(struct erofs_sb_info *sbi)
 
 void erofs_put_super(struct erofs_sb_info *sbi)
 {
+	erofs_chunkmgr_exit(sbi);
 	if (sbi->devs) {
 		int i;
 

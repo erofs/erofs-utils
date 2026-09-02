@@ -9,7 +9,6 @@
 #include "erofs/list.h"
 #include "erofs/tar.h"
 #include "erofs/xattr.h"
-#include "erofs/blobchunk.h"
 #include "erofs/importer.h"
 #if defined(HAVE_SYS_SYSMACROS_H)
 #include <sys/sysmacros.h>
@@ -19,6 +18,7 @@
 #endif
 #include "liberofs_base64.h"
 #include "liberofs_cache.h"
+#include "liberofs_chunk.h"
 #include "liberofs_gzran.h"
 #include "liberofs_rebuild.h"
 #include "liberofs_sha256.h"

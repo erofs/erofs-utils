@@ -12,9 +12,9 @@
 #include "erofs/inode.h"
 #include "erofs/dir.h"
 #include "erofs/xattr.h"
-#include "erofs/blobchunk.h"
 #include "erofs/internal.h"
 #include "erofs/io.h"
+#include "liberofs_chunk.h"
 #include "liberofs_rebuild.h"
 #include "liberofs_uuid.h"
 
