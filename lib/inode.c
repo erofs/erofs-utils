@@ -704,13 +704,15 @@ static int erofs_write_unencoded_data(struct erofs_inode *inode,
 	return 0;
 }
 
-int erofs_write_unencoded_file(struct erofs_inode *inode, int fd, u64 fpos)
+static int erofs_write_unencoded_file(const struct erofs_importer *im,
+				      struct erofs_inode *inode, int fd, u64 fpos)
 {
 	struct erofs_vfile vf = { .fd = fd };
+	char chunkbits = im->params->chunkszbits_def;
 
-	if (cfg.c_chunkbits &&
+	if (chunkbits &&
 	    inode->datasource != EROFS_INODE_DATA_SOURCE_REBUILD_BLOB) {
-		inode->u.chunkbits = cfg.c_chunkbits;
+		inode->u.chunkbits = chunkbits;
 		/* chunk indexes when explicitly specified */
 		inode->u.chunkformat = 0;
 		if (cfg.c_force_chunkformat == FORCE_INODE_CHUNK_INDEXES)
@@ -1491,6 +1493,11 @@ static int erofs_inode_reserve_data_blocks(struct erofs_inode *inode)
 	return 0;
 }
 
+struct erofs_mkfs_btctx {
+	struct erofs_importer *im;
+	bool rebuild, incremental;
+};
+
 struct erofs_mkfs_job_ndir_ctx {
 	struct erofs_inode *inode;
 	void *ictx;
@@ -1498,7 +1505,8 @@ struct erofs_mkfs_job_ndir_ctx {
 	u64 fpos;
 };
 
-static int erofs_mkfs_job_write_file(struct erofs_mkfs_job_ndir_ctx *ctx)
+static int erofs_mkfs_job_write_file(const struct erofs_mkfs_btctx *btctx,
+				     struct erofs_mkfs_job_ndir_ctx *ctx)
 {
 	struct erofs_inode *inode = ctx->inode;
 	int ret;
@@ -1519,7 +1527,7 @@ static int erofs_mkfs_job_write_file(struct erofs_mkfs_job_ndir_ctx *ctx)
 		}
 	}
 	/* fallback to all data uncompressed */
-	ret = erofs_write_unencoded_file(inode, ctx->fd, ctx->fpos);
+	ret = erofs_write_unencoded_file(btctx->im, inode, ctx->fd, ctx->fpos);
 out:
 	if (inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF) {
 		erofs_diskbuf_close(inode->i_diskbuf);
@@ -1538,11 +1546,6 @@ out:
 	}
 	return ret;
 }
-
-struct erofs_mkfs_btctx {
-	struct erofs_importer *im;
-	bool rebuild, incremental;
-};
 
 static int erofs_mkfs_handle_nondirectory(const struct erofs_mkfs_btctx *btctx,
 					  struct erofs_mkfs_job_ndir_ctx *ctx)
@@ -1575,7 +1578,7 @@ static int erofs_mkfs_handle_nondirectory(const struct erofs_mkfs_btctx *btctx,
 		if (inode->datasource == EROFS_INODE_DATA_SOURCE_RESVSP)
 			ret = erofs_inode_reserve_data_blocks(inode);
 		else if (ctx->fd >= 0)
-			ret = erofs_mkfs_job_write_file(ctx);
+			ret = erofs_mkfs_job_write_file(btctx, ctx);
 	}
 	if (ret)
 		return ret;

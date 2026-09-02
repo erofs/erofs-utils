@@ -63,6 +63,7 @@ struct erofs_importer_params {
 	bool all_fragments;
 	bool compress_dir;
 	char fragdedupe;
+	char chunkszbits_def;
 };
 
 struct erofs_importer {

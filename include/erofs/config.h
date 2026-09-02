@@ -34,7 +34,6 @@ struct erofs_configure {
 	int c_dbg_lvl;
 	bool c_dry_run;
 	char c_timeinherit;
-	char c_chunkbits;
 	char c_dedupe;
 	bool c_showprogress;
 	bool c_extra_ea_name_prefixes;
@@ -46,7 +45,6 @@ struct erofs_configure {
 	/* related arguments for mkfs.erofs */
 	char *c_img_path;
 	char *c_src_path;
-	char *c_blobdev_path;
 	char *c_compress_hints_file;
 	char c_force_chunkformat;
 	u8 c_mkfs_metabox_algid;
