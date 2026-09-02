@@ -1941,7 +1941,8 @@ int main(int argc, char **argv)
 				goto exit;
 
 		}
-		err = erofs_blob_init(&g_sbi, mkfscfg.blobdev_path ? 1 : 0, mkfscfg.chunkbits);
+		importer_params.ddev_id_def = mkfscfg.blobdev_path ? 1 : 0;
+		err = erofs_blob_init(&g_sbi, mkfscfg.chunkbits);
 		if (err)
 			goto exit;
 	}

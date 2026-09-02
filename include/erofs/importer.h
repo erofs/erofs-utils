@@ -64,6 +64,7 @@ struct erofs_importer_params {
 	bool compress_dir;
 	char fragdedupe;
 	char chunkszbits_def;
+	u16 ddev_id_def;		/* target device id for inode data */
 };
 
 struct erofs_importer {

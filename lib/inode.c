@@ -709,6 +709,7 @@ static int erofs_write_unencoded_file(const struct erofs_importer *im,
 {
 	struct erofs_vfile vf = { .fd = fd };
 	char chunkbits = im->params->chunkszbits_def;
+	int device_id = im->params->ddev_id_def;
 
 	if (chunkbits &&
 	    inode->datasource != EROFS_INODE_DATA_SOURCE_REBUILD_BLOB) {
@@ -717,7 +718,7 @@ static int erofs_write_unencoded_file(const struct erofs_importer *im,
 		inode->u.chunkformat = 0;
 		if (cfg.c_force_chunkformat == FORCE_INODE_CHUNK_INDEXES)
 			inode->u.chunkformat = EROFS_CHUNK_FORMAT_INDEXES;
-		return erofs_blob_write_chunked_file(inode, fd, fpos);
+		return erofs_blob_write_chunked_file(inode, fd, fpos, device_id);
 	}
 
 	if (inode->datasource == EROFS_INODE_DATA_SOURCE_REBUILD_BLOB) {
