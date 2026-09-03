@@ -213,8 +213,12 @@ int erofs_allocate_inode_bh_data(struct erofs_inode *inode, erofs_blk_t nblocks,
 		bmgr = sbi->devs[device_id - 1].bmgr;
 
 	if (!bmgr) {
-		erofs_err("cannot allocate data on unavailable device %d for %s",
-			  device_id, inode->i_srcpath);
+		if (device_id < 0)
+			erofs_err("cannot allocate data in the unavailable metadata zone for %s",
+				  inode->i_srcpath);
+		else
+			erofs_err("cannot allocate data on unavailable device %d for %s",
+				  device_id, inode->i_srcpath);
 		return -EINVAL;
 	}
 
