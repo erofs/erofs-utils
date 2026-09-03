@@ -123,10 +123,8 @@ struct erofs_sb_info {
 	u32 checksum;
 	u16 available_compr_algs;
 	u16 extra_devices;
-	union {
-		u16 devt_slotoff;		/* used for mkfs */
-		u16 device_id_mask;		/* used for others */
-	};
+	u16 devt_slotoff;
+	u16 device_id_mask;
 	erofs_nid_t packed_nid;
 	erofs_nid_t metabox_nid;
 

@@ -52,10 +52,11 @@ static int erofs_init_devices(struct erofs_sb_info *sbi,
 
 	sbi->extra_devices = ondisk_extradevs;
 	sbi->device_id_mask = roundup_pow_of_two(ondisk_extradevs + 1) - 1;
+	sbi->devt_slotoff = le16_to_cpu(dsb->devt_slotoff);
 	sbi->devs = calloc(ondisk_extradevs, sizeof(*sbi->devs));
 	if (!sbi->devs)
 		return -ENOMEM;
-	pos = le16_to_cpu(dsb->devt_slotoff) * EROFS_DEVT_SLOT_SIZE;
+	pos = sbi->devt_slotoff * EROFS_DEVT_SLOT_SIZE;
 	for (i = 0; i < ondisk_extradevs; ++i) {
 		struct erofs_deviceslot dis;
 		int ret;
@@ -439,15 +440,15 @@ int erofs_write_device_table(struct erofs_sb_info *sbi)
 	if (!sbi->extra_devices)
 		return 0;
 	if (!bh) {
-		if (erofs_sb_has_device_table(sbi))
-			return 0;
-		return -EINVAL;
-	}
-
-	pos = erofs_btell(bh, false);
-	if (pos == EROFS_NULL_ADDR) {
-		DBG_BUGON(1);
-		return -EINVAL;
+		if (!erofs_sb_has_device_table(sbi))
+			return -EINVAL;
+		pos = sbi->devt_slotoff * EROFS_DEVT_SLOT_SIZE;
+	} else {
+		pos = erofs_btell(bh, false);
+		if (pos == EROFS_NULL_ADDR) {
+			DBG_BUGON(1);
+			return -EINVAL;
+		}
 	}
 
 	do {
@@ -465,9 +466,11 @@ int erofs_write_device_table(struct erofs_sb_info *sbi)
 		pos += sizeof(dis);
 	} while (++di < sbi->devs + sbi->extra_devices);
 
-	bh->op = &erofs_drop_directly_bhops;
-	erofs_bdrop(bh, false);
-	sbi->bh_devt = NULL;
+	if (bh) {
+		bh->op = &erofs_drop_directly_bhops;
+		erofs_bdrop(bh, false);
+		sbi->bh_devt = NULL;
+	}
 	return 0;
 }
 
