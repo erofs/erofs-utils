@@ -201,8 +201,7 @@ int erofs_allocate_inode_bh_data(struct erofs_inode *inode, erofs_blk_t nblocks,
 				 int device_id)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
-	struct erofs_bufmgr *bmgr = device_id ?
-		erofs_metadata_bmgr(sbi, false) : sbi->bmgr;
+	struct erofs_bufmgr *bmgr;
 	struct erofs_buffer_head *bh;
 	int ret, type;
 
