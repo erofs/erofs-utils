@@ -18,6 +18,7 @@
 #include "../liberofs_chunk.h"
 #include "erofs/diskbuf.h"
 #include "erofs/importer.h"
+#include "../liberofs_cache.h"
 #include "liberofs_rebuild.h"
 #include "liberofs_s3.h"
 #include "liberofs_base64.h"
@@ -1054,15 +1055,19 @@ static int s3erofs_remote_getobject(struct erofs_importer *im,
 
 	resp.pos = 0;
 	if (!sbi->available_compr_algs && im->params->no_datainline) {
+		unsigned int device_id = im->params->ddev_id_def;
+
 		inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 		inode->idata_size = 0;
 		ret = erofs_allocate_inode_bh_data(inode,
 				DIV_ROUND_UP(inode->i_size, 1U << sbi->blkszbits),
-				im->params->ddev_id_def);
+				device_id);
 		if (ret)
 			return ret;
-		resp.vf = &sbi->bdev;
-		resp.pos = erofs_pos(inode->sbi, inode->u.i_blkaddr);
+
+		resp.vf = device_id ?
+			sbi->devs[device_id - 1].bmgr->vf : &sbi->bdev;
+		resp.pos = erofs_pos(sbi, erofs_inode_dev_baddr(inode));
 		inode->datasource = EROFS_INODE_DATA_SOURCE_NONE;
 	} else {
 		if (!inode->i_diskbuf) {
@@ -1179,7 +1184,7 @@ int s3erofs_build_trees(struct erofs_importer *im, struct erofs_s3 *s3,
 		ret = __erofs_fill_inode(im, inode, &st, obj->key);
 		if (!ret && S_ISREG(inode->i_mode)) {
 			inode->i_size = obj->size;
-			if (fillzero)
+			if (fillzero || !inode->i_size)
 				ret = erofs_write_zero_inode(inode);
 			else
 				ret = s3erofs_remote_getobject(im, s3, inode,
