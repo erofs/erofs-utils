@@ -468,6 +468,7 @@ int erofs_superblock_csum_verify(struct erofs_sb_info *sbi);
 int erofs_mkfs_format_fs(struct erofs_sb_info *sbi, unsigned int blkszbits,
 			 unsigned int dsunit, bool metazone);
 int erofs_mkfs_load_fs(struct erofs_sb_info *sbi, unsigned int dsunit);
+int erofs_flush_all_devices(struct erofs_sb_info *sbi);
 
 /* namei.c */
 int erofs_read_inode_from_disk(struct erofs_inode *vi);
@@ -541,12 +542,6 @@ static inline int erofs_dev_write(struct erofs_sb_info *sbi, const void *buf,
 	if (erofs_io_pwrite(&sbi->bdev, buf, offset, len) != (ssize_t)len)
 		return -EIO;
 	return 0;
-}
-
-static inline int erofs_dev_resize(struct erofs_sb_info *sbi,
-				   erofs_blk_t blocks)
-{
-	return erofs_io_ftruncate(&sbi->bdev, (u64)blocks * erofs_blksiz(sbi));
 }
 
 static inline int erofs_blk_write(struct erofs_sb_info *sbi, const void *buf,

@@ -525,3 +525,23 @@ int erofs_mkfs_load_fs(struct erofs_sb_info *sbi, unsigned int dsunit)
 	bmgr->dsunit = dsunit;
 	return 0;
 }
+
+int erofs_flush_all_devices(struct erofs_sb_info *sbi)
+{
+	struct erofs_device_info *di;
+	int err;
+
+	err = erofs_io_ftruncate(&sbi->bdev,
+				 (erofs_off_t)sbi->dif0.blocks << sbi->blkszbits);
+	if (err)
+		return err;
+	for (di = sbi->devs; di < sbi->devs + sbi->extra_devices; ++di) {
+		if (!di->bmgr)
+			continue;
+		err = erofs_io_ftruncate(di->bmgr->vf,
+				(erofs_off_t)di->blocks << sbi->blkszbits);
+		if (err)
+			return err;
+	}
+	return 0;
+}

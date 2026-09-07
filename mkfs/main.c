@@ -2062,8 +2062,7 @@ int main(int argc, char **argv)
 	if (err)
 		goto exit;
 
-	err = erofs_dev_resize(&g_sbi, g_sbi.dif0.blocks);
-
+	err = erofs_flush_all_devices(&g_sbi);
 	if (!err && erofs_sb_has_sb_chksum(&g_sbi)) {
 		err = erofs_enable_sb_chksum(&g_sbi, &crc);
 		if (!err)
