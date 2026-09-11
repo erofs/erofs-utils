@@ -149,7 +149,7 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 	list_for_each_entry_safe(d, t, &inode->i_subdirs, d_child)
 		free(d);
 
-	free(inode->compressmeta);
+	z_erofs_free_metadata(inode);
 	free(inode->eof_tailraw);
 	erofs_remove_ihash(inode);
 	if (!erofs_is_special_identifier(inode->i_srcpath))
@@ -925,9 +925,15 @@ int erofs_iflush(struct erofs_inode *inode)
 		if (inode->datalayout == EROFS_INODE_CHUNK_BASED) {
 			ret = erofs_write_chunk_indexes(inode, ibmgr->vf, off);
 		} else {	/* write compression metadata */
+			char *metabuf;
+
 			off = roundup(off, 8);
-			ret = erofs_io_pwrite(ibmgr->vf, inode->compressmeta,
+			metabuf = z_erofs_write_metadata(inode);
+			if (IS_ERR(metabuf))
+				return PTR_ERR(metabuf);
+			ret = erofs_io_pwrite(ibmgr->vf, metabuf,
 					      off, inode->extent_isize);
+			free(metabuf);
 		}
 		if (ret != inode->extent_isize)
 			return ret < 0 ? ret : -EIO;

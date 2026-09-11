@@ -19,6 +19,8 @@ void *erofs_prepare_compressed_file(struct erofs_importer *im,
 				    struct erofs_inode *inode);
 void erofs_bind_compressed_file_with_fd(struct z_erofs_compress_ictx *ictx,
 					int fd, u64 fpos);
+void z_erofs_free_metadata(struct erofs_inode *inode);
+char *z_erofs_write_metadata(struct erofs_inode *inode);
 int erofs_begin_compressed_file(struct z_erofs_compress_ictx *ictx);
 int erofs_write_compressed_file(struct z_erofs_compress_ictx *ictx);
 
