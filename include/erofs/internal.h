@@ -513,6 +513,8 @@ static inline int erofs_get_occupied_size(const struct erofs_inode *inode,
 }
 
 /* data.c */
+int erofs_dev_write(struct erofs_sb_info *sbi, int device_id,
+		    const void *buf, u64 offset, size_t len);
 int erofs_getxattr(struct erofs_inode *vi, const char *name, char *buffer,
 		   size_t buffer_size);
 int erofs_listxattr(struct erofs_inode *vi, char *buffer, size_t buffer_size);
@@ -533,18 +535,10 @@ int erofs_blob_open_ro(struct erofs_sb_info *sbi, const char *dev);
 ssize_t erofs_dev_read(struct erofs_sb_info *sbi, int device_id,
 		       void *buf, u64 offset, size_t len);
 
-static inline int erofs_dev_write(struct erofs_sb_info *sbi, const void *buf,
-				  u64 offset, size_t len)
-{
-	if (erofs_io_pwrite(&sbi->bdev, buf, offset, len) != (ssize_t)len)
-		return -EIO;
-	return 0;
-}
-
 static inline int erofs_blk_write(struct erofs_sb_info *sbi, const void *buf,
 				  erofs_blk_t blkaddr, u32 nblocks)
 {
-	return erofs_dev_write(sbi, buf, erofs_pos(sbi, blkaddr),
+	return erofs_dev_write(sbi, 0, buf, erofs_pos(sbi, blkaddr),
 			       erofs_pos(sbi, nblocks));
 }
 

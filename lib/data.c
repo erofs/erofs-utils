@@ -8,7 +8,23 @@
 #include "erofs/internal.h"
 #include "erofs/trace.h"
 #include "erofs/decompress.h"
+#include "liberofs_cache.h"
 #include "liberofs_fragments.h"
+
+int erofs_dev_write(struct erofs_sb_info *sbi, int device_id,
+		    const void *buf, u64 offset, size_t len)
+{
+	ssize_t ret;
+
+	ret = erofs_io_pwrite(device_id ?
+				sbi->devs[device_id - 1].bmgr->vf : &sbi->bdev,
+			      buf, offset, len);
+	if (ret < 0)
+		return ret;
+	if (ret != (ssize_t)len)
+		return -EIO;
+	return 0;
+}
 
 void *erofs_bread(struct erofs_buf *buf, erofs_off_t offset, bool need_kmap)
 {

@@ -511,7 +511,7 @@ static int erofs_rebuild_inode_fix_pnid(struct erofs_inode *parent,
 
 		if (!fixed)
 			continue;
-		err = erofs_dev_write(dir.sbi, buf,
+		err = erofs_dev_write(dir.sbi, 0, buf,
 			(off + bsz > dir.i_size &&
 				dir.datalayout == EROFS_INODE_FLAT_INLINE ?
 				erofs_iloc(&dir) + isz : boff + off), count);
@@ -2488,7 +2488,8 @@ int erofs_fixup_root_inode(struct erofs_inode *root)
 		return -ENOMEM;
 	err = erofs_dev_read(sbi, 0, ibuf, erofs_iloc(root), ondisk_size);
 	if (err >= 0)
-		err = erofs_dev_write(sbi, ibuf, erofs_iloc(&oi), ondisk_size);
+		err = erofs_dev_write(sbi, 0, ibuf, erofs_iloc(&oi),
+				      ondisk_size);
 	free(ibuf);
 	return err;
 }

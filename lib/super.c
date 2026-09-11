@@ -270,7 +270,7 @@ int erofs_writesb(struct erofs_sb_info *sbi)
 	}
 	memcpy(buf + EROFS_SUPER_OFFSET, &sb, sbi->sb_size);
 
-	ret = erofs_dev_write(sbi, buf, sb_bh ? erofs_btell(sb_bh, false) : 0,
+	ret = erofs_dev_write(sbi, 0, buf, sb_bh ? erofs_btell(sb_bh, false) : 0,
 			      EROFS_SUPER_OFFSET + sbi->sb_size);
 	free(buf);
 	if (sb_bh)
@@ -352,7 +352,7 @@ int erofs_enable_sb_chksum(struct erofs_sb_info *sbi, u32 *crc)
 	/* set up checksum field to erofs_super_block */
 	sb->checksum = cpu_to_le32(*crc);
 
-	ret = erofs_dev_write(sbi, buf, EROFS_SUPER_OFFSET, len);
+	ret = erofs_dev_write(sbi, 0, buf, EROFS_SUPER_OFFSET, len);
 	if (ret) {
 		erofs_err("failed to write checksummed superblock: %s",
 			  erofs_strerror(ret));
@@ -460,7 +460,7 @@ int erofs_write_device_table(struct erofs_sb_info *sbi)
 		};
 
 		memcpy(dis.tag, di->tag, sizeof(dis.tag));
-		ret = erofs_dev_write(sbi, &dis, pos, sizeof(dis));
+		ret = erofs_dev_write(sbi, 0, &dis, pos, sizeof(dis));
 		if (ret)
 			return ret;
 		pos += sizeof(dis);

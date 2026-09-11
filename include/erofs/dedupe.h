@@ -16,6 +16,7 @@ struct z_erofs_inmem_extent {
 	erofs_off_t pstart;
 	unsigned int plen;
 	unsigned int length;
+	unsigned short device_id;
 	bool raw, partial, inlined;
 };
 
