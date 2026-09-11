@@ -189,7 +189,9 @@ static void z_erofs_write_full_indexes(struct z_erofs_index_writer *ctx,
 		DBG_BUGON(!e->raw && !inode->idata_size && !inode->fragment_size);
 		DBG_BUGON(e->partial);
 		type = e->raw ? Z_EROFS_LCLUSTER_TYPE_PLAIN :
-			Z_EROFS_LCLUSTER_TYPE_HEAD1;
+			(e->algofmt == inode->z_algorithmtype[0] ?
+				Z_EROFS_LCLUSTER_TYPE_HEAD1 :
+				Z_EROFS_LCLUSTER_TYPE_HEAD2);
 		di.di_advise = cpu_to_le16(type);
 
 		if (inode->datalayout == EROFS_INODE_COMPRESSED_FULL && !e->plen) {
@@ -238,7 +240,9 @@ static void z_erofs_write_full_indexes(struct z_erofs_index_writer *ctx,
 			di.di_u.delta[1] = cpu_to_le16(d1);
 		} else {
 			type = e->raw ? Z_EROFS_LCLUSTER_TYPE_PLAIN :
-				Z_EROFS_LCLUSTER_TYPE_HEAD1;
+				(e->algofmt == inode->z_algorithmtype[0] ?
+					Z_EROFS_LCLUSTER_TYPE_HEAD1 :
+					Z_EROFS_LCLUSTER_TYPE_HEAD2);
 
 			if (inode->datalayout == EROFS_INODE_COMPRESSED_FULL &&
 			    !e->plen) {
@@ -700,6 +704,7 @@ frag_packing:
 		e->inlined = true;
 		e->plen = blksz;
 		e->raw = false;
+		e->algofmt = inode->z_algorithmtype[0];
 	} else {
 		unsigned int padding;
 
@@ -755,6 +760,7 @@ frag_packing:
 		}
 		ctx->poff += e->plen;
 		e->raw = false;
+		e->algofmt = inode->z_algorithmtype[0];
 		may_inline = false;
 		may_packing = false;
 	}
@@ -1233,7 +1239,7 @@ static void z_erofs_write_extents(struct erofs_inode *inode,
 			plen = inode->fragmentoff;
 			pstart = inode->fragmentoff >> 32;
 		} else {
-			fmt = ei->e.raw ? 0 : inode->z_algorithmtype[0] + 1;
+			fmt = ei->e.raw ? 0 : ei->e.algofmt + 1;
 			plen |= fmt << Z_EROFS_EXTENT_PLEN_FMT_BIT;
 			if (ei->e.partial)
 				plen |= Z_EROFS_EXTENT_PLEN_PARTIAL;
@@ -1350,6 +1356,7 @@ int z_erofs_compress_segment(struct z_erofs_compress_sctx *ctx,
 			.raw = false,
 			.partial = false,
 			.pstart = ctx->pstart,
+			.algofmt = inode->z_algorithmtype[0],
 		};
 		init_list_head(&ei->list);
 		z_erofs_commit_extent(ctx, ei);
