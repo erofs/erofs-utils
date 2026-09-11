@@ -2435,3 +2435,103 @@ int z_erofs_compress_exit(struct erofs_sb_info *sbi)
 	free(sbi->zmgr);
 	return 0;
 }
+
+int z_erofs_rebuild_load_metadata(struct erofs_sb_info *dst_sbi,
+				  struct erofs_inode *inode)
+{
+	struct erofs_sb_info *sbi = inode->sbi;
+	struct erofs_map_blocks map = {
+		.buf = __EROFS_BUF_INITIALIZER,
+		.m_la = 0,
+	};
+	struct z_erofs_extent_item *ei, *n;
+	erofs_off_t pend = EROFS_NULL_ADDR;
+	bool consecutive = true;
+	LIST_HEAD(extents);
+	int err, device_id;
+
+	while (map.m_la < inode->i_size) {
+		struct erofs_map_dev mdev;
+		bool raw;
+
+		err = erofs_map_blocks(inode, &map, EROFS_GET_BLOCKS_FIEMAP);
+		if (err)
+			goto err_out;
+
+		mdev = (struct erofs_map_dev) {
+			.m_deviceid = map.m_deviceid,
+			.m_pa = map.m_pa,
+		};
+		err = erofs_map_dev(sbi, &mdev);
+		if (err)
+			goto err_out;
+
+		raw = (map.m_algorithmformat >= Z_EROFS_COMPRESSION_MAX);
+
+		ei = malloc(sizeof(*ei));
+		if (!ei) {
+			err = -ENOMEM;
+			goto err_out;
+		}
+
+		init_list_head(&ei->list);
+		ei->e = (struct z_erofs_inmem_extent) {
+			.length = map.m_llen,
+			.plen = map.m_plen,
+			.pstart = mdev.m_pa,
+			.device_id = inode->dev,	/* FIXME! */
+			.partial = map.m_flags & EROFS_MAP_PARTIAL_REF,
+			.raw = raw,
+			.inlined = map.m_flags & EROFS_MAP_META,
+		};
+		if (!raw) {
+			ei->e.algofmt = map.m_algorithmformat;
+			if (!(dst_sbi->available_compr_algs & (1 << ei->e.algofmt))) {
+				err = -EOPNOTSUPP;
+				goto err_free_ei;
+			}
+		}
+
+		if (map.m_flags & __EROFS_MAP_FRAGMENT) {
+			err = -EOPNOTSUPP;
+			goto err_free_ei;
+//			inode->fragment_size = map.m_llen;
+//			DBG_BUGON(inode->fragmentoff != map.m_pa);
+		} else if (map.m_flags & EROFS_MAP_META) {
+			DBG_BUGON(inode->idata_size != map.m_plen);
+			inode->idata = malloc(inode->idata_size);
+			if (!inode->idata) {
+				err = -ENOMEM;
+				goto err_free_ei;
+			}
+			err = erofs_dev_read(sbi, 0, inode->idata, mdev.m_pa,
+					     inode->idata_size);
+			if (err)
+				goto err_free_ei;
+			DBG_BUGON(map.m_la + map.m_llen != inode->i_size);
+		} else {
+			if (pend != EROFS_NULL_ADDR && (pend != ei->e.pstart ||
+			                                device_id != ei->e.device_id))
+				consecutive = false;
+			pend = ei->e.pstart + ei->e.plen;
+			device_id = ei->e.device_id;
+		}
+		list_add_tail(&ei->list, &extents);
+		map.m_la += map.m_llen;
+	}
+
+	inode->z_lclusterbits = sbi->blkszbits;
+	err = z_erofs_prepare_layout(inode, &extents, consecutive, false);
+	if (err)
+		goto err_out;
+	return 0;
+
+err_free_ei:
+	free(ei);
+err_out:
+	list_for_each_entry_safe(ei, n, &extents, list) {
+		list_del(&ei->list);
+		free(ei);
+	}
+	return err;
+}

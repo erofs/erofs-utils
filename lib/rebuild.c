@@ -152,7 +152,7 @@ struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
 	return d;
 }
 
-static int erofs_rebuild_write_blob_index(struct erofs_sb_info *dst_sb,
+static int erofs_rebuild_load_chunk_index(struct erofs_sb_info *dst_sb,
 					  struct erofs_inode *inode)
 {
 	int ret;
@@ -220,6 +220,17 @@ err:
 	free(inode->chunkindexes);
 	inode->chunkindexes = NULL;
 	return ret;
+}
+
+static int erofs_rebuild_write_blob_index(struct erofs_sb_info *dst_sb,
+					  struct erofs_inode *inode)
+{
+	int z_erofs_rebuild_load_metadata(struct erofs_sb_info *dst_sb,
+					  struct erofs_inode *inode);
+
+	if (is_inode_layout_compression(inode))
+		return z_erofs_rebuild_load_metadata(dst_sb, inode);
+	return erofs_rebuild_load_chunk_index(dst_sb, inode);
 }
 
 static int erofs_rebuild_write_full_data(struct erofs_inode *inode)
@@ -512,6 +523,15 @@ int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi,
 	if (ret) {
 		erofs_err("failed to read superblock of %s", fsid);
 		return ret;
+	}
+
+	if (erofs_sb_has_dedupe(sbi))
+		erofs_sb_set_dedupe(root->sbi);
+	if (erofs_sb_has_big_pcluster(sbi) &&
+	    !erofs_sb_has_big_pcluster(root->sbi)) {
+		erofs_err("failed to load tree from image %d with big pclusters",
+			  sbi->dev);
+		return -EOPNOTSUPP;
 	}
 
 	inode.nid = sbi->root_nid;
