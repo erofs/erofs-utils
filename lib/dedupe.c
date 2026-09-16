@@ -77,6 +77,7 @@ struct z_erofs_dedupe_item {
 
 	int		original_length;
 	bool		partial, raw;
+	char		algofmt;
 	u8		extra_data[];
 };
 
@@ -144,6 +145,7 @@ int z_erofs_dedupe_match(struct z_erofs_dedupe_ctx *ctx)
 		ctx->e.inlined = false;
 		ctx->e.pstart = e->pstart;
 		ctx->e.plen = e->plen;
+		ctx->e.algofmt = e->algofmt;
 		return 0;
 	}
 	return -ENOENT;
@@ -183,6 +185,7 @@ int z_erofs_dedupe_insert(struct z_erofs_inmem_extent *e,
 	di->plen = e->plen;
 	di->partial = e->partial;
 	di->raw = e->raw;
+	di->algofmt = e->algofmt;
 	di->chain = dedupe_subtree;
 	dedupe_subtree = di;
 	list_add_tail(&di->list, p);

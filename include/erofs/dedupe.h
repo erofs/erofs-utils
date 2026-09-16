@@ -18,6 +18,7 @@ struct z_erofs_inmem_extent {
 	unsigned int length;
 	unsigned short device_id;
 	bool raw, partial, inlined;
+	char algofmt;
 };
 
 struct z_erofs_dedupe_ctx {
