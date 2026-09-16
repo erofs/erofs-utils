@@ -26,6 +26,7 @@
 #include "liberofs_compress.h"
 #include "liberofs_fragments.h"
 #include "liberofs_metabox.h"
+#include "erofs/decompress.h"
 
 #define Z_EROFS_DESTBUF_SZ	(Z_EROFS_PCLUSTER_MAX_SIZE + EROFS_MAX_BLOCK_SIZE * 2)
 
@@ -688,15 +689,6 @@ frag_packing:
 		ictx->fragemitted = true;
 	/* tailpcluster should be less than 1 block */
 	} else if (may_inline && len == e->length && compressedsize < blksz) {
-		if (ctx->clusterofs + len <= blksz) {
-			inode->eof_tailraw = malloc(len);
-			if (!inode->eof_tailraw)
-				return -ENOMEM;
-
-			memcpy(inode->eof_tailraw, ctx->queue + ctx->head, len);
-			inode->eof_tailrawsize = len;
-		}
-
 		ret = z_erofs_fill_inline_data(inode, dst,
 				compressedsize, false);
 		if (ret < 0)
@@ -1267,25 +1259,53 @@ static void z_erofs_write_extents(struct erofs_inode *inode,
 	DBG_BUGON(metacur - metabuf != inode->extent_isize);
 }
 
-void z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
+int z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 {
+	struct erofs_sb_info *sbi = inode->sbi;
 	struct z_erofs_metadata_ctx *ctx = inode->compressmeta;
 	struct z_erofs_extent_item *ei;
+	char raw[EROFS_MAX_BLOCK_SIZE];
+	unsigned int rawsz, encsz;
+	int err;
 
 	inode->z_advise &= ~Z_EROFS_ADVISE_INLINE_PCLUSTER;
-	if (!inode->eof_tailraw)
-		return;
-	DBG_BUGON(inode->idata_type == EROFS_IDATA_TYPE_RAW);
+	if (inode->idata_type == EROFS_IDATA_TYPE_RAW ||
+	    (inode->z_advise & Z_EROFS_ADVISE_INTERLACED_PCLUSTER))
+		return 0;
 
 	ei = list_last_entry(&ctx->extents, struct z_erofs_extent_item, list);
 	DBG_BUGON(ei->e.raw);
-	ei->e.raw = true;
+
+	rawsz = ei->e.length;
+	if (rawsz > erofs_blksiz(sbi))
+		return 0;
+	encsz = inode->idata_size;
+
+	erofs_err("ballooning tail inline data of %s from %u to %u bytes",
+		  inode->i_srcpath, encsz, rawsz);
+	err = z_erofs_decompress(&(struct z_erofs_decompress_req) {
+		.sbi = sbi,
+		.in = inode->idata,
+		.out = raw,
+		.decodedskip = 0,
+		.interlaced_offset = 0,
+		.inputsize = encsz,
+		.decodedlength = rawsz,
+		.alg = ei->e.algofmt,
+		.partial_decoding = false,
+	});
+	if (err < 0)
+		return err;
 	free(inode->idata);
-	/* replace idata with prepared uncompressed data */
-	inode->idata = inode->eof_tailraw;
-	inode->idata_size = inode->eof_tailrawsize;
+	inode->idata_size = 0;
+	inode->idata = malloc(rawsz);
+	if (!inode->idata)
+		return -ENOMEM;
+	memcpy(inode->idata, raw, rawsz);
+	inode->idata_size = rawsz;
 	inode->idata_type = EROFS_IDATA_TYPE_RAW;
-	inode->eof_tailraw = NULL;
+	ei->e.raw = true;
+	return 0;
 }
 
 int z_erofs_compress_segment(struct z_erofs_compress_sctx *ctx,

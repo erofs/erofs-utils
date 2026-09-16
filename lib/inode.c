@@ -150,7 +150,6 @@ unsigned int erofs_iput(struct erofs_inode *inode)
 		free(d);
 
 	z_erofs_free_metadata(inode);
-	free(inode->eof_tailraw);
 	erofs_remove_ihash(inode);
 	if (!erofs_is_special_identifier(inode->i_srcpath))
 		free(inode->i_srcpath);
@@ -1050,10 +1049,13 @@ static int erofs_prepare_inode_buffer(struct erofs_importer *im,
 	if (bh == ERR_PTR(-ENOSPC)) {
 		int ret;
 
-		if (is_inode_layout_compression(inode))
-			z_erofs_drop_inline_pcluster(inode);
-		else
+		if (is_inode_layout_compression(inode)) {
+			ret = z_erofs_drop_inline_pcluster(inode);
+			if (ret)
+				return ret;
+		} else {
 			inode->datalayout = EROFS_INODE_FLAT_PLAIN;
+		}
 noinline:
 		/* expend an extra block for tail-end data */
 		ret = erofs_prepare_tail_block(inode);
