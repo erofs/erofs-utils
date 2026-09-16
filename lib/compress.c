@@ -168,6 +168,7 @@ static void z_erofs_write_full_indexes(struct z_erofs_index_writer *ctx,
 {
 	struct erofs_inode *inode = ctx->inode;
 	struct erofs_sb_info *sbi = inode->sbi;
+	bool big_pcluster = inode->z_advise & Z_EROFS_ADVISE_BIG_PCLUSTER_1;
 	unsigned int clusterofs = ctx->clusterofs;
 	unsigned int count = e->length;
 	unsigned int bbits = sbi->blkszbits;
@@ -213,8 +214,7 @@ static void z_erofs_write_full_indexes(struct z_erofs_index_writer *ctx,
 
 	do {
 		advise = 0;
-		/* XXX: big pcluster feature should be per-inode */
-		if (d0 == 1 && erofs_sb_has_big_pcluster(sbi)) {
+		if (d0 == 1 && big_pcluster) {
 			type = Z_EROFS_LCLUSTER_TYPE_NONHEAD;
 			di.di_u.delta[0] = cpu_to_le16((e->plen >> bbits) |
 						       Z_EROFS_LI_D0_CBLKCNT);
@@ -931,7 +931,7 @@ int z_erofs_convert_to_compact_format(struct erofs_inode *inode,
 	unsigned int compacted_4b_initial, compacted_4b_end;
 	unsigned int compacted_2b;
 	bool dummy_head;
-	bool big_pcluster = erofs_sb_has_big_pcluster(sbi);
+	bool big_pcluster = inode->z_advise & Z_EROFS_ADVISE_BIG_PCLUSTER_1;
 	erofs_blk_t blkaddr;
 
 	if (logical_clusterbits < sbi->blkszbits)
