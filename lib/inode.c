@@ -998,6 +998,16 @@ static bool erofs_inode_need_48bit(struct erofs_inode *inode)
 	return false;
 }
 
+static unsigned int erofs_inode_meta_size(struct erofs_inode *inode)
+{
+	unsigned int inodesize;
+
+	inodesize = inode->inode_isize + inode->xattr_isize;
+	if (inode->extent_isize)
+		inodesize = roundup(inodesize, 8) + inode->extent_isize;
+	return inodesize;
+}
+
 static int erofs_prepare_inode_buffer(struct erofs_importer *im,
 				      struct erofs_inode *inode)
 {
@@ -1017,9 +1027,7 @@ static int erofs_prepare_inode_buffer(struct erofs_importer *im,
 			inode->inode_isize =
 				sizeof(struct erofs_inode_extended);
 	}
-	inodesize = inode->inode_isize + inode->xattr_isize;
-	if (inode->extent_isize)
-		inodesize = roundup(inodesize, 8) + inode->extent_isize;
+	inodesize = erofs_inode_meta_size(inode);
 
 	if (!erofs_is_special_identifier(inode->i_srcpath) && sbi->mxgr)
 		inode->in_metabox = true;
@@ -1053,6 +1061,7 @@ static int erofs_prepare_inode_buffer(struct erofs_importer *im,
 			ret = z_erofs_drop_inline_pcluster(inode);
 			if (ret)
 				return ret;
+			inodesize = erofs_inode_meta_size(inode);
 		} else {
 			inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 		}
@@ -1069,7 +1078,8 @@ noinline:
 		return PTR_ERR(bh);
 	} else if (inode->idata_size) {
 		if (is_inode_layout_compression(inode)) {
-			DBG_BUGON(!params->ztailpacking);
+			DBG_BUGON(!erofs_sb_has_ztailpacking(sbi) &&
+				  !params->ztailpacking);
 			erofs_dbg("Inline %scompressed data (%u bytes) to %s",
 				  inode->idata_type == EROFS_IDATA_TYPE_RAW ? "un": "",
 				  inode->idata_size, inode->i_srcpath);

@@ -1269,11 +1269,36 @@ int z_erofs_drop_inline_pcluster(struct erofs_inode *inode)
 	int err;
 
 	inode->z_advise &= ~Z_EROFS_ADVISE_INLINE_PCLUSTER;
+	ei = list_last_entry(&ctx->extents, struct z_erofs_extent_item, list);
+	if (!inode->bh_data) {
+		struct erofs_buffer_head *bh;
+
+		bh = erofs_balloc(sbi->bmgr, DATA, 0, 0);
+		if (IS_ERR(bh))
+			return PTR_ERR(bh);
+
+		bh->op = &erofs_skip_write_bhops;
+		inode->bh_data = bh;
+		err = erofs_mapbh(NULL, bh->block);
+		if (err < 0) {
+			DBG_BUGON(1);
+			return err;
+		}
+		inode->lazy_tailblock = false;
+		inode->bh_data = bh;
+		ei->e.device_id = 0;
+		ei->e.pstart = erofs_btell(bh, false);
+		if (inode->datalayout == EROFS_INODE_COMPRESSED_COMPACT) {
+			inode->datalayout = EROFS_INODE_COMPRESSED_FULL;
+			inode->z_advise &= ~Z_EROFS_ADVISE_COMPACTED_2B;
+			inode->extent_isize = EROFS_FULL_INDEXES_SZ(inode);
+		}
+	}
+
 	if (inode->idata_type == EROFS_IDATA_TYPE_RAW ||
 	    (inode->z_advise & Z_EROFS_ADVISE_INTERLACED_PCLUSTER))
 		return 0;
 
-	ei = list_last_entry(&ctx->extents, struct z_erofs_extent_item, list);
 	DBG_BUGON(ei->e.raw);
 
 	rawsz = ei->e.length;
@@ -2454,4 +2479,122 @@ int z_erofs_compress_exit(struct erofs_sb_info *sbi)
 	}
 	free(sbi->zmgr);
 	return 0;
+}
+
+int z_erofs_rebuild_load_metadata(struct erofs_sb_info *dst_sbi,
+				  struct erofs_inode *inode)
+{
+	struct erofs_sb_info *sbi = inode->sbi;
+	struct erofs_map_blocks map = {
+		.buf = __EROFS_BUF_INITIALIZER,
+		.m_la = 0,
+	};
+	struct z_erofs_extent_item *ei, *n;
+	erofs_off_t pend = EROFS_NULL_ADDR;
+	bool consecutive = true;
+	LIST_HEAD(extents);
+	int err, device_id = -1;
+
+	if (sbi->blkszbits != dst_sbi->blkszbits) {
+		erofs_err("filesystem block size mismatch: %d for image %d, target %d",
+			  erofs_blksiz(sbi), sbi->dev, erofs_blksiz(dst_sbi));
+		return -EOPNOTSUPP;
+	}
+
+	while (map.m_la < inode->i_size) {
+		struct erofs_map_dev mdev;
+		bool raw;
+
+		err = erofs_map_blocks(inode, &map, EROFS_GET_BLOCKS_FIEMAP);
+		if (err)
+			goto err_out;
+
+		mdev = (struct erofs_map_dev) {
+			.m_deviceid = map.m_deviceid,
+			.m_pa = map.m_pa,
+		};
+		err = erofs_map_dev(sbi, &mdev);
+		if (err)
+			goto err_out;
+
+		raw = (map.m_algorithmformat >= Z_EROFS_COMPRESSION_MAX);
+
+		ei = malloc(sizeof(*ei));
+		if (!ei) {
+			err = -ENOMEM;
+			goto err_out;
+		}
+
+		if (map.m_flags & __EROFS_MAP_FRAGMENT) {
+			DBG_BUGON(!(inode->z_advise &
+					Z_EROFS_ADVISE_FRAGMENT_PCLUSTER));
+			err = -EOPNOTSUPP;
+			goto err_free_ei;
+//			inode->fragment_size = map.m_llen;
+//			DBG_BUGON(inode->fragmentoff != map.m_pa);
+		} else if (map.m_flags & EROFS_MAP_META) {
+			DBG_BUGON(inode->idata_size != map.m_plen);
+			inode->idata = malloc(inode->idata_size);
+			if (!inode->idata) {
+				err = -ENOMEM;
+				goto err_free_ei;
+			}
+			err = erofs_dev_read(sbi, 0, inode->idata, mdev.m_pa,
+					     inode->idata_size);
+			if (err)
+				goto err_free_ei;
+			ei->e = (struct z_erofs_inmem_extent) {
+				.length = map.m_llen,
+				.plen = erofs_blksiz(sbi),
+				.pstart = (pend != EROFS_NULL_ADDR ? pend : 0),
+				.device_id = inode->dev,	/* FIXME! */
+				.raw = raw,
+				.inlined = true,
+			};
+
+			inode->idata_type = (raw ? EROFS_IDATA_TYPE_RAW :
+				EROFS_IDATA_TYPE_COMPRESSED_DEFAULT);
+			DBG_BUGON(map.m_la + map.m_llen != inode->i_size);
+		} else {
+			ei->e = (struct z_erofs_inmem_extent) {
+				.length = map.m_llen,
+				.plen = map.m_plen,
+				.pstart = mdev.m_pa,
+				.device_id = inode->dev,	/* FIXME! */
+				.partial = map.m_flags & EROFS_MAP_PARTIAL_REF,
+				.raw = raw,
+				.inlined = false,
+			};
+			if (pend != EROFS_NULL_ADDR && (pend != ei->e.pstart ||
+						device_id != ei->e.device_id))
+				consecutive = false;
+			pend = ei->e.pstart + ei->e.plen;
+			device_id = ei->e.device_id;
+		}
+
+		if (!raw) {
+			ei->e.algofmt = map.m_algorithmformat;
+			if (!(dst_sbi->available_compr_algs & (1 << ei->e.algofmt))) {
+				err = -EOPNOTSUPP;
+				goto err_free_ei;
+			}
+		}
+		init_list_head(&ei->list);
+		list_add_tail(&ei->list, &extents);
+		map.m_la += map.m_llen;
+	}
+	inode->z_lclusterbits = sbi->blkszbits;
+	err = z_erofs_prepare_layout(inode, &extents, consecutive, false);
+	if (err)
+		goto err_out;
+	return 0;
+
+err_free_ei:
+	free(ei);
+err_out:
+	list_for_each_entry_safe(ei, n, &extents, list) {
+		list_del(&ei->list);
+		free(ei);
+	}
+	return err;
 }
