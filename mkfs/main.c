@@ -1262,8 +1262,9 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 		}
 
 		case 11:
+			errno = 0;
 			i = strtol(optarg, &endptr, 0);
-			if (*endptr != '\0') {
+			if (errno || *endptr != '\0' || i <= 0 || i > INT_MAX) {
 				erofs_err("invalid chunksize %s", optarg);
 				return -EINVAL;
 			}
