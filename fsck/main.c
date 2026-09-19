@@ -20,6 +20,8 @@
 #include "../lib/liberofs_compress.h"
 #include "../lib/liberofs_sha256.h"
 
+#define EROFS_MT_THRESHOLD (128 * 1024)
+
 struct erofsfsck_dirstack {
 	erofs_nid_t dirs[PATH_MAX];
 	int top;
@@ -550,6 +552,7 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd,
 	u64 pchunk_len = 0;
 	u64 raw_size = 0, buffer_size = 0;
 	char *raw = NULL, *buffer = NULL;
+	struct z_erofs_mt_read_ctx *ctx = NULL;
 
 	erofs_dbg("verify data chunk of nid(%llu): type(%d)",
 		  inode->nid | 0ULL, inode->datalayout);
@@ -562,6 +565,16 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd,
 		ret = erofs_map_blocks(inode, &map, EROFS_GET_BLOCKS_FIEMAP);
 		if (ret)
 			goto out;
+
+		if (!ctx && !digest && inode->i_size > EROFS_MT_THRESHOLD && compressed &&
+		    (map.m_algorithmformat == Z_EROFS_COMPRESSION_LZMA ||
+		     map.m_algorithmformat == Z_EROFS_COMPRESSION_DEFLATE)) {
+			ctx = z_erofs_mt_read_ctx_alloc(outfd, true);
+			if (!ctx) {
+				ret = -ENOMEM;
+				goto out;
+			}
+		}
 
 		if (!compressed && map.m_llen != map.m_plen) {
 			erofs_err("broken chunk length m_la %" PRIu64 " m_llen %" PRIu64 " m_plen %" PRIu64,
@@ -593,7 +606,7 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd,
 						(const u8 *)zeros, chunk);
 					remain -= chunk;
 				}
-			} else if (outfd >= 0) {
+			} else if (!ctx && outfd >= 0) {
 				ret = lseek(outfd, map.m_llen, SEEK_CUR);
 				if (ret < 0) {
 					ret = -errno;
@@ -616,19 +629,33 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd,
 			alloc_rawsize = map.m_plen;
 		}
 
-		if (alloc_rawsize > raw_size) {
-			char *newraw = realloc(raw, alloc_rawsize);
+		if (!ctx) {
+			if (alloc_rawsize > raw_size) {
+				char *newraw = realloc(raw, alloc_rawsize);
 
-			if (!newraw) {
-				ret = -ENOMEM;
-				goto out;
+				if (!newraw) {
+					ret = -ENOMEM;
+					goto out;
+				}
+				raw = newraw;
+				raw_size = alloc_rawsize;
 			}
-			raw = newraw;
-			raw_size = alloc_rawsize;
 		}
 
 		if (compressed) {
-			if (map.m_llen > buffer_size) {
+			char *c_raw = raw;
+			char *c_buf = buffer;
+
+			if (ctx) {
+				c_raw = malloc(alloc_rawsize);
+				c_buf = malloc(map.m_llen);
+				if (!c_raw || !c_buf) {
+					free(c_raw);
+					free(c_buf);
+					ret = -ENOMEM;
+					goto out;
+				}
+			} else if (map.m_llen > buffer_size) {
 				char *newbuffer;
 
 				buffer_size = map.m_llen;
@@ -638,37 +665,56 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd,
 					goto out;
 				}
 				buffer = newbuffer;
+				c_buf = buffer;
 			}
-			ret = z_erofs_read_one_data(inode, &map, raw, buffer,
-						    0, map.m_llen, false);
-			if (ret)
+
+			ret = z_erofs_read_one_data(inode, &map, c_raw, c_buf,
+						    0, map.m_llen, false,
+						    map.m_la, ctx);
+			if (ret < 0)
 				goto out;
 
-			if (digest)
-				erofs_sha256_process(digest,
-					(const u8 *)buffer, map.m_llen);
-			if (outfd >= 0 && write(outfd, buffer, map.m_llen) < 0)
-				goto fail_eio;
-		} else {
-			u64 p = 0;
-
-			do {
-				u64 count = min_t(u64, alloc_rawsize,
-						  map.m_llen);
-
-				ret = erofs_read_one_data(inode, &map, raw, p, count);
-				if (ret)
-					goto out;
-
+			if (!ctx) {
 				if (digest)
 					erofs_sha256_process(digest,
-						(const u8 *)raw, count);
-				if (outfd >= 0 && write(outfd, raw, count) < 0)
+						(const u8 *)c_buf, map.m_llen);
+				if (outfd >= 0 && write(outfd, c_buf, map.m_llen) < 0)
 					goto fail_eio;
-				map.m_llen -= count;
+			}
+		} else {
+			u64 p = 0;
+			erofs_off_t m_llen = map.m_llen;
+
+			do {
+				u64 count = min_t(u64, alloc_rawsize, m_llen);
+
+				ret = erofs_read_one_data(inode, &map, raw, p, count);
+				if (ret < 0)
+					goto out;
+
+				if (!ctx) {
+					if (digest)
+						erofs_sha256_process(digest,
+							(const u8 *)raw, count);
+					if (outfd >= 0 && write(outfd, raw, count) < 0)
+						goto fail_eio;
+				} else if (outfd >= 0) {
+					if (pwrite(outfd, raw, count, map.m_la + p) < 0)
+						goto fail_eio;
+				}
+				m_llen -= count;
 				p += count;
-			} while (map.m_llen);
+			} while (m_llen);
 		}
+	}
+
+	if (ctx) {
+		int wait_err;
+
+		z_erofs_mt_read_enqueue(ctx);
+		wait_err = z_erofs_mt_read_ctx_wait(ctx);
+		if (wait_err < 0 && ret == 0)
+			ret = wait_err;
 	}
 
 	if (fsckcfg.print_comp_ratio) {
@@ -687,6 +733,17 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd,
 #endif
 	}
 out:
+	if (ctx && outfd >= 0 && ret == 0) {
+		if (ftruncate(outfd, inode->i_size) < 0) {
+			erofs_err("failed to truncate file to %llu: %d",
+				  (unsigned long long)inode->i_size, errno);
+			if (ret == 0)
+				ret = -errno;
+		}
+	}
+
+	if (ctx)
+		z_erofs_mt_read_ctx_free(ctx);
 	if (raw)
 		free(raw);
 	if (buffer)
@@ -1344,7 +1401,9 @@ int main(int argc, char *argv[])
 {
 	int err;
 
-	erofs_init_configure();
+	err = liberofs_global_init();
+	if (err)
+		return 1;
 
 	fsckcfg.physical_blocks = 0;
 	fsckcfg.logical_blocks = 0;
@@ -1516,7 +1575,7 @@ exit_dev_close:
 	erofs_dev_close(&g_sbi);
 exit:
 	erofs_blob_closeall(&g_sbi);
-	erofs_exit_configure();
+	liberofs_global_exit();
 	return err ? 1 : 0;
 }
 

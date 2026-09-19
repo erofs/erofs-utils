@@ -9,6 +9,262 @@
 #include "erofs/trace.h"
 #include "erofs/decompress.h"
 #include "liberofs_fragments.h"
+#include "erofs/lock.h"
+#include "erofs/cond.h"
+
+#ifdef EROFS_MT_ENABLED
+#include "erofs/config.h"
+
+struct z_erofs_percpu_queue {
+	erofs_mutex_t lock;
+	erofs_cond_t cond;
+	struct z_erofs_decompress_task *head;
+	struct z_erofs_decompress_task *tail;
+	int pending_tasks;
+	bool shutdown;
+	pthread_t thread;
+} __attribute__((aligned(64)));
+
+static struct z_erofs_percpu_queue *worker_queues;
+static int num_workers;
+static pthread_once_t worker_pool_once = PTHREAD_ONCE_INIT;
+static int worker_pool_init_err;
+static int z_erofs_mt_workers_ensure_init(void);
+#endif
+
+struct z_erofs_mt_read_ctx {
+	erofs_mutex_t lock;
+	erofs_cond_t cond;
+	int pending_tasks;
+	int final_err;
+	int outfd;
+	bool free_out;
+	struct z_erofs_decompress_task *current_task;
+};
+
+struct z_erofs_mt_read_ctx *z_erofs_mt_read_ctx_alloc(int outfd, bool free_out)
+{
+	struct z_erofs_mt_read_ctx *ctx;
+
+#ifdef EROFS_MT_ENABLED
+	z_erofs_mt_workers_ensure_init();
+#endif
+
+	ctx = calloc(1, sizeof(*ctx));
+	if (!ctx)
+		return NULL;
+
+	erofs_mutex_init(&ctx->lock);
+	erofs_cond_init(&ctx->cond);
+	ctx->outfd = outfd;
+	ctx->free_out = free_out;
+	return ctx;
+}
+
+int z_erofs_mt_read_ctx_wait(struct z_erofs_mt_read_ctx *ctx)
+{
+	int err;
+
+	if (!ctx)
+		return 0;
+
+	erofs_mutex_lock(&ctx->lock);
+	while (ctx->pending_tasks > 0)
+		erofs_cond_wait(&ctx->cond, &ctx->lock);
+	err = ctx->final_err;
+	erofs_mutex_unlock(&ctx->lock);
+
+	return err;
+}
+
+void z_erofs_mt_read_ctx_free(struct z_erofs_mt_read_ctx *ctx)
+{
+	if (!ctx)
+		return;
+
+	erofs_mutex_destroy(&ctx->lock);
+	erofs_cond_destroy(&ctx->cond);
+	free(ctx);
+}
+
+struct z_erofs_decompress_item {
+	struct z_erofs_decompress_req req;
+	char *raw_buf;
+	char *out_buf;
+	erofs_off_t out_offset;
+	unsigned int out_length;
+};
+
+struct z_erofs_decompress_task {
+	struct z_erofs_decompress_task *next;
+	struct z_erofs_mt_read_ctx *ctx;
+	struct z_erofs_decompress_item items[Z_EROFS_PCLUSTER_MAX_BATCH_SIZE];
+	unsigned int nr_reqs;
+};
+
+static void z_erofs_process_task(struct z_erofs_decompress_task *task)
+{
+	struct z_erofs_mt_read_ctx *ctx = task->ctx;
+	int i, ret = 0, first_err = 0;
+
+	for (i = 0; i < task->nr_reqs; ++i) {
+		struct z_erofs_decompress_item *item = &task->items[i];
+
+		ret = z_erofs_decompress(&item->req);
+
+		if (ret >= 0 && ctx && ctx->outfd >= 0) {
+			if (pwrite(ctx->outfd, item->out_buf,
+				   item->out_length, item->out_offset) < 0)
+				ret = -errno;
+		}
+
+		if (ret < 0 && !first_err)
+			first_err = ret;
+
+		free(item->raw_buf);
+		if (ctx && ctx->free_out)
+			free(item->out_buf);
+	}
+
+	if (ctx) {
+		erofs_mutex_lock(&ctx->lock);
+		if (first_err < 0 && !ctx->final_err)
+			ctx->final_err = first_err;
+		ctx->pending_tasks--;
+		if (!ctx->pending_tasks)
+			erofs_cond_signal(&ctx->cond);
+		erofs_mutex_unlock(&ctx->lock);
+	}
+	free(task);
+}
+
+#ifdef EROFS_MT_ENABLED
+static void *z_erofs_worker_thread(void *arg)
+{
+	struct z_erofs_percpu_queue *q = arg;
+
+	while (1) {
+		erofs_mutex_lock(&q->lock);
+		while (!q->head && !q->shutdown)
+			erofs_cond_wait(&q->cond, &q->lock);
+
+		if (q->shutdown && !q->head) {
+			erofs_mutex_unlock(&q->lock);
+			break;
+		}
+
+		struct z_erofs_decompress_task *tasks = q->head;
+
+		q->head = q->tail = NULL;
+		q->pending_tasks = 0;
+		erofs_mutex_unlock(&q->lock);
+
+		while (tasks) {
+			struct z_erofs_decompress_task *task = tasks;
+
+			tasks = tasks->next;
+			z_erofs_process_task(task);
+		}
+	}
+	return NULL;
+}
+
+static void z_erofs_mt_workers_create_once(void)
+{
+	int i;
+
+	num_workers = erofs_get_available_processors();
+
+	if (num_workers < 1)
+		num_workers = 1;
+
+	worker_queues = calloc(num_workers, sizeof(*worker_queues));
+	if (!worker_queues) {
+		worker_pool_init_err = -ENOMEM;
+		num_workers = 0;
+		return;
+	}
+
+	for (i = 0; i < num_workers; ++i) {
+		erofs_mutex_init(&worker_queues[i].lock);
+		erofs_cond_init(&worker_queues[i].cond);
+		worker_queues[i].head = worker_queues[i].tail = NULL;
+		worker_queues[i].pending_tasks = 0;
+		worker_queues[i].shutdown = false;
+		pthread_create(&worker_queues[i].thread, NULL, z_erofs_worker_thread,
+			&worker_queues[i]);
+	}
+}
+
+static int z_erofs_mt_workers_ensure_init(void)
+{
+	pthread_once(&worker_pool_once, z_erofs_mt_workers_create_once);
+	return worker_pool_init_err;
+}
+
+int z_erofs_mt_workers_init(void)
+{
+	return 0;
+}
+
+void z_erofs_mt_workers_exit(void)
+{
+	int i;
+
+	if (!worker_queues)
+		return;
+	for (i = 0; i < num_workers; ++i) {
+		erofs_mutex_lock(&worker_queues[i].lock);
+		worker_queues[i].shutdown = true;
+		erofs_cond_signal(&worker_queues[i].cond);
+		erofs_mutex_unlock(&worker_queues[i].lock);
+
+		pthread_join(worker_queues[i].thread, NULL);
+		erofs_cond_destroy(&worker_queues[i].cond);
+		erofs_mutex_destroy(&worker_queues[i].lock);
+	}
+	free(worker_queues);
+	worker_queues = NULL;
+}
+#endif
+
+void z_erofs_mt_read_enqueue(struct z_erofs_mt_read_ctx *ctx)
+{
+#ifdef EROFS_MT_ENABLED
+	static int next_worker;
+#endif
+
+	if (!ctx || !ctx->current_task)
+		return;
+
+	struct z_erofs_decompress_task *task = ctx->current_task;
+
+	ctx->current_task = NULL;
+
+#ifdef EROFS_MT_ENABLED
+	if (num_workers > 0) {
+		int target = next_worker;
+
+		next_worker = (next_worker + 1) % num_workers;
+		struct z_erofs_percpu_queue *q = &worker_queues[target];
+
+		erofs_mutex_lock(&q->lock);
+		task->next = NULL;
+		if (!q->tail) {
+			q->head = q->tail = task;
+		} else {
+			q->tail->next = task;
+			q->tail = task;
+		}
+		q->pending_tasks++;
+		erofs_cond_signal(&q->cond);
+		erofs_mutex_unlock(&q->lock);
+		return;
+	}
+#endif
+	task->next = NULL;
+	z_erofs_process_task(task);
+}
 
 void *erofs_bread(struct erofs_buf *buf, erofs_off_t offset, bool need_kmap)
 {
@@ -277,20 +533,29 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 
 int z_erofs_read_one_data(struct erofs_inode *inode,
 			struct erofs_map_blocks *map, char *raw, char *buffer,
-			erofs_off_t skip, erofs_off_t length, bool trimmed)
+			erofs_off_t skip, erofs_off_t length, bool trimmed,
+			erofs_off_t out_offset, struct z_erofs_mt_read_ctx *ctx)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
 	struct erofs_map_dev mdev;
-	int ret = 0;
+	struct z_erofs_decompress_task *task;
+	struct z_erofs_decompress_item *item;
+	int ret = 0, idx, batch_limit;
 
 	if (map->m_flags & __EROFS_MAP_FRAGMENT) {
 		if (__erofs_unlikely(inode->nid == sbi->packed_nid)) {
 			erofs_err("fragment should not exist in the packed inode %llu",
 				  sbi->packed_nid | 0ULL);
-			return -EFSCORRUPTED;
+			ret = -EFSCORRUPTED;
+			goto err_out;
 		}
-		return erofs_packedfile_read(sbi, buffer, length - skip,
-				   inode->fragmentoff + skip);
+		ret = erofs_packedfile_read(sbi, buffer, length - skip,
+					inode->fragmentoff + skip);
+		if (ret >= 0 && ctx && ctx->outfd >= 0) {
+			if (pwrite(ctx->outfd, buffer, length - skip, out_offset) < 0)
+				ret = -errno;
+		}
+		goto err_out;
 	}
 
 	/* no device id here, thus it will always succeed */
@@ -300,31 +565,95 @@ int z_erofs_read_one_data(struct erofs_inode *inode,
 	ret = erofs_map_dev(sbi, &mdev);
 	if (ret) {
 		DBG_BUGON(1);
-		return ret;
+		goto err_out;
 	}
 
 	ret = erofs_dev_read(sbi, mdev.m_deviceid, raw, mdev.m_pa, map->m_plen);
 	if (ret < 0)
-		return ret;
+		goto err_out;
 
-	ret = z_erofs_decompress(&(struct z_erofs_decompress_req) {
-			.sbi = sbi,
-			.in = raw,
-			.out = buffer,
-			.decodedskip = skip,
-			.interlaced_offset =
-				map->m_algorithmformat == Z_EROFS_COMPRESSION_INTERLACED ?
-					erofs_blkoff(sbi, map->m_la) : 0,
-			.inputsize = map->m_plen,
-			.decodedlength = length,
-			.alg = map->m_algorithmformat,
-			.partial_decoding = trimmed ? true :
-				!(map->m_flags & EROFS_MAP_FULL_MAPPED) ||
-					(map->m_flags & EROFS_MAP_PARTIAL_REF),
-			 });
-	if (ret < 0)
+	if (!ctx) {
+		ret = z_erofs_decompress(&(struct z_erofs_decompress_req) {
+				.sbi = sbi,
+				.in = raw,
+				.out = buffer,
+				.decodedskip = skip,
+				.interlaced_offset =
+					map->m_algorithmformat == Z_EROFS_COMPRESSION_INTERLACED ?
+						erofs_blkoff(sbi, map->m_la) : 0,
+				.inputsize = map->m_plen,
+				.decodedlength = length,
+				.alg = map->m_algorithmformat,
+				.partial_decoding = trimmed ? true :
+					!(map->m_flags & EROFS_MAP_FULL_MAPPED) ||
+						(map->m_flags & EROFS_MAP_PARTIAL_REF),
+				});
 		return ret;
+	}
+
+	task = ctx->current_task;
+	if (!task) {
+		task = malloc(sizeof(*task));
+		if (!task) {
+			ret = -ENOMEM;
+			goto err_out;
+		}
+		task->nr_reqs = 0;
+		task->ctx = ctx;
+		ctx->current_task = task;
+
+		erofs_mutex_lock(&ctx->lock);
+		ctx->pending_tasks++;
+		erofs_mutex_unlock(&ctx->lock);
+	}
+
+	idx = task->nr_reqs++;
+	item = &task->items[idx];
+
+	item->req = (struct z_erofs_decompress_req) {
+		.sbi = sbi,
+		.in = raw,
+		.out = buffer,
+		.decodedskip = skip,
+		.interlaced_offset =
+			map->m_algorithmformat == Z_EROFS_COMPRESSION_INTERLACED ?
+				erofs_blkoff(sbi, map->m_la) : 0,
+		.inputsize = map->m_plen,
+		.decodedlength = length,
+		.alg = map->m_algorithmformat,
+		.partial_decoding = trimmed ? true :
+			!(map->m_flags & EROFS_MAP_FULL_MAPPED) ||
+				(map->m_flags & EROFS_MAP_PARTIAL_REF),
+	};
+	item->raw_buf = raw;
+	item->out_buf = buffer;
+	item->out_offset = out_offset;
+	item->out_length = length;
+
+	batch_limit = (map->m_algorithmformat == Z_EROFS_COMPRESSION_LZ4 ||
+						map->m_algorithmformat == Z_EROFS_COMPRESSION_ZSTD)
+					? Z_EROFS_PCLUSTER_MAX_BATCH_SIZE : 8;
+
+	if (task->nr_reqs >= batch_limit) {
+		/* Execute fast algorithms synchronously on the traversal thread */
+		if (map->m_algorithmformat == Z_EROFS_COMPRESSION_LZ4 ||
+			map->m_algorithmformat == Z_EROFS_COMPRESSION_ZSTD) {
+			ctx->current_task = NULL;
+			task->next = NULL;
+			z_erofs_process_task(task);
+		} else {
+			z_erofs_mt_read_enqueue(ctx);
+		}
+	}
 	return 0;
+
+err_out:
+	if (ctx) {
+		if (ctx->free_out)
+			free(buffer);
+		free(raw);
+	}
+	return ret;
 }
 
 static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
@@ -387,7 +716,7 @@ static int z_erofs_read_data(struct erofs_inode *inode, char *buffer,
 		}
 
 		ret = z_erofs_read_one_data(inode, &map, raw,
-				buffer + end - offset, skip, length, trimmed);
+				buffer + end - offset, skip, length, trimmed, 0, NULL);
 		if (ret < 0)
 			break;
 	}

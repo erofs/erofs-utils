@@ -27,6 +27,13 @@ int liberofs_global_init(void)
 #ifdef S3EROFS_ENABLED
 	xmlInitParser();
 #endif
+
+#ifdef EROFS_MT_ENABLED
+	err = z_erofs_mt_workers_init();
+	if (err)
+		goto out_unlock;
+#endif
+
 #ifdef HAVE_LIBCURL
 	if (!erofs_global_curl_initialized) {
 		if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
@@ -35,14 +42,17 @@ int liberofs_global_init(void)
 		}
 		erofs_global_curl_initialized = true;
 	}
-out_unlock:
 #endif
+out_unlock:
 	erofs_mutex_unlock(&erofs_global_mutex);
 	return err;
 }
 
 void liberofs_global_exit(void)
 {
+#ifdef EROFS_MT_ENABLED
+	z_erofs_mt_workers_exit();
+#endif
 	erofs_mutex_lock(&erofs_global_mutex);
 	z_erofs_mt_global_exit();
 #ifdef HAVE_LIBCURL
