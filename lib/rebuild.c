@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <sys/stat.h>
 #include <config.h>
 #if defined(HAVE_SYS_SYSMACROS_H)
@@ -82,8 +83,54 @@ struct erofs_dentry *erofs_d_lookup(struct erofs_inode *dir, const char *name)
 	return NULL;
 }
 
-struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
-		char *path, bool aufs, bool *whout, bool *opq, bool to_head)
+/* Bound symlink chains during path resolution, like the kernel's MAXSYMLINKS. */
+#define EROFS_REBUILD_SYMLINK_DEPTH	40
+
+static struct erofs_dentry *__erofs_rebuild_get_dentry(struct erofs_inode *root,
+		struct erofs_inode *pwd, char *path, bool aufs,
+		bool *whout, bool *opq, bool to_head, unsigned int depth);
+
+static struct erofs_inode *erofs_rebuild_follow_link(struct erofs_inode *root,
+		struct erofs_inode *pwd, struct erofs_inode *link,
+		unsigned int depth)
+{
+	char target[PATH_MAX + 1];
+	bool dumb_wh, dumb_opq;
+
+	for (;;) {
+		struct erofs_dentry *d;
+		struct erofs_inode *base;
+
+		if (depth++ >= EROFS_REBUILD_SYMLINK_DEPTH)
+			return ERR_PTR(-ELOOP);
+		if (!link->i_link)
+			return ERR_PTR(-ENOENT);
+		if (strlen(link->i_link) > PATH_MAX)
+			return ERR_PTR(-ENAMETOOLONG);
+		strcpy(target, link->i_link);
+
+		/* absolute targets are resolved from the tree root */
+		base = target[0] == '/' ? root : pwd;
+		d = __erofs_rebuild_get_dentry(root, base, target, false,
+					       &dumb_wh, &dumb_opq, false, depth);
+		if (IS_ERR(d))
+			return ERR_CAST(d);
+		/* target referred to the root or base directory itself ("/", ".") */
+		if (!d)
+			return base;
+		if (d->type == EROFS_FT_DIR)
+			return d->inode;
+		if (d->type != EROFS_FT_SYMLINK)
+			return ERR_PTR(-ENOTDIR);
+		/* the target is itself a symlink: keep following the chain */
+		pwd = d->inode->i_parent;
+		link = d->inode;
+	}
+}
+
+static struct erofs_dentry *__erofs_rebuild_get_dentry(struct erofs_inode *root,
+		struct erofs_inode *pwd, char *path, bool aufs,
+		bool *whout, bool *opq, bool to_head, unsigned int depth)
 {
 	struct erofs_dentry *d = NULL;
 	char *s = path;
@@ -121,6 +168,16 @@ struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
 			}
 
 			d = erofs_d_lookup(pwd, s);
+			/* follow a symlinked intermediate component like a real fs */
+			if (d && slash && d->type == EROFS_FT_SYMLINK) {
+				pwd = erofs_rebuild_follow_link(root, pwd,
+							d->inode, depth);
+				if (IS_ERR(pwd))
+					return ERR_CAST(pwd);
+				*slash = '/';
+				s = slash + 1;
+				continue;
+			}
 			if (d) {
 				if (d->type != EROFS_FT_DIR) {
 					if (slash)
@@ -150,6 +207,13 @@ struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
 		s = slash + 1;
 	}
 	return d;
+}
+
+struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
+		char *path, bool aufs, bool *whout, bool *opq, bool to_head)
+{
+	return __erofs_rebuild_get_dentry(pwd, pwd, path, aufs, whout, opq,
+					  to_head, 0);
 }
 
 static int erofs_rebuild_load_chunk_index(struct erofs_sb_info *dst_sb,
