@@ -2086,14 +2086,16 @@ static int erofs_mkfs_begin_nondirectory(const struct erofs_mkfs_btctx *btctx,
 
 		ret = erofs_set_inode_fingerprint(inode, ctx.fd, ctx.fpos);
 		if (ret < 0)
-			return ret;
+			goto err_close;
 
 		if (inode->datasource != EROFS_INODE_DATA_SOURCE_REBUILD_BLOB &&
 		    inode->sbi->available_compr_algs &&
 		    erofs_file_is_compressible(im, inode)) {
 			ctx.ictx = erofs_prepare_compressed_file(im, inode);
-			if (IS_ERR(ctx.ictx))
-				return PTR_ERR(ctx.ictx);
+			if (IS_ERR(ctx.ictx)) {
+				ret = PTR_ERR(ctx.ictx);
+				goto err_close;
+			}
 			erofs_bind_compressed_file_with_fd(ctx.ictx,
 							   ctx.fd, ctx.fpos);
 			ret = erofs_begin_compressed_file(ctx.ictx);
@@ -2103,6 +2105,12 @@ static int erofs_mkfs_begin_nondirectory(const struct erofs_mkfs_btctx *btctx,
 	}
 out:
 	return erofs_mkfs_go(btctx, EROFS_MKFS_JOB_NDIR, &ctx, sizeof(ctx));
+
+err_close:
+	/* the diskbuf fd is shared and released along with the diskbuf */
+	if (inode->datasource != EROFS_INODE_DATA_SOURCE_DISKBUF)
+		close(ctx.fd);
+	return ret;
 }
 
 static int erofs_mkfs_handle_inode(const struct erofs_mkfs_btctx *ctx,
