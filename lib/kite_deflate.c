@@ -13,8 +13,7 @@
 #include <ctype.h>
 #include <stdio.h>
 
-unsigned long erofs_memcmp2(const u8 *s1, const u8 *s2,
-			    unsigned long sz);
+uintptr_t erofs_memcmp2(const u8 *s1, const u8 *s2, uintptr_t sz);
 
 #ifdef TEST
 #define kite_dbg(x, ...)	fprintf(stderr, x "\n", ##__VA_ARGS__)

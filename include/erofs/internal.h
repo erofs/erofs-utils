@@ -348,7 +348,7 @@ static inline unsigned int erofs_inode_datalayout(unsigned int ifmt)
 
 static inline struct erofs_inode *erofs_parent_inode(struct erofs_inode *inode)
 {
-	return (struct erofs_inode *)((unsigned long)inode->i_parent & ~1UL);
+	return (struct erofs_inode *)((uintptr_t)inode->i_parent & ~(uintptr_t)1);
 }
 
 #define IS_ROOT(x)	((x) == erofs_parent_inode(x))

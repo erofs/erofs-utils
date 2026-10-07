@@ -9,18 +9,17 @@
 #include "liberofs_xxhash.h"
 #include "liberofs_sha256.h"
 
-unsigned long erofs_memcmp2(const u8 *s1, const u8 *s2,
-			    unsigned long sz)
+uintptr_t erofs_memcmp2(const u8 *s1, const u8 *s2, uintptr_t sz)
 {
-	const unsigned long *a1, *a2;
-	unsigned long n = sz;
+	const uintptr_t *a1, *a2;
+	uintptr_t n = sz;
 
-	if (sz < sizeof(long))
+	if (sz < sizeof(uintptr_t))
 		goto out_bytes;
 
-	if (((long)s1 & (sizeof(long) - 1)) ==
-			((long)s2 & (sizeof(long) - 1))) {
-		while ((long)s1 & (sizeof(long) - 1)) {
+	if (((uintptr_t)s1 & (sizeof(uintptr_t) - 1)) ==
+			((uintptr_t)s2 & (sizeof(uintptr_t) - 1))) {
+		while ((uintptr_t)s1 & (sizeof(uintptr_t) - 1)) {
 			if (*s1 != *s2)
 				break;
 			++s1;
@@ -28,25 +27,25 @@ unsigned long erofs_memcmp2(const u8 *s1, const u8 *s2,
 			--sz;
 		}
 
-		a1 = (const unsigned long *)s1;
-		a2 = (const unsigned long *)s2;
-		while (sz >= sizeof(long)) {
+		a1 = (const uintptr_t *)s1;
+		a2 = (const uintptr_t *)s2;
+		while (sz >= sizeof(uintptr_t)) {
 			if (*a1 != *a2)
 				break;
 			++a1;
 			++a2;
-			sz -= sizeof(long);
+			sz -= sizeof(uintptr_t);
 		}
 	} else {
-		a1 = (const unsigned long *)s1;
-		a2 = (const unsigned long *)s2;
+		a1 = (const uintptr_t *)s1;
+		a2 = (const uintptr_t *)s2;
 		do {
 			if (get_unaligned(a1) != get_unaligned(a2))
 				break;
 			++a1;
 			++a2;
-			sz -= sizeof(long);
-		} while (sz >= sizeof(long));
+			sz -= sizeof(uintptr_t);
+		} while (sz >= sizeof(uintptr_t));
 	}
 	s1 = (const u8 *)a1;
 	s2 = (const u8 *)a2;

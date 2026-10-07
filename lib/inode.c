@@ -2169,13 +2169,13 @@ static int erofs_mkfs_handle_inode(const struct erofs_mkfs_btctx *ctx,
 
 static bool erofs_inode_visited(struct erofs_inode *inode)
 {
-	return (unsigned long)inode->i_parent & 1UL;
+	return (uintptr_t)inode->i_parent & 1;
 }
 
 static void erofs_mark_parent_inode(struct erofs_inode *inode,
 				    struct erofs_inode *dir)
 {
-	inode->i_parent = (void *)((unsigned long)dir | 1);
+	inode->i_parent = (void *)((uintptr_t)dir | 1);
 }
 
 static int erofs_mkfs_dump_tree(const struct erofs_mkfs_btctx *ctx)
