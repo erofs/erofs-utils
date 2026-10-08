@@ -1165,6 +1165,7 @@ new_inode:
 			inode->u.i_rdev = erofs_new_encode_dev(st.st_rdev);
 	}
 
+	free(inode->i_srcpath);
 	inode->i_srcpath = strdup(eh.path);
 	if (!inode->i_srcpath) {
 		ret = -ENOMEM;
