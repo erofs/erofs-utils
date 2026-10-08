@@ -1291,7 +1291,8 @@ static int erofs_listxattr_foreach(struct erofs_xattr_iter *it)
 		return -ERANGE;
 
 	memcpy(it->buffer + it->buffer_ofs, prefix, prefix_len);
-	memcpy(it->buffer + it->buffer_ofs + prefix_len, infix, infix_len);
+	if (infix_len)
+		memcpy(it->buffer + it->buffer_ofs + prefix_len, infix, infix_len);
 	it->buffer_ofs += prefix_len + infix_len;
 
 	/* 2. handle xattr name */
