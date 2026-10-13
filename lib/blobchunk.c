@@ -325,6 +325,7 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 				  erofs_off_t startoff, int device_id)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
+	struct erofs_vfile vf = { .fd = fd };
 	unsigned int chunkbits = inode->u.chunkbits;
 	unsigned int count, unit;
 	struct erofs_chunkitem *chunk, *lastch;
@@ -332,7 +333,7 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 	erofs_off_t pos, len, chunksize, interval_start;
 	erofs_blk_t minextblks;
 	u8 *chunkdata;
-	int ret;
+	ssize_t ret;
 
 	/* if the file is fully sparsed, use one big chunk instead */
 	if (lseek(fd, startoff, SEEK_DATA) < 0 && errno == ENXIO) {
@@ -407,8 +408,10 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 		}
 
 		len = min_t(u64, inode->i_size - pos, chunksize);
-		ret = read(fd, chunkdata, len);
-		if (ret < len) {
+		ret = erofs_io_read(&vf, chunkdata, len);
+		if (ret < 0)
+			goto err;
+		if (ret != len) {
 			ret = -EIO;
 			goto err;
 		}
