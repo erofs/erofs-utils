@@ -169,6 +169,7 @@ int erofs_xattr_init(struct erofs_sb_info *sbi)
 	if (!xamgr)
 		return -ENOMEM;
 
+	xamgr->shared_xattrs = NULL;
 	for (i = 0; i < ARRAY_SIZE(xamgr->hash); ++i)
 		init_list_head(&xamgr->hash[i]);
 	sbi->xamgr = xamgr;
