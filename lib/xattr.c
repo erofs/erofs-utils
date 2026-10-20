@@ -922,7 +922,7 @@ int erofs_xattr_flush_name_prefixes(struct erofs_importer *im, bool plain)
 		return -EOVERFLOW;
 	start = offset;
 
-	sbi->xattr_prefix_start = (u32)offset >> 2;
+	sbi->xattr_prefix_start = (u32)(offset >> 2);
 	sbi->xattr_prefix_count = ea_prefix_count;
 
 	list_for_each_entry(tnode, &ea_name_prefixes, list) {
