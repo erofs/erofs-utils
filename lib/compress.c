@@ -1368,6 +1368,19 @@ int z_erofs_compress_segment(struct z_erofs_compress_sctx *ctx,
 				     Z_EROFS_COMPR_QUEUE_SZ - ctx->tail);
 		int ret;
 
+		if (__erofs_unlikely(!rx)) {
+			/*
+			 * A zero-sized read cannot make progress. Drop already
+			 * consumed data first.
+			 */
+			if (z_erofs_need_refill(ctx))
+				continue;
+			DBG_BUGON(1);
+			erofs_err("Internal queue error on %s",
+				  inode->i_srcpath);
+			return -EFAULT;
+		}
+
 		ret = (offset == -1 ?
 			erofs_io_read(vf, ctx->queue + ctx->tail, rx) :
 			erofs_io_pread(vf, ctx->queue + ctx->tail, rx,
