@@ -13,6 +13,7 @@ RUN apk add --no-cache \
     libtool \
     pkgconfig \
     git \
+    dos2unix \
     util-linux-dev util-linux-static \
     fuse3-dev fuse3-static \
     zlib-dev zlib-static \
@@ -30,7 +31,9 @@ RUN apk add --no-cache \
 WORKDIR /build
 COPY . .
 
-RUN ./autogen.sh && \
+# Normalize text inputs from Windows checkouts; dos2unix skips binary files.
+RUN find . -type f ! -path './.git/*' -exec dos2unix -q {} + && \
+    ./autogen.sh && \
     PKG_CONFIG="pkg-config --static" LDFLAGS="-static -no-pie" ./configure --enable-static --disable-shared \
         --prefix=$(pwd)/output \
         --enable-multithreading \
@@ -56,7 +59,7 @@ FROM --platform=${MINGW_BUILD_PLATFORM} alpine:3.24.1 AS windows-builder
 
 RUN apk add --no-cache \
     build-base autoconf automake libtool pkgconf git \
-    ca-certificates curl tar zstd mingw-w64-gcc
+    ca-certificates curl tar zstd dos2unix mingw-w64-gcc
 
 ENV MINGW_TARGET=x86_64-w64-mingw32 MINGW_PREFIX=/ucrt64
 ENV CC=${MINGW_TARGET}-gcc \
@@ -69,7 +72,8 @@ ENV CC=${MINGW_TARGET}-gcc \
 ARG MSYS2_MIRROR=https://repo.msys2.org/mingw/ucrt64
 WORKDIR /deps
 COPY scripts/msys2-ucrt64.sha256 .
-RUN while read -r checksum package; do \
+RUN dos2unix -q msys2-ucrt64.sha256 && \
+    while read -r checksum package; do \
         curl -fLsS -o "$package" "${MSYS2_MIRROR}/$package" && \
         echo "$checksum  $package" | sha256sum -c - && \
         tar --zstd -xf "$package" -C / ucrt64 || exit 1; \
@@ -81,7 +85,9 @@ ENV PKG_CONFIG_LIBDIR=${MINGW_PREFIX}/lib/pkgconfig PKG_CONFIG_PATH=""
 
 WORKDIR /build
 COPY . .
-RUN ./autogen.sh && mkdir build-windows && cd build-windows && \
+# Normalize text inputs from Windows checkouts; dos2unix skips binary files.
+RUN find . -type f ! -path './.git/*' -exec dos2unix -q {} + && \
+    ./autogen.sh && mkdir build-windows && cd build-windows && \
     PKG_CONFIG="pkg-config --static" \
     CPPFLAGS="-I${MINGW_PREFIX}/include -I${MINGW_PREFIX}/include/tre" \
     LDFLAGS="-static -L${MINGW_PREFIX}/lib" \
