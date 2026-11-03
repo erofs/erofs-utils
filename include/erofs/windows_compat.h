@@ -82,6 +82,7 @@ int erofs_os_lstat(const char *path, erofs_os_stat_t *st);
 int erofs_os_fstat(int fd, erofs_os_stat_t *st);
 int erofs_os_open(const char *path, int flags, ...);
 int erofs_os_link(const char *oldpath, const char *newpath);
+off_t erofs_os_lseek(int fd, off_t offset, int whence);
 ssize_t erofs_os_pread(int fd, void *buf, size_t len, off_t offset);
 ssize_t erofs_os_pwrite(int fd, const void *buf, size_t len, off_t offset);
 char *erofs_os_realpath(const char *path, char *resolved);

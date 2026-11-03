@@ -567,7 +567,7 @@ off_t erofs_io_lseek(struct erofs_vfile *vf, u64 offset, int whence)
 	if (vf->ops)
 		return vf->ops->lseek(vf, offset, whence);
 
-	ret = lseek(vf->fd, offset, whence);
+	ret = erofs_os_lseek(vf->fd, offset, whence);
 	return ret < 0 ? -errno : ret;
 }
 
@@ -643,7 +643,7 @@ int erofs_io_xcopy(struct erofs_vfile *vout, off_t pos,
 #endif
 #if defined(HAVE_SYS_SENDFILE_H) && defined(HAVE_SENDFILE)
 		if (len && !noseek) {
-			ret = lseek(vout->fd, pos, SEEK_SET);
+			ret = erofs_os_lseek(vout->fd, pos, SEEK_SET);
 			if (ret == pos) {
 				ret = sendfile(vout->fd, vin->fd, NULL, len);
 				if (ret > 0) {

@@ -123,13 +123,13 @@ int erofs_iostream_open(struct erofs_iostream *ios, int fd, int decoder)
 			return PTR_ERR(ios->gb);
 	} else {
 		ios->vf.fd = fd;
-		fsz = lseek(fd, 0, SEEK_END);
+		fsz = erofs_os_lseek(fd, 0, SEEK_END);
 		if (fsz <= 0) {
 			ios->feof = !fsz;
 			ios->sz = 0;
 		} else {
 			ios->sz = fsz;
-			if (lseek(fd, 0, SEEK_SET))
+			if (erofs_os_lseek(fd, 0, SEEK_SET))
 				return -EIO;
 #ifdef HAVE_POSIX_FADVISE
 			if (posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL))

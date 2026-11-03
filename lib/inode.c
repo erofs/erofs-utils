@@ -1525,7 +1525,7 @@ static int erofs_mkfs_job_write_file(const struct erofs_mkfs_btctx *btctx,
 	int ret;
 
 	if (inode->datasource == EROFS_INODE_DATA_SOURCE_DISKBUF &&
-	    lseek(ctx->fd, ctx->fpos, SEEK_SET) < 0) {
+	    erofs_os_lseek(ctx->fd, ctx->fpos, SEEK_SET) < 0) {
 		ret = -errno;
 		goto out;
 	}
@@ -1534,7 +1534,7 @@ static int erofs_mkfs_job_write_file(const struct erofs_mkfs_btctx *btctx,
 		ret = erofs_write_compressed_file(ctx->ictx);
 		if (ret != EROFS_RETVAL_FALLBACK)
 			goto out;
-		if (lseek(ctx->fd, ctx->fpos, SEEK_SET) < 0) {
+		if (erofs_os_lseek(ctx->fd, ctx->fpos, SEEK_SET) < 0) {
 			ret = -errno;
 			goto out;
 		}
@@ -2393,7 +2393,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_importer *im,
 	void *ictx;
 	int ret;
 
-	ret = lseek(fd, 0, SEEK_SET);
+	ret = erofs_os_lseek(fd, 0, SEEK_SET);
 	if (ret < 0)
 		return ERR_PTR(-errno);
 
@@ -2432,7 +2432,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_importer *im,
 		if (ret != EROFS_RETVAL_FALLBACK)
 			 return ERR_PTR(ret);
 
-		ret = lseek(fd, 0, SEEK_SET);
+		ret = erofs_os_lseek(fd, 0, SEEK_SET);
 		if (ret < 0)
 			return ERR_PTR(-errno);
 	}

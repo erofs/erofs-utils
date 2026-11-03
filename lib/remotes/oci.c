@@ -1271,7 +1271,7 @@ static int ocierofs_extract_layer(struct ocierofs_ctx *ctx,
 	if (ret)
 		goto out;
 
-	if (lseek(stream.blobfd, 0, SEEK_SET) < 0) {
+	if (erofs_os_lseek(stream.blobfd, 0, SEEK_SET) < 0) {
 		erofs_err("failed to seek to beginning of temp file: %s",
 			  strerror(errno));
 		ret = -errno;

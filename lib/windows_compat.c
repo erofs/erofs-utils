@@ -186,6 +186,20 @@ int erofs_os_link(const char *oldpath, const char *newpath)
 	return -1;
 }
 
+off_t erofs_os_lseek(int fd, off_t offset, int whence)
+{
+	HANDLE h = (HANDLE)_get_osfhandle(fd);
+
+	if (h == INVALID_HANDLE_VALUE)
+		return -1;
+	/* The CRT can report a successful seek on a pipe without moving it. */
+	if (GetFileType(h) == FILE_TYPE_PIPE) {
+		errno = ESPIPE;
+		return -1;
+	}
+	return _lseeki64(fd, offset, whence);
+}
+
 static ssize_t erofs_win_pio(int fd, void *buf, size_t len, off_t offset,
 			    int writing)
 {

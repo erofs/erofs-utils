@@ -571,7 +571,7 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd,
 				}
 			}
 			if (outfd >= 0) {
-				if (lseek(outfd, map.m_llen, SEEK_CUR) < 0) {
+				if (erofs_os_lseek(outfd, map.m_llen, SEEK_CUR) < 0) {
 					ret = -errno;
 					goto out;
 				}

@@ -266,7 +266,7 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode,
 		off_t pos = fpos;
 
 		memblock = NULL;
-		rc = lseek(epi->fd, offset, SEEK_SET);
+		rc = erofs_os_lseek(epi->fd, offset, SEEK_SET);
 		if (rc < 0) {
 			rc = -errno;
 			goto out;

@@ -899,7 +899,7 @@ int erofs_xattr_flush_name_prefixes(struct erofs_importer *im, bool plain)
 			erofs_sb_set_fragments(sbi);
 			_vf = (struct erofs_vfile){ .fd = erofs_packedfile(sbi) };
 			vf = &_vf;
-			offset = lseek(vf->fd, 0, SEEK_CUR);
+			offset = erofs_os_lseek(vf->fd, 0, SEEK_CUR);
 			if (offset < 0)
 				return -errno;
 			bmgr = NULL;
@@ -960,7 +960,7 @@ int erofs_xattr_flush_name_prefixes(struct erofs_importer *im, bool plain)
 		erofs_bdrop(bh, false);
 	} else {
 		DBG_BUGON(bmgr);
-		if (lseek(vf->fd, offset, SEEK_SET) < 0)
+		if (erofs_os_lseek(vf->fd, offset, SEEK_SET) < 0)
 			return -errno;
 	}
 	erofs_sb_set_xattr_prefixes(sbi);

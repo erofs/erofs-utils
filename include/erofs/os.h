@@ -33,6 +33,7 @@ typedef struct stat erofs_os_stat_t;
 #define erofs_os_fstat		fstat
 #define erofs_os_open		open
 #define erofs_os_link		link
+#define erofs_os_lseek		lseek
 #define erofs_os_pread		pread
 #define erofs_os_pwrite		pwrite
 #define erofs_os_realpath	realpath

@@ -336,7 +336,7 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 	ssize_t ret;
 
 	/* if the file is fully sparsed, use one big chunk instead */
-	if (lseek(fd, startoff, SEEK_DATA) < 0 && errno == ENXIO) {
+	if (erofs_os_lseek(fd, startoff, SEEK_DATA) < 0 && errno == ENXIO) {
 		chunkbits = ilog2(inode->i_size - 1) + 1;
 		if (chunkbits < sbi->blkszbits)
 			chunkbits = sbi->blkszbits;
@@ -369,14 +369,14 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode, int fd,
 	interval_start = 0;
 
 	for (pos = 0; pos < inode->i_size; pos += len) {
-		off_t offset = lseek(fd, pos + startoff, SEEK_DATA);
+		off_t offset = erofs_os_lseek(fd, pos + startoff, SEEK_DATA);
 
 		if (offset >= 0 && offset < startoff + inode->i_size) {
 			offset -= startoff;
 
 			if (offset != (offset & ~(chunksize - 1))) {
 				offset &= ~(chunksize - 1);
-				if (lseek(fd, offset + startoff, SEEK_SET) !=
+				if (erofs_os_lseek(fd, offset + startoff, SEEK_SET) !=
 					  startoff + offset) {
 					ret = -EIO;
 					goto err;
