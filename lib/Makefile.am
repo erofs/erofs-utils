@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0+ OR MIT
 
 noinst_LTLIBRARIES = liberofs.la
+noinst_PROGRAMS =
 noinst_HEADERS = $(top_srcdir)/include/erofs_fs.h \
       $(top_srcdir)/include/erofs/block_list.h \
       $(top_srcdir)/include/erofs/config.h \
@@ -98,15 +99,15 @@ liberofs_la_CFLAGS += ${json_c_CFLAGS}
 liberofs_la_SOURCES += gzran.c
 
 if ENABLE_S3
-noinst_PROGRAMS = s3erofs_test
+noinst_PROGRAMS += s3erofs_test
 s3erofs_test_SOURCES = remotes/s3.c
-s3erofs_test_CFLAGS = -Wall -I$(top_srcdir)/include ${libxml2_CFLAGS} ${openssl_CFLAGS} -DTEST
+s3erofs_test_CFLAGS = -Wall -I$(top_srcdir)/include ${libcurl_CFLAGS} ${libxml2_CFLAGS} ${openssl_CFLAGS} -DTEST
 s3erofs_test_LDADD = liberofs.la $(LIBEROFS_LIBS)
 endif
 
 if ENABLE_OCI
-noinst_PROGRAMS = ocierofs_test
+noinst_PROGRAMS += ocierofs_test
 ocierofs_test_SOURCES = remotes/oci.c
-ocierofs_test_CFLAGS = -Wall -I$(top_srcdir)/include ${json_c_CFLAGS} -DTEST
+ocierofs_test_CFLAGS = -Wall -I$(top_srcdir)/include ${libcurl_CFLAGS} ${json_c_CFLAGS} -DTEST
 ocierofs_test_LDADD = liberofs.la $(LIBEROFS_LIBS)
 endif

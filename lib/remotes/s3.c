@@ -5,6 +5,7 @@
  * Created by Yifan Zhao <zhaoyifan28@huawei.com>
  */
 #define _GNU_SOURCE
+#include "erofs/internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -12,7 +13,6 @@
 #include <curl/curl.h>
 #include <libxml/parser.h>
 #include <openssl/hmac.h>
-#include "erofs/internal.h"
 #include "erofs/print.h"
 #include "erofs/inode.h"
 #include "../liberofs_chunk.h"
@@ -689,6 +689,25 @@ struct s3erofs_object_iterator {
 	bool is_truncated;
 };
 
+static char *s3erofs_parse_timestamp(const char *str, struct tm *tm)
+{
+	int len = 0;
+
+	memset(tm, 0, sizeof(*tm));
+	if (sscanf(str, "%4d-%2d-%2dT%2d:%2d:%2d%n",
+		   &tm->tm_year, &tm->tm_mon, &tm->tm_mday,
+		   &tm->tm_hour, &tm->tm_min, &tm->tm_sec, &len) != 6 ||
+	    tm->tm_year < 0 || tm->tm_mon < 1 || tm->tm_mon > 12 ||
+	    tm->tm_mday < 1 || tm->tm_mday > 31 ||
+	    tm->tm_hour < 0 || tm->tm_hour > 23 ||
+	    tm->tm_min < 0 || tm->tm_min > 59 ||
+	    tm->tm_sec < 0 || tm->tm_sec > 60)
+		return NULL;
+	tm->tm_year -= 1900;
+	--tm->tm_mon;
+	return (char *)str + len;
+}
+
 static int s3erofs_parse_list_objects_one(xmlNodePtr node,
 					  struct s3erofs_object_info *info)
 {
@@ -705,7 +724,7 @@ static int s3erofs_parse_list_objects_one(xmlNodePtr node,
 				struct tm tm;
 				char *end;
 
-				end = strptime((char *)str, "%Y-%m-%dT%H:%M:%S", &tm);
+				end = s3erofs_parse_timestamp((char *)str, &tm);
 				if (!end || (*end != '.' && *end != 'Z' && *end != '\0')) {
 					xmlFree(str);
 					return -EIO;
@@ -717,10 +736,7 @@ static int s3erofs_parse_list_objects_one(xmlNodePtr node,
 						return -EIO;
 					}
 				}
-				/*
-				 * Not set by strptime(); tells mktime() to determine
-				 * whether daylight saving time is in effect
-				 */
+				/* Let mktime() determine whether DST is in effect. */
 				tm.tm_isdst = -1;
 				info->mtime = mktime(&tm);
 			}

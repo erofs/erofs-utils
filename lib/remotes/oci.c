@@ -360,8 +360,11 @@ static int ocierofs_extract_www_auth_info(const char *resp_data,
 	if (!resp_data)
 		return -EINVAL;
 
-	www_auth = strcasestr(resp_data, "www-authenticate:");
-	if (!www_auth)
+	for (www_auth = (char *)resp_data; *www_auth; ++www_auth)
+		if (curl_strnequal(www_auth, "www-authenticate:",
+				  sizeof("www-authenticate:") - 1))
+			break;
+	if (!*www_auth)
 		return -ENOENT;
 
 	line_end = strchr(www_auth, '\n');
