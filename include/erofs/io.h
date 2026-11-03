@@ -68,7 +68,7 @@ struct erofs_vfile {
 	};
 };
 
-ssize_t __erofs_io_write(int fd, const void *buf, size_t len);
+ssize_t __erofs_io_pwrite(int fd, const void *buf, size_t len, u64 pos);
 int __erofs_0write(int fd, size_t len);
 
 int erofs_io_fstat(struct erofs_vfile *vf, struct stat *buf);

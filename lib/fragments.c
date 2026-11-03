@@ -49,6 +49,7 @@ struct erofs_packed_inode {
 	unsigned long *uptodate;
 	erofs_mutex_t mutex;
 	u64 uptodate_bits;
+	erofs_off_t pos;
 };
 
 const char *erofs_frags_packedname = "packed_file";
@@ -245,9 +246,7 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode,
 	if (__erofs_unlikely(!inode->i_size))
 		return 0;
 
-	offset = lseek(epi->fd, 0, SEEK_CUR);
-	if (offset < 0)
-		return -errno;
+	offset = epi->pos;
 
 	if (vf->ops)
 		memblock = NULL;
@@ -260,19 +259,23 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode,
 		bool noseek = vf->ops && !vf->ops->pread;
 		off_t pos = fpos;
 
+		memblock = NULL;
+		rc = lseek(epi->fd, offset, SEEK_SET);
+		if (rc < 0) {
+			rc = -errno;
+			goto out;
+		}
 		do {
 			sz = min_t(u64, remaining, UINT_MAX);
 			rc = erofs_io_sendfile(&vout, vf,
 					       noseek ? NULL : &pos, sz);
-			if (rc <= 0)
-				break;
+			if (rc <= 0) {
+				if (!rc)
+					rc = -EIO;
+				goto out;
+			}
 			remaining -= rc;
 		} while (remaining);
-
-		if (remaining && rc >= 0) {
-			rc = -EIO;
-			goto out;
-		}
 
 		sz = min_t(u64, inode->i_size, EROFS_FRAGMENT_INMEM_SZ_MAX);
 		memblock = malloc(sz);
@@ -291,7 +294,7 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode,
 			goto out;
 		}
 	} else {
-		rc = __erofs_io_write(epi->fd, memblock, inode->i_size);
+		rc = __erofs_io_pwrite(epi->fd, memblock, inode->i_size, offset);
 		if (rc != inode->i_size) {
 			if (rc >= 0)
 				rc = -EIO;
@@ -299,6 +302,7 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode,
 		}
 	}
 
+	epi->pos = offset + inode->i_size;
 	rc = erofs_fragment_pack(inode, memblock, offset, inode->i_size,
 				 tofh, onheap);
 out:
@@ -332,17 +336,16 @@ int erofs_fragment_commit(struct erofs_inode *inode, u32 tofh)
 		return 0;
 	}
 
-	offset = lseek(epi->fd, 0, SEEK_CUR);
-	if (offset < 0)
-		return -errno;
+	offset = epi->pos;
 
-	ret = write(epi->fd, fi->data, fi->length);
+	ret = __erofs_io_pwrite(epi->fd, fi->data, fi->length, offset);
 	if (ret != fi->length) {
 		if (ret < 0)
 			return -errno;
 		return -EIO;
 	}
 	offset += fi->length;
+	epi->pos = offset;
 
 	if (!list_empty(&fi->list)) {
 		struct erofs_fragment_bucket *bk = &epi->bks[FRAGMENT_HASH(tofh)];
@@ -380,7 +383,7 @@ int erofs_flush_packed_inode(struct erofs_importer *im)
 	if (!epi || !erofs_sb_has_fragments(sbi))
 		return 0;
 
-	if (lseek(epi->fd, 0, SEEK_CUR) <= 0)
+	if (!epi->pos)
 		return 0;
 
 	erofs_update_progressinfo("Processing packed data ...");
@@ -460,7 +463,6 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 			.sbi = sbi,
 			.nid = sbi->packed_nid,
 		};
-		s64 offset;
 
 		err = erofs_read_inode_from_disk(&ei);
 		if (err) {
@@ -469,11 +471,7 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 			goto err_out;
 		}
 
-		offset = lseek(epi->fd, ei.i_size, SEEK_SET);
-		if (offset < 0) {
-			err = -errno;
-			goto err_out;
-		}
+		epi->pos = ei.i_size;
 		epi->uptodate_bits = round_up(BLK_ROUND_UP(sbi, ei.i_size),
 					      sizeof(epi->uptodate) * 8);
 		epi->uptodate = calloc(1, epi->uptodate_bits >> 3);
@@ -548,7 +546,7 @@ static void *erofs_packedfile_preload(struct erofs_inode *pi,
 	if (err)
 		goto err_out;
 
-	err = pwrite(epi->fd, buffer, map->m_llen, map->m_la);
+	err = __erofs_io_pwrite(epi->fd, buffer, map->m_llen, map->m_la);
 	if (err < 0) {
 		err = -errno;
 		if (err == -ENOSPC) {

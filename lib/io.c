@@ -26,7 +26,7 @@
 #define EROFS_MODNAME	"erofs_io"
 #include "erofs/print.h"
 
-ssize_t __erofs_io_write(int fd, const void *buf, size_t len)
+static ssize_t __erofs_io_write(int fd, const void *buf, size_t len)
 {
 	ssize_t ret, written = 0;
 
@@ -61,24 +61,12 @@ int erofs_io_fstat(struct erofs_vfile *vf, struct stat *buf)
 	return fstat(vf->fd, buf);
 }
 
-ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf,
-			u64 pos, size_t len)
+ssize_t __erofs_io_pwrite(int fd, const void *buf, size_t len, u64 pos)
 {
 	ssize_t ret, written = 0;
 
-	if (__erofs_unlikely(cfg.c_dry_run))
-		return 0;
-
-	if (vf->ops)
-		return vf->ops->pwrite(vf, buf, pos, len);
-
-	pos += vf->offset;
 	do {
-#ifdef HAVE_PWRITE64
-		ret = pwrite64(vf->fd, buf, len, (off64_t)pos);
-#else
-		ret = pwrite(vf->fd, buf, len, (off_t)pos);
-#endif
+		ret = pwrite(fd, buf, len - written, (off_t)pos);
 		if (ret <= 0) {
 			if (!ret)
 				break;
@@ -94,6 +82,17 @@ ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf,
 	} while (written < len);
 
 	return written;
+}
+
+ssize_t erofs_io_pwrite(struct erofs_vfile *vf, const void *buf,
+			u64 pos, size_t len)
+{
+	if (__erofs_unlikely(cfg.c_dry_run))
+		return 0;
+
+	if (vf->ops)
+		return vf->ops->pwrite(vf, buf, pos, len);
+	return __erofs_io_pwrite(vf->fd, buf, len, pos + vf->offset);
 }
 
 ssize_t erofs_io_pwritev(struct erofs_vfile *vf, const struct iovec *iov,
