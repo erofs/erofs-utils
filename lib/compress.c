@@ -65,6 +65,8 @@ struct z_erofs_compress_ictx {		/* inode context */
 #endif
 };
 
+static struct z_erofs_compress_ictx g_ictx;
+
 struct z_erofs_compress_sctx {		/* segment context */
 	union {
 		struct list_head extents;
@@ -1345,16 +1347,18 @@ int z_erofs_compress_segment(struct z_erofs_compress_sctx *ctx,
 	struct erofs_vfile *vf = ictx->vf;
 	int ret;
 
-	DBG_BUGON(offset != -1 && frag && inode->fragment_size);
-	if (offset != -1 && frag && !inode->fragment_size &&
-	    params->fragdedupe != EROFS_FRAGDEDUPE_OFF) {
-		ret = erofs_fragment_findmatch(inode, vf, ictx->fpos,
-					       ictx->tofh);
-		if (ret < 0)
-			return ret;
-		if (inode->fragment_size > ctx->remaining)
-			inode->fragment_size = ctx->remaining;
-		ctx->remaining -= inode->fragment_size;
+	if (ictx != &g_ictx && offset != -1 && frag) {
+		DBG_BUGON(inode->fragment_size);
+		if (!inode->fragment_size &&
+		    params->fragdedupe != EROFS_FRAGDEDUPE_OFF) {
+			ret = erofs_fragment_findmatch(inode, vf, ictx->fpos,
+						       ictx->tofh);
+			if (ret < 0)
+				return ret;
+			if (inode->fragment_size > ctx->remaining)
+				inode->fragment_size = ctx->remaining;
+			ctx->remaining -= inode->fragment_size;
+		}
 	}
 
 	ctx->pstart = pstart;
@@ -1578,8 +1582,6 @@ out:
 	z_erofs_free_metadata(inode);
 	return err < 0 ? ERR_PTR(err) : metabuf;
 }
-
-static struct z_erofs_compress_ictx g_ictx;
 
 #ifdef EROFS_MT_ENABLED
 void *z_erofs_mt_wq_tls_alloc(struct erofs_workqueue *wq, void *ptr)
@@ -2169,7 +2171,7 @@ int erofs_write_compressed_file(struct z_erofs_compress_ictx *ictx)
 	};
 	init_list_head(&sctx.extents);
 
-	ret = z_erofs_compress_segment(&sctx, -1, pstart);
+	ret = z_erofs_compress_segment(&sctx, 0, pstart);
 	if (ret)
 		goto err_free_idata;
 
