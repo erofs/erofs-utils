@@ -885,6 +885,7 @@ int erofs_xattr_flush_name_prefixes(struct erofs_importer *im, bool plain)
 	struct erofs_buffer_head *bh = NULL;
 	struct erofs_vfile _vf;
 	struct ea_type_node *tnode;
+	erofs_off_t *ppos = NULL;
 	s64 start, offset = 0;
 	int err;
 
@@ -897,11 +898,9 @@ int erofs_xattr_flush_name_prefixes(struct erofs_importer *im, bool plain)
 			vf = bmgr->vf;
 		} else if (may_fragments) {
 			erofs_sb_set_fragments(sbi);
-			_vf = (struct erofs_vfile){ .fd = erofs_packedfile(sbi) };
+			_vf = (struct erofs_vfile){ .fd = erofs_packedfile(sbi, &ppos) };
 			vf = &_vf;
-			offset = erofs_os_lseek(vf->fd, 0, SEEK_CUR);
-			if (offset < 0)
-				return -errno;
+			offset = *ppos;
 			bmgr = NULL;
 		} else {
 			plain = true;
@@ -960,8 +959,8 @@ int erofs_xattr_flush_name_prefixes(struct erofs_importer *im, bool plain)
 		erofs_bdrop(bh, false);
 	} else {
 		DBG_BUGON(bmgr);
-		if (erofs_os_lseek(vf->fd, offset, SEEK_SET) < 0)
-			return -errno;
+		if (ppos)
+			*ppos = offset;
 	}
 	erofs_sb_set_xattr_prefixes(sbi);
 	return 0;

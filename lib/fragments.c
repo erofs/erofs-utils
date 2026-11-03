@@ -403,8 +403,10 @@ int erofs_flush_packed_inode(struct erofs_importer *im)
 	return 0;
 }
 
-int erofs_packedfile(struct erofs_sb_info *sbi)
+int erofs_packedfile(struct erofs_sb_info *sbi, erofs_off_t **ppos)
 {
+	if (ppos)
+		*ppos = &sbi->packedinode->pos;
 	return sbi->packedinode->fd;
 }
 
