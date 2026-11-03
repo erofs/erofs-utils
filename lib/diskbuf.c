@@ -66,7 +66,8 @@ void erofs_diskbuf_close(struct erofs_diskbuf *db)
 	db->sp = NULL;
 }
 
-int erofs_tmpfile(void)
+#if !defined(_WIN32) || defined(__CYGWIN__)
+int erofs_os_tmpfile(void)
 {
 #define	TRAILER		"tmp.XXXXXXXXXX"
 	char buf[PATH_MAX];
@@ -86,6 +87,7 @@ int erofs_tmpfile(void)
 	(void)fchmod(fd, 0666 & ~u);
 	return fd;
 }
+#endif
 
 int erofs_diskbuf_init(unsigned int nstrms)
 {
@@ -98,9 +100,14 @@ int erofs_diskbuf_init(unsigned int nstrms)
 	dbufstrm = strm;
 
 	for (; strm < dbufstrm + nstrms; ++strm) {
-		struct stat st;
+		erofs_os_stat_t st;
 
-		/* try to use the devfd for regfiles on stream 0 */
+		/*
+		 * Try to use the devfd for regfiles on stream 0. Skip Windows,
+		 * where extending a non-sparse file can allocate the entire
+		 * 2 TiB scratch range.
+		 */
+#ifndef _WIN32
 		if (strm == dbufstrm && !g_sbi.bdev.ops) {
 			strm->devpos = 1ULL << 40;
 			if (!ftruncate(g_sbi.bdev.fd, strm->devpos << 1)) {
@@ -108,16 +115,19 @@ int erofs_diskbuf_init(unsigned int nstrms)
 				goto setupone;
 			}
 		}
+#endif
 		strm->devpos = 0;
-		strm->fd = erofs_tmpfile();
+		strm->fd = erofs_os_tmpfile();
 		if (strm->fd < 0)
 			return -ENOSPC;
+#ifndef _WIN32
 setupone:
+#endif
 		strm->tailoffset = 0;
 		erofs_atomic_set(&strm->count, 1);
-		if (fstat(strm->fd, &st))
+		if (erofs_os_fstat(strm->fd, &st))
 			return -errno;
-		strm->alignsize = max_t(u32, st.st_blksize, getpagesize());
+		strm->alignsize = max_t(u32, st.st_blksize, erofs_os_getpagesize());
 	}
 	return 0;
 }

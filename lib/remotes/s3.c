@@ -56,7 +56,7 @@ static const char *s3erofs_parse_host(const char *endpoint, const char **schema)
 	} else {
 		host = split + sizeof("://") - 1;
 		if (schema) {
-			*schema = strndup(endpoint, host - endpoint);
+			*schema = erofs_os_strndup(endpoint, host - endpoint);
 			if (!*schema)
 				return ERR_PTR(-ENOMEM);
 		}
@@ -962,7 +962,7 @@ s3erofs_create_object_iterator(struct erofs_s3 *s3, const char *path,
 			ret = -EINVAL;
 			goto err;
 		}
-		iter->bucket = strndup(path, prefix - path);
+		iter->bucket = erofs_os_strndup(path, prefix - path);
 		iter->prefix = strdup(prefix);
 	}
 
@@ -1127,7 +1127,7 @@ int s3erofs_build_trees(struct erofs_importer *im, struct erofs_s3 *s3,
 	struct s3erofs_object_info *obj;
 	struct erofs_dentry *d;
 	struct erofs_inode *inode;
-	struct stat st;
+	erofs_os_stat_t st;
 	char *trimmed;
 	bool dumb;
 	int ret;
@@ -1431,17 +1431,17 @@ err_free:
 int s3erofs_parse_s3fs_passwd(const char *filepath, char *ak, char *sk)
 {
 	char buf[S3_ACCESS_KEY_LEN + S3_SECRET_KEY_LEN + 3];
-	struct stat st;
+	erofs_os_stat_t st;
 	int fd, n, ret;
 	char *colon;
 
-	fd = open(filepath, O_RDONLY);
+	fd = erofs_os_open(filepath, O_RDONLY);
 	if (fd < 0) {
 		erofs_err("failed to open passwd_file %s", filepath);
 		return -errno;
 	}
 
-	ret = fstat(fd, &st);
+	ret = erofs_os_fstat(fd, &st);
 	if (ret) {
 		ret = -errno;
 		goto err;

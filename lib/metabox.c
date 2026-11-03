@@ -26,7 +26,7 @@ static int erofs_metamgr_init(struct erofs_sb_info *sbi,
 {
 	int ret;
 
-	ret = erofs_tmpfile();
+	ret = erofs_os_tmpfile();
 	if (ret < 0)
 		return ret;
 

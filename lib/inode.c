@@ -1228,15 +1228,15 @@ static bool erofs_should_use_inode_extended(struct erofs_importer *im,
 
 u32 erofs_new_encode_dev(dev_t dev)
 {
-	const unsigned int major = major(dev);
-	const unsigned int minor = minor(dev);
+	const unsigned int major = erofs_os_major(dev);
+	const unsigned int minor = erofs_os_minor(dev);
 
 	return (minor & 0xff) | (major << 8) | ((minor & ~0xff) << 12);
 }
 
 #ifdef WITH_ANDROID
 int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
-			       struct stat *st,
+			       erofs_os_stat_t *st,
 			       const char *path)
 {
 	/* filesystem_config does not preserve file type bits */
@@ -1284,7 +1284,7 @@ int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
 }
 #else
 static int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
-				      struct stat *st,
+				      erofs_os_stat_t *st,
 				      const char *path)
 {
 	return 0;
@@ -1292,7 +1292,7 @@ static int erofs_droid_inode_fsconfig(struct erofs_inode *inode,
 #endif
 
 int __erofs_fill_inode(struct erofs_importer *im, struct erofs_inode *inode,
-		       struct stat *st, const char *path)
+		       erofs_os_stat_t *st, const char *path)
 {
 	struct erofs_importer_params *params = im->params;
 	struct erofs_sb_info *sbi = inode->sbi;
@@ -1335,7 +1335,7 @@ int __erofs_fill_inode(struct erofs_importer *im, struct erofs_inode *inode,
 }
 
 static int erofs_fill_inode(struct erofs_importer *im, struct erofs_inode *inode,
-			    struct stat *st, const char *path)
+			    erofs_os_stat_t *st, const char *path)
 {
 	const struct erofs_importer_params *params = im->params;
 	int err;
@@ -1419,10 +1419,10 @@ static struct erofs_inode *erofs_iget_from_local(struct erofs_importer *im,
 	const struct erofs_importer_params *params = im->params;
 	struct erofs_sb_info *sbi = im->sbi;
 	struct erofs_inode *inode;
-	struct stat st;
+	erofs_os_stat_t st;
 	int ret;
 
-	ret = lstat(path, &st);
+	ret = erofs_os_lstat(path, &st);
 	if (ret)
 		return ERR_PTR(-errno);
 
@@ -1578,7 +1578,8 @@ static int erofs_mkfs_handle_nondirectory(const struct erofs_mkfs_btctx *btctx,
 			symlink = malloc(inode->i_size);
 			if (!symlink)
 				return -ENOMEM;
-			ret = readlink(inode->i_srcpath, symlink, inode->i_size);
+			ret = erofs_os_readlink(inode->i_srcpath, symlink,
+					       inode->i_size);
 			if (ret < 0) {
 				free(symlink);
 				return -errno;
@@ -1745,7 +1746,7 @@ static void *z_erofs_mt_dfops_worker(void *arg)
 	dfops->exited = true;
 	if (ret < 0)
 		pthread_cond_signal(&dfops->full);
-	pthread_exit((void *)(uintptr_t)(ret < 0 ? ret : 0));
+	return (void *)(intptr_t)(ret < 0 ? ret : 0);
 }
 
 static int erofs_mkfs_go(const struct erofs_mkfs_btctx *ctx,
@@ -2012,7 +2013,7 @@ static int erofs_set_inode_fingerprint(struct erofs_inode *inode, int fd,
 	struct erofs_vfile vf = { .fd = fd };
 	struct sha256_state md;
 	u8 out[32 + sizeof("sha256:") - 1];
-	int ret;
+	off_t ret;
 
 	if (!ishare_xattr_prefix_id)
 		return 0;
@@ -2030,6 +2031,11 @@ static int erofs_set_inode_fingerprint(struct erofs_inode *inode, int fd,
 		pos += ret;
 	} while (remaining);
 	erofs_sha256_done(&md, out + sizeof("sha256:") - 1);
+#if defined(_WIN32) && !defined(__CYGWIN__)
+	ret = erofs_io_lseek(&vf, pos - inode->i_size, SEEK_SET);
+	if (ret < 0)
+		return ret;
+#endif
 	memcpy(out, "sha256:", sizeof("sha256:") - 1);
 	return erofs_setxattr(inode, ishare_xattr_prefix_id, "",
 			      out, sizeof(out));
@@ -2051,12 +2057,13 @@ static int erofs_mkfs_begin_nondirectory(const struct erofs_mkfs_btctx *btctx,
 				return ctx.fd;
 			break;
 		case EROFS_INODE_DATA_SOURCE_LOCALPATH:
-			ctx.fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
+			ctx.fd = erofs_os_open(inode->i_srcpath, O_RDONLY | O_BINARY);
 			if (ctx.fd < 0)
 				return -errno;
 			break;
 		case EROFS_INODE_DATA_SOURCE_REBUILD_BLOB:
-			ctx.fd = open(inode->rebuild_blobpath, O_RDONLY | O_BINARY);
+			ctx.fd = erofs_os_open(inode->rebuild_blobpath,
+					       O_RDONLY | O_BINARY);
 			if (ctx.fd < 0)
 				return -errno;
 			ctx.fpos = inode->rebuild_src_dataoff;
@@ -2261,10 +2268,10 @@ static int __erofs_mkfs_build_tree(const struct erofs_mkfs_btctx *ctx)
 
 	if (!ctx->rebuild) {
 		struct erofs_importer_params *params = im->params;
-		struct stat st;
+		erofs_os_stat_t st;
 		int err;
 
-		err = lstat(params->source, &st);
+		err = erofs_os_lstat(params->source, &st);
 		if (err)
 			return -errno;
 
@@ -2293,6 +2300,8 @@ static int erofs_get_fdlimit(void)
 	if (rlim.rlim_cur == RLIM_INFINITY)
 		return 0;
 	return rlim.rlim_cur;
+#elif defined(_WIN32)
+	return _getmaxstdio();
 #else
 	return _POSIX_OPEN_MAX;
 #endif
@@ -2380,7 +2389,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_importer *im,
 {
 	struct erofs_sb_info *sbi = im->sbi;
 	struct erofs_inode *inode;
-	struct stat st;
+	erofs_os_stat_t st;
 	void *ictx;
 	int ret;
 
@@ -2388,7 +2397,7 @@ struct erofs_inode *erofs_mkfs_build_special_from_fd(struct erofs_importer *im,
 	if (ret < 0)
 		return ERR_PTR(-errno);
 
-	ret = fstat(fd, &st);
+	ret = erofs_os_fstat(fd, &st);
 	if (ret)
 		return ERR_PTR(-errno);
 
@@ -2511,9 +2520,9 @@ struct erofs_inode *erofs_make_empty_root_inode(struct erofs_importer *im,
 		return ERR_PTR(-ENOMEM);
 	}
 	root->i_mode = S_IFDIR | 0777;
-	root->i_uid = (!params || params->fixed_uid == -1) ? getuid() :
+	root->i_uid = (!params || params->fixed_uid == -1) ? erofs_os_getuid() :
 							     params->fixed_uid;
-	root->i_gid = (!params || params->fixed_gid == -1) ? getgid() :
+	root->i_gid = (!params || params->fixed_gid == -1) ? erofs_os_getgid() :
 							     params->fixed_gid;
 	root->i_parent = root;
 	root->i_mtime = root->sbi->epoch + root->sbi->build_time;

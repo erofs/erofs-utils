@@ -13,22 +13,34 @@ AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR(config)
 
 AC_CANONICAL_TARGET
+AC_CANONICAL_HOST
 
 build_linux=no
-case "${target_os}" in
+build_windows=no
+case "${host_os}" in
   linux*)
     build_linux=yes
+    ;;
+  mingw*)
+    build_windows=yes
     ;;
 esac
 
 # OS-specific treatment
 AM_CONDITIONAL([OS_LINUX], [test "$build_linux" = "yes"])
+AM_CONDITIONAL([OS_WINDOWS], [test "$build_windows" = "yes"])
 
 AM_INIT_AUTOMAKE([foreign subdir-objects -Wall])
+
+# Enable LFS (e.g. 64-bit off_t) before compiler and feature checks.
+CPPFLAGS="$CPPFLAGS -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
 
 # Checks for programs.
 AM_PROG_AR
 AC_PROG_CC
+AS_CASE([$host_os], [mingw*], [
+  CPPFLAGS="$CPPFLAGS -D__USE_MINGW_ANSI_STDIO=1"
+])
 AC_PROG_INSTALL
 
 LT_INIT
@@ -242,6 +254,7 @@ AC_CHECK_HEADERS(m4_flatten([
 	linux/types.h
 	linux/xattr.h
 	limits.h
+	regex.h
 	stddef.h
 	stdint.h
 	stdlib.h
@@ -278,6 +291,10 @@ AC_CHECK_DECL(memrchr,[AC_DEFINE(HAVE_MEMRCHR, 1,
    #include <string.h>])
 
 # Checks for library functions.
+AC_SEARCH_LIBS([regcomp], [gnurx regex], [], [
+  AC_CHECK_LIB([tre], [tre_regcomp], [],
+    [AC_MSG_ERROR([POSIX regex support is required (e.g. libgnurx or TRE on Windows)])])
+])
 AC_CHECK_FUNCS(m4_flatten([
 	backtrace
 	copy_file_range
@@ -786,9 +803,6 @@ AS_IF([test "x$enable_s3" != "xno"], [
     [have_s3="no"
      AC_MSG_ERROR([S3 disabled: missing libcurl, openssl, or libxml2])])
   ], [have_s3="no"])
-
-# Enable 64-bit off_t
-CFLAGS+=" -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
 
 # Configure fuzzing mode
 AS_IF([test "x$enable_fuzzing" != "xyes"], [], [

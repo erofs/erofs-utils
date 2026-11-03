@@ -62,11 +62,11 @@ static char *docker_config_path(void)
 static char *read_file_to_string(const char *path)
 {
 	FILE *fp;
-	struct stat st;
+	erofs_os_stat_t st;
 	char *buf;
 	size_t nread;
 
-	if (stat(path, &st) < 0)
+	if (erofs_os_stat(path, &st) < 0)
 		return NULL;
 
 	if (st.st_size <= 0 || st.st_size > (1 << 22))

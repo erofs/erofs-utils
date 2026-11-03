@@ -759,7 +759,7 @@ static int tarerofs_write_file_data(struct erofs_inode *inode,
 				nread = -EIO;
 			break;
 		}
-		if (pwrite(fd, buf, nread, off) != nread) {
+		if (erofs_os_pwrite(fd, buf, nread, off) != nread) {
 			nread = -EIO;
 			break;
 		}
@@ -779,7 +779,7 @@ int tarerofs_parse_tar(struct erofs_importer *im, struct erofs_tarfile *tar)
 	struct erofs_inode *root = im->root;
 	bool whout, opq, e = false;
 	char _path[PATH_MAX + 1], *path = _path + 1;
-	struct stat st;
+	erofs_os_stat_t st;
 	mode_t mode;
 	erofs_off_t tar_offset, dataoff;
 
@@ -1044,10 +1044,10 @@ out_eot:
 			goto out;
 		}
 
-		st.st_rdev = makedev(major, minor);
+		st.st_rdev = erofs_os_makedev(major, minor);
 	} else if (th->typeflag == '1' || th->typeflag == '2') {
 		if (!eh.link)
-			eh.link = strndup(th->linkname, sizeof(th->linkname));
+			eh.link = erofs_os_strndup(th->linkname, sizeof(th->linkname));
 	}
 
 	/* EROFS metadata index referring to the original tar data */

@@ -657,7 +657,7 @@ static int mkfs_parse_s3_cfg(char *cfg_str)
 
 	p = strchr(cfg_str, ',');
 	if (p) {
-		s3cfg.endpoint = strndup(cfg_str, p - cfg_str);
+		s3cfg.endpoint = erofs_os_strndup(cfg_str, p - cfg_str);
 	} else {
 		s3cfg.endpoint = strdup(cfg_str);
 		return 0;
@@ -698,7 +698,7 @@ static int mkfs_parse_s3_cfg(char *cfg_str)
 		} else if ((p = strstr(opt, "region="))) {
 			p += strlen("region=");
 			opt = strchr(cfg_str, ',');
-			s3cfg.region = opt ? strndup(p, opt - p) : strdup(p);
+			s3cfg.region = opt ? erofs_os_strndup(p, opt - p) : strdup(p);
 		} else {
 			erofs_err("invalid --s3 option %s", opt);
 			return -EINVAL;
@@ -742,7 +742,7 @@ static int erofs_mkfs_strtoll(const char *nptr, char **endptr,
 static int erofs_mkfs_strtol(const char *nptr, char **endptr,
 			     long *res, int base)
 {
-	long long res_ll;
+	long long res_ll = 0;
 	int ret;
 
 	ret = erofs_mkfs_strtoll(nptr, endptr, &res_ll, base);
@@ -966,20 +966,20 @@ static void erofs_rebuild_cleanup(void)
 
 static int mkfs_parse_sources(int argc, char *argv[], int optind)
 {
-	struct stat st;
+	erofs_os_stat_t st;
 	int err, fd;
 	char *s;
 
 	switch (source_mode) {
 	case EROFS_MKFS_SOURCE_LOCALDIR:
-		err = lstat((s = argv[optind++]), &st);
+		err = erofs_os_lstat((s = argv[optind++]), &st);
 		if (err) {
 			erofs_err("failed to stat %s: %s", s,
 				  erofs_strerror(-errno));
 			return -ENOENT;
 		}
 		if (S_ISDIR(st.st_mode)) {
-			cfg.c_src_path = realpath(s, NULL);
+			cfg.c_src_path = erofs_os_realpath(s, NULL);
 			if (!cfg.c_src_path) {
 				erofs_err("failed to parse source directory: %s",
 					  erofs_strerror(-errno));
@@ -997,7 +997,7 @@ static int mkfs_parse_sources(int argc, char *argv[], int optind)
 		cfg.c_src_path = strdup(argv[optind++]);
 		if (!cfg.c_src_path)
 			return -ENOMEM;
-		fd = open(cfg.c_src_path, O_RDONLY);
+		fd = erofs_os_open(cfg.c_src_path, O_RDONLY);
 		if (fd < 0) {
 			erofs_err("failed to open tar file: %s", cfg.c_src_path);
 			return -errno;
@@ -1008,8 +1008,8 @@ static int mkfs_parse_sources(int argc, char *argv[], int optind)
 			return err;
 
 		if (erofstar.dumpfile) {
-			fd = open(erofstar.dumpfile,
-				  O_WRONLY | O_CREAT | O_TRUNC, 0644);
+			fd = erofs_os_open(erofstar.dumpfile,
+					   O_WRONLY | O_CREAT | O_TRUNC, 0644);
 			if (fd < 0) {
 				erofs_err("failed to open dumpfile: %s",
 					  erofstar.dumpfile);
@@ -1624,7 +1624,8 @@ static void erofs_mkfs_default_options(struct erofs_importer_params *params)
 	cfg.c_mt_workers = erofs_get_available_processors();
 	cfg.c_mkfs_segment_size = 16ULL * 1024 * 1024;
 #endif
-	mkfs_blkszbits = ilog2(min_t(u32, getpagesize(), EROFS_MAX_BLOCK_SIZE));
+	mkfs_blkszbits = ilog2(min_t(u32, erofs_os_getpagesize(),
+				    EROFS_MAX_BLOCK_SIZE));
 	params->pclusterblks_max = 1U;
 	params->pclusterblks_def = 1U;
 	g_sbi.feature_incompat = 0;
@@ -2091,7 +2092,8 @@ exit:
 			struct erofs_vfile vf;
 			int fd;
 
-			fd = open(mkfs_aws_zinfo_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+			fd = erofs_os_open(mkfs_aws_zinfo_file,
+					   O_WRONLY | O_CREAT | O_TRUNC, 0644);
 			if (fd < 0) {
 				err = -errno;
 			} else {

@@ -24,6 +24,8 @@ extern "C"
 #include <config.h>
 #endif
 
+#include "os.h"
+
 #ifdef HAVE_ENDIAN_H
 #include <endian.h>
 #else
@@ -361,8 +363,9 @@ unsigned long __roundup_pow_of_two(unsigned long n)
 #define __always_inline	inline
 #endif
 
-#ifdef HAVE_STRUCT_STAT_ST_ATIM
-/* Linux */
+#if defined(HAVE_STRUCT_STAT_ST_ATIM) || \
+	(defined(_WIN32) && !defined(__CYGWIN__))
+/* Linux and native Windows */
 #define ST_ATIM_NSEC(stbuf) ((stbuf)->st_atim.tv_nsec)
 #define ST_CTIM_NSEC(stbuf) ((stbuf)->st_ctim.tv_nsec)
 #define ST_MTIM_NSEC(stbuf) ((stbuf)->st_mtim.tv_nsec)

@@ -24,6 +24,10 @@ int liberofs_global_init(void)
 
 	erofs_mutex_lock(&erofs_global_mutex);
 	erofs_init_configure();
+#ifdef _WIN32
+	_setmode(STDIN_FILENO, O_BINARY);
+	_setmode(STDOUT_FILENO, O_BINARY);
+#endif
 #ifdef S3EROFS_ENABLED
 	xmlInitParser();
 #endif

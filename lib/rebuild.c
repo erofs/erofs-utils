@@ -377,8 +377,8 @@ static int erofs_rebuild_update_inode(struct erofs_sb_info *dst_sb,
 	case S_IFIFO:
 	case S_IFSOCK:
 		inode->i_size = 0;
-		erofs_dbg("\tdev: %d %d", major(inode->u.i_rdev),
-			  minor(inode->u.i_rdev));
+		erofs_dbg("\tdev: %d %d", erofs_os_major(inode->u.i_rdev),
+			  erofs_os_minor(inode->u.i_rdev));
 		inode->u.i_rdev = erofs_new_encode_dev(inode->u.i_rdev);
 		break;
 	case S_IFDIR:
@@ -641,7 +641,7 @@ static int erofs_rebuild_basedir_dirent_iter(struct erofs_dir_context *ctx)
 	if (ctx->dot_dotdot)
 		return 0;
 
-	dname = strndup(ctx->dname, ctx->de_namelen);
+	dname = erofs_os_strndup(ctx->dname, ctx->de_namelen);
 	if (!dname)
 		return -ENOMEM;
 	d = erofs_rebuild_get_dentry(mergedir, dname, false,

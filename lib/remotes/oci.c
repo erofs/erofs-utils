@@ -314,7 +314,7 @@ static int ocierofs_parse_auth_header(const char *auth_header,
 			continue;
 
 		len = param_end - param_start;
-		value = strndup(param_start, len);
+		value = erofs_os_strndup(param_start, len);
 		if (!value) {
 			ret = -ENOMEM;
 			goto out;
@@ -891,7 +891,8 @@ static int ocierofs_process_tar_stream(struct erofs_importer *importer, int fd,
 	} while (!ret);
 
 	if (decoder == EROFS_IOS_DECODER_GZRAN) {
-		zinfo_fd = open(config->zinfo_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		zinfo_fd = erofs_os_open(config->zinfo_path,
+					 O_WRONLY | O_CREAT | O_TRUNC, 0644);
 		if (zinfo_fd < 0) {
 			ret = -errno;
 		} else {
@@ -1065,7 +1066,7 @@ static int ocierofs_parse_ref(struct ocierofs_ctx *ctx, const char *ref_str)
 		/* a dot or colon before the slash indicating a registry */
 		if ((dot && dot < slash) || (colon && colon < slash)) {
 			len = slash - ref_str;
-			tmp = strndup(ref_str, len);
+			tmp = erofs_os_strndup(ref_str, len);
 			if (!tmp)
 				return -ENOMEM;
 			free(ctx->registry);
@@ -1081,7 +1082,7 @@ static int ocierofs_parse_ref(struct ocierofs_ctx *ctx, const char *ref_str)
 	colon = strchr(repo_part, ':');
 	if (colon) {
 		len = colon - repo_part;
-		tmp = strndup(repo_part, len);
+		tmp = erofs_os_strndup(repo_part, len);
 	} else {
 		tmp = strdup(repo_part);
 	}
@@ -1259,7 +1260,7 @@ static int ocierofs_extract_layer(struct ocierofs_ctx *ctx,
 
 	stream = (struct ocierofs_stream) {
 		.digest = digest,
-		.blobfd = erofs_tmpfile(),
+		.blobfd = erofs_os_tmpfile(),
 	};
 	if (stream.blobfd < 0) {
 		erofs_err("failed to create temporary file for %s", digest);

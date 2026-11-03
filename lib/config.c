@@ -179,6 +179,11 @@ unsigned int erofs_get_available_processors(void)
 {
 #if defined(HAVE_UNISTD_H) && defined(HAVE_SYSCONF)
 	return sysconf(_SC_NPROCESSORS_ONLN);
+#elif defined(_WIN32)
+	SYSTEM_INFO info;
+
+	GetSystemInfo(&info);
+	return info.dwNumberOfProcessors;
 #else
 	return 0;
 #endif

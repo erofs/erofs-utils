@@ -12,7 +12,10 @@
 #endif
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <config.h>
+#ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
+#endif
 #include "erofs/internal.h"
 #ifdef HAVE_LINUX_FS_H
 #include <linux/fs.h>
@@ -48,7 +51,7 @@ static ssize_t __erofs_io_write(int fd, const void *buf, size_t len)
 	return written;
 }
 
-int erofs_io_fstat(struct erofs_vfile *vf, struct stat *buf)
+int erofs_io_fstat(struct erofs_vfile *vf, erofs_os_stat_t *buf)
 {
 	if (__erofs_unlikely(cfg.c_dry_run)) {
 		buf->st_size = 0;
@@ -58,7 +61,7 @@ int erofs_io_fstat(struct erofs_vfile *vf, struct stat *buf)
 
 	if (vf->ops)
 		return vf->ops->fstat(vf, buf);
-	return fstat(vf->fd, buf);
+	return erofs_os_fstat(vf->fd, buf);
 }
 
 ssize_t __erofs_io_pwrite(int fd, const void *buf, size_t len, u64 pos)
@@ -66,7 +69,7 @@ ssize_t __erofs_io_pwrite(int fd, const void *buf, size_t len, u64 pos)
 	ssize_t ret, written = 0;
 
 	do {
-		ret = pwrite(fd, buf, len - written, (off_t)pos);
+		ret = erofs_os_pwrite(fd, buf, len - written, (off_t)pos);
 		if (ret <= 0) {
 			if (!ret)
 				break;
@@ -138,7 +141,7 @@ int erofs_io_fsync(struct erofs_vfile *vf)
 	if (vf->ops)
 		return vf->ops->fsync(vf);
 
-	ret = fsync(vf->fd);
+	ret = erofs_os_fsync(vf->fd);
 	if (ret) {
 		erofs_err("failed to fsync(!): %s", strerror(errno));
 		return -errno;
@@ -196,7 +199,7 @@ int erofs_io_fallocate(struct erofs_vfile *vf, u64 offset,
 int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length)
 {
 	int ret;
-	struct stat st;
+	erofs_os_stat_t st;
 
 	if (__erofs_unlikely(cfg.c_dry_run))
 		return 0;
@@ -204,7 +207,7 @@ int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length)
 	if (vf->ops)
 		return vf->ops->ftruncate(vf, length);
 
-	ret = fstat(vf->fd, &st);
+	ret = erofs_os_fstat(vf->fd, &st);
 	if (ret) {
 		erofs_err("failed to fstat: %s", strerror(errno));
 		return -errno;
@@ -227,11 +230,7 @@ ssize_t erofs_io_pread(struct erofs_vfile *vf, void *buf, size_t len, u64 pos)
 
 	pos += vf->offset;
 	do {
-#ifdef HAVE_PREAD64
-		ret = pread64(vf->fd, buf, len, (off64_t)pos);
-#else
-		ret = pread(vf->fd, buf, len, (off_t)pos);
-#endif
+		ret = erofs_os_pread(vf->fd, buf, len, (off_t)pos);
 		if (ret <= 0) {
 			if (!ret)
 				break;
@@ -288,7 +287,7 @@ int erofs_dev_open(struct erofs_sb_info *sbi, const char *dev, int flags)
 {
 	bool ro = (flags & O_ACCMODE) == O_RDONLY;
 	bool truncate = flags & O_TRUNC;
-	struct stat st;
+	erofs_os_stat_t st;
 	int fd, ret;
 
 #if defined(HAVE_SYS_STATFS_H) && defined(HAVE_FSTATFS)
@@ -296,7 +295,7 @@ int erofs_dev_open(struct erofs_sb_info *sbi, const char *dev, int flags)
 
 repeat:
 #endif
-	fd = open(dev, (ro ? O_RDONLY : O_RDWR | O_CREAT) | O_BINARY, 0644);
+	fd = erofs_os_open(dev, (ro ? O_RDONLY : O_RDWR | O_CREAT) | O_BINARY, 0644);
 	if (fd < 0) {
 		erofs_err("failed to open %s: %s", dev, strerror(errno));
 		return -errno;
@@ -305,7 +304,7 @@ repeat:
 	if (ro || !truncate)
 		goto out;
 
-	ret = fstat(fd, &st);
+	ret = erofs_os_fstat(fd, &st);
 	if (ret) {
 		erofs_err("failed to fstat(%s): %s", dev, strerror(errno));
 		close(fd);
@@ -396,7 +395,7 @@ void erofs_blob_closeall(struct erofs_sb_info *sbi)
 
 int erofs_blob_open_ro(struct erofs_sb_info *sbi, const char *dev)
 {
-	int fd = open(dev, O_RDONLY | O_BINARY);
+	int fd = erofs_os_open(dev, O_RDONLY | O_BINARY);
 
 	if (fd < 0) {
 		erofs_err("failed to open(%s).", dev);
@@ -454,11 +453,7 @@ static ssize_t __erofs_copy_file_range(int fd_in, u64 *off_in,
 		char *end, *p;
 
 		to_read = min_t(size_t, length, sizeof(buf));
-#ifdef HAVE_PREAD64
-		read_count = pread64(fd_in, buf, to_read, *off_in);
-#else
-		read_count = pread(fd_in, buf, to_read, *off_in);
-#endif
+		read_count = erofs_os_pread(fd_in, buf, to_read, *off_in);
 		if (read_count == 0)
 			/* End of file reached prematurely. */
 			return copied;
@@ -475,11 +470,7 @@ static ssize_t __erofs_copy_file_range(int fd_in, u64 *off_in,
 		for (p = buf; p < end; ) {
 			ssize_t write_count;
 
-#ifdef HAVE_PWRITE64
-			write_count = pwrite64(fd_out, p, end - p, *off_out);
-#else
-			write_count = pwrite(fd_out, p, end - p, *off_out);
-#endif
+			write_count = erofs_os_pwrite(fd_out, p, end - p, *off_out);
 			if (write_count < 0) {
 				/*
 				 * Adjust the input read position to match what

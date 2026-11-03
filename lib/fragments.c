@@ -11,7 +11,10 @@
 #endif
 #include <stdlib.h>
 #include <unistd.h>
+#include <config.h>
+#ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
+#endif
 #include "erofs/err.h"
 #include "erofs/inode.h"
 #include "erofs/print.h"
@@ -108,7 +111,7 @@ static erofs_off_t erofs_fragment_longmatch(struct erofs_inode *inode,
 			break;
 
 		if (!inmem) {
-			if (pread(epi->fd, buf[1], sz, pos - sz) != sz)
+			if (erofs_os_pread(epi->fd, buf[1], sz, pos - sz) != sz)
 				break;
 			if (memcmp(buf[0], buf[1], sz))
 				break;
@@ -240,7 +243,7 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode,
 {
 	struct erofs_packed_inode *epi = inode->sbi->packedinode;
 	s64 offset, rc, sz;
-	char *memblock;
+	char *memblock = NULL;
 	bool onheap = false;
 
 	if (__erofs_unlikely(!inode->i_size))
@@ -248,12 +251,15 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode,
 
 	offset = epi->pos;
 
-	if (vf->ops)
-		memblock = NULL;
-	else
+#ifdef HAVE_SYS_MMAN_H
+	if (!vf->ops) {
 		memblock = mmap(NULL, inode->i_size, PROT_READ,
 				MAP_SHARED, vf->fd, fpos);
-	if (memblock == MAP_FAILED || !memblock) {
+		if (memblock == MAP_FAILED)
+			memblock = NULL;
+	}
+#endif
+	if (!memblock) {
 		erofs_off_t remaining = inode->i_size;
 		struct erofs_vfile vout = { .fd = epi->fd };
 		bool noseek = vf->ops && !vf->ops->pread;
@@ -285,7 +291,8 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode,
 		}
 		onheap = true;
 
-		rc = pread(epi->fd, memblock, sz, offset + inode->i_size - sz);
+		rc = erofs_os_pread(epi->fd, memblock, sz,
+				    offset + inode->i_size - sz);
 		if (rc != sz) {
 			if (rc >= 0) {
 				DBG_BUGON(1);
@@ -308,8 +315,10 @@ int erofs_pack_file_from_fd(struct erofs_inode *inode,
 out:
 	if (onheap)
 		free(memblock);
+#ifdef HAVE_SYS_MMAN_H
 	else if (memblock)
 		munmap(memblock, inode->i_size);
+#endif
 	return rc;
 }
 
@@ -452,7 +461,7 @@ int erofs_packedfile_init(struct erofs_sb_info *sbi, bool fragments_mkfs)
 		}
 	}
 
-	epi->fd = erofs_tmpfile();
+	epi->fd = erofs_os_tmpfile();
 	if (epi->fd < 0) {
 		err = epi->fd;
 		goto err_out;
@@ -635,7 +644,7 @@ int erofs_packedfile_read(struct erofs_sb_info *sbi,
 			if (!uptodate)
 				continue;
 
-			err = pread(epi->fd, buf, len, pos);
+			err = erofs_os_pread(epi->fd, buf, len, pos);
 			if (err < 0)
 				break;
 			if (err == len) {

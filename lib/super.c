@@ -500,7 +500,7 @@ int erofs_mkfs_format_fs(struct erofs_sb_info *sbi, unsigned int blkszbits,
 int erofs_mkfs_load_fs(struct erofs_sb_info *sbi, unsigned int dsunit)
 {
 	union {
-		struct stat st;
+		erofs_os_stat_t st;
 		erofs_blk_t startblk;
 	} u;
 	struct erofs_bufmgr *bmgr;

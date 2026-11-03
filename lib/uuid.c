@@ -20,7 +20,9 @@
 #else
 #define _GNU_SOURCE
 #include <unistd.h>
+#ifdef __linux__
 #include <sys/syscall.h>
+#endif
 #endif
 
 /* Flags to be used, will be modified if kernel does not support them */
@@ -43,6 +45,9 @@ static int s_getrandom(void *out, unsigned size, bool insecure)
 
 #if defined(HAVE_SYS_RANDOM_H) && defined(HAVE_GETRANDOM)
 		r = getrandom(out, size, flags);
+#elif defined(_WIN32)
+		(void)flags;
+		r = erofs_win_random(out, size);
 #elif defined(__linux__) && defined(__NR_getrandom)
 		r = (ssize_t)syscall(__NR_getrandom, out, size, flags);
 #else

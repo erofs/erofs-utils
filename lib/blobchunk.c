@@ -602,7 +602,7 @@ int erofs_blob_init_device(struct erofs_sb_info *sbi, int device_id)
 	if (!vf)
 		return -ENOMEM;
 
-	fd = open(sbi->devs[device_id - 1].src_path,
+	fd = erofs_os_open(sbi->devs[device_id - 1].src_path,
 		  O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0666);
 	if (fd < 0) {
 		ret = -errno;

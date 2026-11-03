@@ -333,7 +333,7 @@ static void erofsfsck_set_attributes(struct erofs_inode *inode, char *path)
 		erofs_warn("failed to set times: %s", path);
 
 	if (fsckcfg.preserve_owner) {
-		ret = lchown(path, inode->i_uid, inode->i_gid);
+		ret = erofs_os_lchown(path, inode->i_uid, inode->i_gid);
 		if (ret < 0)
 			erofs_warn("failed to change ownership: %s", path);
 	}
@@ -683,8 +683,8 @@ static inline int erofs_extract_dir(struct erofs_inode *inode)
 	 * write/execute permission.  These are fixed up later in
 	 * erofsfsck_set_attributes().
 	 */
-	if (mkdir(fsckcfg.extract_path, 0700) < 0) {
-		struct stat st;
+	if (erofs_os_mkdir(fsckcfg.extract_path, 0700) < 0) {
+		erofs_os_stat_t st;
 
 		if (errno != EEXIST) {
 			erofs_err("failed to create directory: %s (%s)",
@@ -692,7 +692,7 @@ static inline int erofs_extract_dir(struct erofs_inode *inode)
 			return -errno;
 		}
 
-		if (lstat(fsckcfg.extract_path, &st) ||
+		if (erofs_os_lstat(fsckcfg.extract_path, &st) ||
 		    !S_ISDIR(st.st_mode)) {
 			erofs_err("path is not a directory: %s",
 				  fsckcfg.extract_path);
@@ -827,9 +827,9 @@ static inline int erofs_extract_file(struct erofs_inode *inode)
 	erofs_dbg("extract file to path: %s", fsckcfg.extract_path);
 
 again:
-	fd = open(fsckcfg.extract_path,
-		  O_WRONLY | O_CREAT | O_NOFOLLOW |
-			(fsckcfg.overwrite ? O_TRUNC : O_EXCL), 0700);
+	fd = erofs_os_open(fsckcfg.extract_path,
+			   O_WRONLY | O_CREAT | O_NOFOLLOW |
+				(fsckcfg.overwrite ? O_TRUNC : O_EXCL), 0700);
 	if (fd < 0) {
 		if (fsckcfg.overwrite && tryagain) {
 			if (errno == EISDIR) {
@@ -898,7 +898,7 @@ static inline int erofs_extract_symlink(struct erofs_inode *inode)
 
 	buf[inode->i_size] = '\0';
 again:
-	if (symlink(buf, fsckcfg.extract_path) < 0) {
+	if (erofs_os_symlink(buf, fsckcfg.extract_path) < 0) {
 		if (errno == EEXIST && fsckcfg.overwrite && tryagain) {
 			erofs_warn("try to forcely remove file %s",
 				   fsckcfg.extract_path);
@@ -934,7 +934,8 @@ static int erofs_extract_special(struct erofs_inode *inode)
 		return ret;
 
 again:
-	if (mknod(fsckcfg.extract_path, inode->i_mode, inode->u.i_rdev) < 0) {
+	if (erofs_os_mknod(fsckcfg.extract_path, inode->i_mode,
+			   inode->u.i_rdev) < 0) {
 		if (errno == EEXIST && fsckcfg.overwrite && tryagain) {
 			erofs_warn("try to forcely remove file %s",
 				   fsckcfg.extract_path);
@@ -1023,7 +1024,7 @@ verify:
 
 	oldpath = erofsfsck_hardlink_find(inode->nid);
 	if (oldpath) {
-		if (link(oldpath, fsckcfg.extract_path) == -1) {
+		if (erofs_os_link(oldpath, fsckcfg.extract_path) == -1) {
 			erofs_err("failed to extract hard link: %s (%s)",
 				  fsckcfg.extract_path, strerror(errno));
 			return -errno;
@@ -1139,7 +1140,7 @@ int main(int argc, char *argv[])
 	fsckcfg.extract_path = NULL;
 	fsckcfg.extract_pos = 0;
 	fsckcfg.umask = umask(0);
-	fsckcfg.superuser = geteuid() == 0;
+	fsckcfg.superuser = erofs_os_geteuid() == 0;
 	fsckcfg.corrupted = false;
 	fsckcfg.print_comp_ratio = false;
 	fsckcfg.check_decomp = false;

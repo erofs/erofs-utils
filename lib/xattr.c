@@ -792,7 +792,7 @@ static int erofs_count_all_xattrs_from_path(struct erofs_sb_info *sbi,
 {
 	int ret;
 	DIR *_dir;
-	struct stat st;
+	erofs_os_stat_t st;
 
 	_dir = opendir(path);
 	if (!_dir) {
@@ -826,7 +826,7 @@ static int erofs_count_all_xattrs_from_path(struct erofs_sb_info *sbi,
 			goto fail;
 		}
 
-		ret = lstat(buf, &st);
+		ret = erofs_os_lstat(buf, &st);
 		if (ret) {
 			ret = -errno;
 			goto fail;
@@ -1207,7 +1207,8 @@ static int erofs_init_inode_xattrs(struct erofs_inode *vi)
 
 	ih = it.kaddr;
 	vi->xattr_shared_count = ih->h_shared_count;
-	vi->xattr_shared_xattrs = malloc(vi->xattr_shared_count * sizeof(uint));
+	vi->xattr_shared_xattrs = malloc(vi->xattr_shared_count *
+					 sizeof(*vi->xattr_shared_xattrs));
 	if (!vi->xattr_shared_xattrs) {
 		erofs_put_metabuf(&it.buf);
 		return -ENOMEM;

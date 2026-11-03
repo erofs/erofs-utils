@@ -12,7 +12,7 @@ extern "C"
 #include "internal.h"
 
 struct erofs_pax_header {
-	struct stat st;
+	erofs_os_stat_t st;
 	struct list_head xattrs;
 	bool use_mtime;
 	bool use_size;

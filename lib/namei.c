@@ -19,7 +19,7 @@ static dev_t erofs_new_decode_dev(u32 dev)
 	const unsigned int major = (dev & 0xfff00) >> 8;
 	const unsigned int minor = (dev & 0xff) | ((dev >> 12) & 0xfff00);
 
-	return makedev(major, minor);
+	return erofs_os_makedev(major, minor);
 }
 
 int erofs_read_inode_from_disk(struct erofs_inode *vi)
