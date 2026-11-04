@@ -458,25 +458,33 @@ static int erofsfsck_dump_xattrs(struct erofs_inode *inode)
 		size_t size = 0;
 
 		ret = erofs_getxattr(inode, key, NULL, 0);
-		if (ret <= 0) {
+		if (ret < 0) {
 			DBG_BUGON(1);
 			erofs_err("failed to get xattr value size of `%s` @ nid %llu",
 				  key, inode->nid | 0ULL);
 			break;
 		}
 		size = ret;
-		value = malloc(size);
-		if (!value) {
-			ret = -ENOMEM;
-			break;
+
+		/* Empty xattrs are allowed */
+		if (!size) {
+			value = NULL;
+		} else {
+			value = malloc(size);
+			if (!value) {
+				ret = -ENOMEM;
+				break;
+			}
+
+			ret = erofs_getxattr(inode, key, value, size);
+			if (ret < 0) {
+				erofs_err("failed to get xattr `%s` @ nid %llu, because of `%s`", key,
+					  inode->nid | 0ULL, erofs_strerror(ret));
+				free(value);
+				break;
+			}
 		}
-		ret = erofs_getxattr(inode, key, value, size);
-		if (ret < 0) {
-			erofs_err("failed to get xattr `%s` @ nid %llu, because of `%s`", key,
-				  inode->nid | 0ULL, erofs_strerror(ret));
-			free(value);
-			break;
-		}
+
 		if (fsckcfg.extract_path)
 			ret = erofs_sys_lsetxattr(fsckcfg.extract_path, key,
 						  value, size);
