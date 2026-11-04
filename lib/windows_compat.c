@@ -277,38 +277,55 @@ int erofs_win_random(void *buf, unsigned int len)
 int erofs_os_tmpfile(void)
 {
 	char path[MAX_PATH], name[MAX_PATH];
-	HANDLE h;
-	DWORD len;
+	const char *tmpdir, *sep = "";
+	HANDLE h = INVALID_HANDLE_VALUE;
+	unsigned int retries;
 	int fd;
 
-	len = GetTempPathA(sizeof(path), path);
-	if (!len) {
-		errno = erofs_err_win_to_posix(GetLastError());
-		return -errno;
-	}
-	if (len >= sizeof(path)) {
-		errno = ENAMETOOLONG;
-		return -errno;
-	}
-	if (!GetTempFileNameA(path, "ero", 0, name)) {
-		errno = erofs_err_win_to_posix(GetLastError());
-		return -errno;
-	}
-	h = CreateFileA(name, GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-		OPEN_EXISTING, FILE_ATTRIBUTE_TEMPORARY |
-		FILE_FLAG_DELETE_ON_CLOSE, NULL);
-	if (h == INVALID_HANDLE_VALUE) {
-		DWORD error = GetLastError();
+	tmpdir = getenv("TMPDIR");
+	if (tmpdir && *tmpdir) {
+		/* A trailing backslash may be part of a multibyte character. */
+		sep = "/";
+	} else {
+		DWORD len = GetTempPathA(sizeof(path), path);
 
-		DeleteFileA(name);
-		errno = erofs_err_win_to_posix(error);
-		return -errno;
+		if (!len)
+			return -erofs_err_win_to_posix(GetLastError());
+		if (len >= sizeof(path))
+			return -ENAMETOOLONG;
+		tmpdir = path;
 	}
+	/* Arm cleanup when creating the file, with no close-and-reopen gap. */
+	for (retries = 128; retries; --retries) {
+		unsigned int nonce[2];
+		DWORD error;
+		int n;
+
+		if (erofs_win_random(nonce, sizeof(nonce)) < 0)
+			return -errno;
+		n = snprintf(name, sizeof(name), "%s%sEROFS_%08x%08x.TMP",
+			     tmpdir, sep, nonce[0], nonce[1]);
+		if (n < 0 || (size_t)n >= sizeof(name))
+			return -ENAMETOOLONG;
+		h = CreateFileA(name, GENERIC_READ | GENERIC_WRITE,
+			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+			NULL, CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY |
+			FILE_FLAG_DELETE_ON_CLOSE, NULL);
+		if (h != INVALID_HANDLE_VALUE)
+			break;
+		error = GetLastError();
+		if (error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS)
+			continue;
+		return -erofs_err_win_to_posix(error);
+	}
+	if (h == INVALID_HANDLE_VALUE)
+		return -EEXIST;
 	fd = _open_osfhandle((intptr_t)h, O_RDWR | O_BINARY);
 	if (fd < 0) {
+		int err = -errno;
+
 		CloseHandle(h);
-		return -errno;
+		return err;
 	}
 	return fd;
 }

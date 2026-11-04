@@ -1260,12 +1260,14 @@ static int ocierofs_extract_layer(struct ocierofs_ctx *ctx,
 
 	stream = (struct ocierofs_stream) {
 		.digest = digest,
-		.blobfd = erofs_os_tmpfile(),
 	};
-	if (stream.blobfd < 0) {
+
+	ret = erofs_os_tmpfile();
+	if (ret < 0) {
 		erofs_err("failed to create temporary file for %s", digest);
-		return -errno;
+		return ret;
 	}
+	stream.blobfd = ret;
 
 	ret = ocierofs_download_blob_to_fd(ctx, digest, auth_header, stream.blobfd);
 	if (ret)
