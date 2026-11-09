@@ -17,6 +17,7 @@ RUN apk add --no-cache \
     util-linux-dev util-linux-static \
     fuse3-dev fuse3-static \
     zlib-dev zlib-static \
+    libdeflate-dev libdeflate-static \
     lz4-dev lz4-static \
     openssl-dev openssl-libs-static \
     xz-dev xz-static \
@@ -46,12 +47,13 @@ RUN find . -type f ! -path './.git/*' -exec dos2unix -q {} + && \
         --enable-ublk \
         --with-json-c \
         --with-libcurl \
+        --with-libdeflate \
         --with-libnl3 \
         --with-libzstd \
         --with-libxml2 \
         --with-openssl \
         --with-uuid && \
-    make -j"$(nproc)" V=1 LDFLAGS="-all-static" && make install
+    make -j"$(nproc)" V=1 LDFLAGS="-all-static" && make install-strip
 
 # Cross-compile x86-64 Windows binaries with static third-party libraries.
 # Alpine packages the MinGW toolchain for x86-64 build hosts.
