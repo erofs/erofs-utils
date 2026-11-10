@@ -2141,8 +2141,11 @@ static int erofs_mkfs_handle_inode(const struct erofs_mkfs_btctx *ctx,
 	/* strip all unnecessary overlayfs xattrs when ovlfs_strip is enabled */
 	if (params->ovlfs_strip)
 		erofs_clear_opaque_xattr(inode);
-	else if (inode->whiteouts)
-		erofs_set_origin_xattr(inode);
+	else if (inode->whiteouts) {
+		ret = erofs_set_origin_xattr(inode);
+		if (ret)
+			return ret;
+	}
 
 	if (!S_ISDIR(inode->i_mode)) {
 		ret = erofs_mkfs_begin_nondirectory(ctx, inode);

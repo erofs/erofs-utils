@@ -269,6 +269,7 @@ struct erofs_inode {
 	char idata_type;
 	bool lazy_tailblock;
 	bool opaque;
+	bool origin;		/* with an origin xattr */
 	/* OVL: non-merge dir that may contain whiteout entries */
 	bool whiteouts;
 	bool dot_omitted;

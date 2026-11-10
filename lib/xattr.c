@@ -452,7 +452,7 @@ static bool erofs_is_skipped_xattr(const char *key)
 }
 
 static int read_xattrs_from_file(struct erofs_sb_info *sbi, const char *path,
-				 mode_t mode, struct list_head *ixattrs)
+				 mode_t mode, struct erofs_inode *inode)
 {
 	ssize_t kllen = erofs_sys_llistxattr(path, NULL, 0);
 	char *keylst, *key, *klend;
@@ -507,8 +507,10 @@ static int read_xattrs_from_file(struct erofs_sb_info *sbi, const char *path,
 			goto err;
 		}
 
-		if (ixattrs) {
-			ret = erofs_inode_xattr_add(ixattrs, item);
+		if (inode) {
+			if (erofs_is_origin_xattr(key))
+				inode->origin = true;
+			ret = erofs_inode_xattr_add(&inode->i_xattrs, item);
 			if (ret < 0)
 				goto err;
 		}
@@ -520,8 +522,8 @@ out:
 	item = erofs_get_selabel_xattr(sbi, path, mode);
 	if (IS_ERR(item))
 		return PTR_ERR(item);
-	if (item && ixattrs)
-		ret = erofs_inode_xattr_add(ixattrs, item);
+	if (item && inode)
+		ret = erofs_inode_xattr_add(&inode->i_xattrs, item);
 	return ret;
 
 err:
@@ -608,8 +610,16 @@ bool erofs_get_opaque_from_disk(struct erofs_inode *inode)
 	return (erofs_getxattr(inode, OVL_XATTR_OPAQUE, NULL, 0) >= 0);
 }
 
+bool erofs_is_origin_xattr(const char *name)
+{
+	return !strcmp(name, OVL_XATTR_ORIGIN);
+}
+
 int erofs_set_origin_xattr(struct erofs_inode *inode)
 {
+	if (inode->origin)
+		return 0;
+	inode->origin = true;
 	return erofs_vfs_setxattr(inode, OVL_XATTR_ORIGIN, NULL, 0);
 }
 
@@ -659,10 +669,9 @@ static int erofs_droid_xattr_set_caps(struct erofs_inode *inode)
 int erofs_scan_file_xattrs(struct erofs_inode *inode)
 {
 	int ret;
-	struct list_head *ixattrs = &inode->i_xattrs;
 
 	ret = read_xattrs_from_file(inode->sbi, inode->i_srcpath,
-				    inode->i_mode, ixattrs);
+				    inode->i_mode, inode);
 	if (ret < 0)
 		return ret;
 
@@ -721,13 +730,10 @@ int erofs_read_xattrs_from_disk(struct erofs_inode *inode)
 				goto out;
 			}
 			DBG_BUGON(ret != size);
-		} else if (S_ISDIR(inode->i_mode) &&
-			   !strcmp(key, OVL_XATTR_ORIGIN)) {
-			ret = 0;
-			inode->whiteouts = true;
-			continue;
 		}
 
+		if (erofs_is_origin_xattr(key))
+			inode->origin = true;
 		ret = erofs_vfs_setxattr(inode, key, value, size);
 		free(value);
 		if (ret)
