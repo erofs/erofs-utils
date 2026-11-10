@@ -510,6 +510,8 @@ static int read_xattrs_from_file(struct erofs_sb_info *sbi, const char *path,
 		if (inode) {
 			if (erofs_is_origin_xattr(key))
 				inode->origin = true;
+			if (erofs_is_opaque_xattr(key))
+				inode->opaque |= S_ISDIR(inode->i_mode);
 			ret = erofs_inode_xattr_add(&inode->i_xattrs, item);
 			if (ret < 0)
 				goto err;
@@ -595,14 +597,23 @@ static void erofs_removexattr(struct erofs_inode *inode, const char *key)
 	}
 }
 
+bool erofs_is_opaque_xattr(const char *name)
+{
+	return !strcmp(name, OVL_XATTR_OPAQUE);
+}
+
 int erofs_set_opaque_xattr(struct erofs_inode *inode)
 {
+	if (inode->opaque)
+		return 0;
+	inode->opaque = true;
 	return erofs_vfs_setxattr(inode, OVL_XATTR_OPAQUE, "y", 1);
 }
 
 void erofs_clear_opaque_xattr(struct erofs_inode *inode)
 {
 	erofs_removexattr(inode, OVL_XATTR_OPAQUE);
+	inode->opaque = false;
 }
 
 bool erofs_get_opaque_from_disk(struct erofs_inode *inode)

@@ -418,8 +418,13 @@ int tarerofs_apply_xattrs(struct erofs_inode *inode, struct list_head *xattrs)
 		item->kv[item->namelen] = '\0';
 		erofs_dbg("Recording xattr(%s)=\"%.*s\" (of %u bytes) to file %s",
 			  item->kv, vsz, v, vsz, inode->i_srcpath);
+		/* a .wh..wh..opq preceds trusted.overlay.opaque xattr  */
+		if (inode->opaque && erofs_is_opaque_xattr(item->kv))
+			continue;
 		if (erofs_is_origin_xattr(item->kv))
 			inode->origin = true;
+		if (erofs_is_opaque_xattr(item->kv))
+			inode->opaque |= S_ISDIR(inode->i_mode);
 		ret = erofs_vfs_setxattr(inode, item->kv, v, vsz);
 		if (ret == -ENODATA)
 			erofs_err("Failed to set xattr(%s)=%.*s to file %s",
@@ -1082,7 +1087,6 @@ out_eot:
 		 * needed if the tar tree is used soon, thus we have no chance
 		 * to generate it from xattrs.  No impact to mergefs.
 		 */
-		d->inode->opaque = true;
 		ret = erofs_set_opaque_xattr(d->inode);
 		goto out;
 	} else if (th->typeflag == '1') {	/* hard link cases */
