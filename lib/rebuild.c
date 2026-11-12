@@ -262,7 +262,7 @@ static int erofs_rebuild_load_chunk_index(struct erofs_sb_info *dst_sb,
 			.buf = __EROFS_BUF_INITIALIZER,
 		};
 
-		map.m_la = i << chunkbits;
+		map.m_la = (erofs_off_t)i << chunkbits;
 		ret = erofs_map_blocks(inode, &map, 0);
 		if (ret)
 			goto err;

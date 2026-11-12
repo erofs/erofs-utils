@@ -560,7 +560,7 @@ static bool z_erofs_fixup_deduped_fragment(struct z_erofs_compress_sctx *ctx)
 	struct z_erofs_compress_ictx *ictx = ctx->ictx;
 	struct erofs_inode *inode = ictx->inode;
 	struct erofs_sb_info *sbi = inode->sbi;
-	const unsigned int newsize = ctx->remaining + ctx->tail - ctx->head;
+	const erofs_off_t newsize = ctx->remaining + ctx->tail - ctx->head;
 
 	DBG_BUGON(!inode->fragment_size);
 
