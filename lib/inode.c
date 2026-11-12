@@ -2139,10 +2139,11 @@ static int erofs_mkfs_handle_inode(const struct erofs_mkfs_btctx *ctx,
 	}
 
 	/* strip all unnecessary overlayfs xattrs when ovlfs_strip is enabled */
-	if (params->ovlfs_strip)
-		erofs_clear_opaque_xattr(inode);
-	else if (inode->whiteouts) {
-		ret = erofs_set_origin_xattr(inode);
+	if (params->ovlfs_strip) {
+		erofs_clear_ovl_xattr(inode, EROFS_OVL_XATTR_OPAQUE);
+		erofs_clear_ovl_xattr(inode, EROFS_OVL_XATTR_ORIGIN);
+	} else if (inode->whiteouts) {
+		ret = erofs_set_ovl_xattr(inode, EROFS_OVL_XATTR_ORIGIN, NULL, 0);
 		if (ret)
 			return ret;
 	}

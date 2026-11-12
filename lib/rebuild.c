@@ -486,7 +486,8 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 		}
 		if (!S_ISDIR(src.i_mode))
 			goto out;
-		mergedir->opaque |= erofs_get_opaque_from_disk(&src);
+		mergedir->opaque |= erofs_has_ovl_xattr(&src,
+							EROFS_OVL_XATTR_OPAQUE);
 		erofs_inode_free_xattrs(&src);
 		inode = dir = &src;
 	} else {

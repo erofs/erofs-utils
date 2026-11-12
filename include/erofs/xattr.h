@@ -23,6 +23,11 @@ static inline unsigned int inlinexattr_header_size(struct erofs_inode *vi)
 
 struct erofs_importer;
 
+enum erofs_ovl_xattr {
+	EROFS_OVL_XATTR_OPAQUE,
+	EROFS_OVL_XATTR_ORIGIN,
+};
+
 ssize_t erofs_sys_lsetxattr(const char *path, const char *name,
 			    void *value, size_t size);
 
@@ -45,12 +50,11 @@ int erofs_setxattr(struct erofs_inode *inode, int index, const char *name,
 		   const void *value, size_t size);
 int erofs_vfs_setxattr(struct erofs_inode *inode, const char *name,
 		       const void *value, size_t size);
-bool erofs_is_opaque_xattr(const char *name);
-int erofs_set_opaque_xattr(struct erofs_inode *inode);
-void erofs_clear_opaque_xattr(struct erofs_inode *inode);
-bool erofs_get_opaque_from_disk(struct erofs_inode *inode);
-bool erofs_is_origin_xattr(const char *name);
-int erofs_set_origin_xattr(struct erofs_inode *inode);
+bool erofs_is_ovl_xattr(const char *name, enum erofs_ovl_xattr type);
+int erofs_set_ovl_xattr(struct erofs_inode *inode, enum erofs_ovl_xattr type,
+			const void *value, size_t size);
+void erofs_clear_ovl_xattr(struct erofs_inode *inode, enum erofs_ovl_xattr type);
+bool erofs_has_ovl_xattr(struct erofs_inode *inode, enum erofs_ovl_xattr type);
 int erofs_read_xattrs_from_disk(struct erofs_inode *inode);
 
 bool erofs_xattr_prefix_matches(const char *key, unsigned int *index,

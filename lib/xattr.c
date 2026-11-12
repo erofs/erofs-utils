@@ -508,9 +508,9 @@ static int read_xattrs_from_file(struct erofs_sb_info *sbi, const char *path,
 		}
 
 		if (inode) {
-			if (erofs_is_origin_xattr(key))
+			if (erofs_is_ovl_xattr(key, EROFS_OVL_XATTR_ORIGIN))
 				inode->origin = true;
-			if (erofs_is_opaque_xattr(key))
+			if (erofs_is_ovl_xattr(key, EROFS_OVL_XATTR_OPAQUE))
 				inode->opaque |= S_ISDIR(inode->i_mode);
 			ret = erofs_inode_xattr_add(&inode->i_xattrs, item);
 			if (ret < 0)
@@ -597,41 +597,40 @@ static void erofs_removexattr(struct erofs_inode *inode, const char *key)
 	}
 }
 
-bool erofs_is_opaque_xattr(const char *name)
+static const char * const erofs_ovl_xattr_names[] = {
+	[EROFS_OVL_XATTR_OPAQUE] = OVL_XATTR_OPAQUE,
+	[EROFS_OVL_XATTR_ORIGIN] = OVL_XATTR_ORIGIN,
+};
+
+bool erofs_is_ovl_xattr(const char *name, enum erofs_ovl_xattr type)
 {
-	return !strcmp(name, OVL_XATTR_OPAQUE);
+	return !strcmp(name, erofs_ovl_xattr_names[type]);
 }
 
-int erofs_set_opaque_xattr(struct erofs_inode *inode)
+int erofs_set_ovl_xattr(struct erofs_inode *inode, enum erofs_ovl_xattr type,
+			const void *value, size_t size)
 {
-	if (inode->opaque)
+	bool *flag = type == EROFS_OVL_XATTR_OPAQUE ?
+			&inode->opaque : &inode->origin;
+
+	if (*flag)
 		return 0;
-	inode->opaque = true;
-	return erofs_vfs_setxattr(inode, OVL_XATTR_OPAQUE, "y", 1);
+	*flag = true;
+	return erofs_vfs_setxattr(inode, erofs_ovl_xattr_names[type], value, size);
 }
 
-void erofs_clear_opaque_xattr(struct erofs_inode *inode)
+void erofs_clear_ovl_xattr(struct erofs_inode *inode, enum erofs_ovl_xattr type)
 {
-	erofs_removexattr(inode, OVL_XATTR_OPAQUE);
-	inode->opaque = false;
+	bool *flag = type == EROFS_OVL_XATTR_OPAQUE ?
+			&inode->opaque : &inode->origin;
+
+	erofs_removexattr(inode, erofs_ovl_xattr_names[type]);
+	*flag = false;
 }
 
-bool erofs_get_opaque_from_disk(struct erofs_inode *inode)
+bool erofs_has_ovl_xattr(struct erofs_inode *inode, enum erofs_ovl_xattr type)
 {
-	return (erofs_getxattr(inode, OVL_XATTR_OPAQUE, NULL, 0) >= 0);
-}
-
-bool erofs_is_origin_xattr(const char *name)
-{
-	return !strcmp(name, OVL_XATTR_ORIGIN);
-}
-
-int erofs_set_origin_xattr(struct erofs_inode *inode)
-{
-	if (inode->origin)
-		return 0;
-	inode->origin = true;
-	return erofs_vfs_setxattr(inode, OVL_XATTR_ORIGIN, NULL, 0);
+	return erofs_getxattr(inode, erofs_ovl_xattr_names[type], NULL, 0) >= 0;
 }
 
 #ifdef WITH_ANDROID
@@ -714,7 +713,7 @@ int erofs_read_xattrs_from_disk(struct erofs_inode *inode)
 		void *value = NULL;
 		size_t size = 0;
 
-		if (!strcmp(key, OVL_XATTR_OPAQUE)) {
+		if (erofs_is_ovl_xattr(key, EROFS_OVL_XATTR_OPAQUE)) {
 			if (!S_ISDIR(inode->i_mode)) {
 				erofs_dbg("file %s: opaque xattr on non-dir",
 					  inode->i_srcpath);
@@ -743,7 +742,7 @@ int erofs_read_xattrs_from_disk(struct erofs_inode *inode)
 			DBG_BUGON(ret != size);
 		}
 
-		if (erofs_is_origin_xattr(key))
+		if (erofs_is_ovl_xattr(key, EROFS_OVL_XATTR_ORIGIN))
 			inode->origin = true;
 		ret = erofs_vfs_setxattr(inode, key, value, size);
 		free(value);

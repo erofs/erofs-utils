@@ -419,11 +419,12 @@ int tarerofs_apply_xattrs(struct erofs_inode *inode, struct list_head *xattrs)
 		erofs_dbg("Recording xattr(%s)=\"%.*s\" (of %u bytes) to file %s",
 			  item->kv, vsz, v, vsz, inode->i_srcpath);
 		/* a .wh..wh..opq preceds trusted.overlay.opaque xattr  */
-		if (inode->opaque && erofs_is_opaque_xattr(item->kv))
+		if (inode->opaque &&
+		    erofs_is_ovl_xattr(item->kv, EROFS_OVL_XATTR_OPAQUE))
 			continue;
-		if (erofs_is_origin_xattr(item->kv))
+		if (erofs_is_ovl_xattr(item->kv, EROFS_OVL_XATTR_ORIGIN))
 			inode->origin = true;
-		if (erofs_is_opaque_xattr(item->kv))
+		if (erofs_is_ovl_xattr(item->kv, EROFS_OVL_XATTR_OPAQUE))
 			inode->opaque |= S_ISDIR(inode->i_mode);
 		ret = erofs_vfs_setxattr(inode, item->kv, v, vsz);
 		if (ret == -ENODATA)
@@ -1087,7 +1088,7 @@ out_eot:
 		 * needed if the tar tree is used soon, thus we have no chance
 		 * to generate it from xattrs.  No impact to mergefs.
 		 */
-		ret = erofs_set_opaque_xattr(d->inode);
+		ret = erofs_set_ovl_xattr(d->inode, EROFS_OVL_XATTR_OPAQUE, "y", 1);
 		goto out;
 	} else if (th->typeflag == '1') {	/* hard link cases */
 		struct erofs_dentry *d2;
