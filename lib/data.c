@@ -215,6 +215,19 @@ int erofs_read_one_data(struct erofs_inode *inode, struct erofs_map_blocks *map,
 	struct erofs_map_dev mdev;
 	int ret;
 
+	if ((map->m_flags & EROFS_MAP_META) &&
+	    erofs_inode_in_metabox(inode)) {
+		struct erofs_buf buf = __EROFS_BUF_INITIALIZER;
+		void *src;
+
+		src = erofs_read_metabuf(&buf, sbi, map->m_pa + offset, true);
+		if (IS_ERR(src))
+			return PTR_ERR(src);
+		memcpy(buffer, src, len);
+		erofs_put_metabuf(&buf);
+		return 0;
+	}
+
 	mdev = (struct erofs_map_dev) {
 		.m_deviceid = map->m_deviceid,
 		.m_pa = map->m_pa,
@@ -253,20 +266,7 @@ static int erofs_read_raw_data(struct erofs_inode *inode, char *buffer,
 		eend = min(offset + size, map.m_la + map.m_llen);
 		DBG_BUGON(ptr < map.m_la);
 
-		if ((map.m_flags & EROFS_MAP_META) &&
-		    erofs_inode_in_metabox(inode)) {
-			struct erofs_buf buf = __EROFS_BUF_INITIALIZER;
-			void *src;
-
-			src = erofs_read_metabuf(&buf, inode->sbi,
-						 map.m_pa, true);
-			if (IS_ERR(src))
-				return PTR_ERR(src);
-			memcpy(estart, src, eend - ptr);
-			erofs_put_metabuf(&buf);
-			ptr = eend;
-			continue;
-		} else if (!(map.m_flags & EROFS_MAP_MAPPED)) {
+		if (!(map.m_flags & EROFS_MAP_MAPPED)) {
 			if (!map.m_llen) {
 				/* reached EOF */
 				memset(estart, 0, offset + size - ptr);
