@@ -515,6 +515,12 @@ int erofs_mkfs_load_fs(struct erofs_sb_info *sbi, unsigned int dsunit)
 		return err;
 	}
 
+	if (sbi->sb_size > sizeof(struct erofs_super_block)) {
+		erofs_err("unsupported superblock size %u for incremental builds",
+			  sbi->sb_size);
+		return -EOPNOTSUPP;
+	}
+
 	err = erofs_io_fstat(&sbi->bdev, &u.st);
 	if (!err && S_ISREG(u.st.st_mode))
 		u.startblk = DIV_ROUND_UP(u.st.st_size, erofs_blksiz(sbi));
