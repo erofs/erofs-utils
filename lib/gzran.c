@@ -231,7 +231,7 @@ static ssize_t erofs_gzran_ios_vfpread(struct erofs_vfile *vf, void *buf, size_t
 	bool skip = true;
 	u64 inpos, remin;
 	z_stream strm;
-	int ret;
+	ssize_t ret;
 
 	if (offset == ~0ULL) {
 		DBG_BUGON(1);
@@ -257,8 +257,10 @@ static ssize_t erofs_gzran_ios_vfpread(struct erofs_vfile *vf, void *buf, size_t
 	remin -= inpos;
 	ret = erofs_io_pread(ios->vin, src,
 			     min(remin, (u64)sizeof(src)), inpos);
-	if (ret < 0)
-		return ret;
+	if (ret <= 0) {
+		ret = ret < 0 ? ret : -EIO;
+		goto out;
+	}
 	if (u.bits) {
 		inflatePrime(&strm, u.bits, src[0] >> (8 - u.bits));
 		strm.next_in = src + 1;
@@ -294,10 +296,10 @@ static ssize_t erofs_gzran_ios_vfpread(struct erofs_vfile *vf, void *buf, size_t
 				ret = erofs_io_pread(ios->vin, src,
 						     min(remin, (u64)sizeof(src)),
 						     inpos);
-				if (ret < 0)
-					return ret;
-				if (!ret)
-					return -EIO;
+				if (ret <= 0) {
+					ret = ret < 0 ? ret : -EIO;
+					goto out;
+				}
 				inpos += ret;
 				remin -= ret;
 				strm.avail_in = ret;
@@ -306,8 +308,10 @@ static ssize_t erofs_gzran_ios_vfpread(struct erofs_vfile *vf, void *buf, size_t
 			ret = inflate(&strm, Z_NO_FLUSH);       /* normal inflate */
 			if (ret == Z_NEED_DICT)
 				ret = Z_DATA_ERROR;
-			if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR)
-				return -EIO;
+			if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR) {
+				ret = -EIO;
+				goto out;
+			}
 			if (ret == Z_STREAM_END)
 				break;
 		} while (strm.avail_out);
@@ -318,7 +322,10 @@ static ssize_t erofs_gzran_ios_vfpread(struct erofs_vfile *vf, void *buf, size_t
 
 		/* do until offset reached and requested data read, or stream ends */
 	} while (skip);
-	return len - strm.avail_out;
+	ret = len - strm.avail_out;
+out:
+	inflateEnd(&strm);
+	return ret;
 }
 
 static struct erofs_vfops erofs_gzran_ios_vfops = {
