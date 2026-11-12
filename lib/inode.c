@@ -1851,6 +1851,7 @@ static int erofs_mkfs_import_localdir(struct erofs_importer *im, struct erofs_in
 	__nr_subdirs = *nr_subdirs;
 	__nlink = *i_nlink;
 	while (1) {
+		struct erofs_exclude_rule *rule;
 		struct erofs_inode *inode;
 		struct erofs_dentry *d;
 		char buf[PATH_MAX];
@@ -1873,7 +1874,12 @@ static int erofs_mkfs_import_localdir(struct erofs_importer *im, struct erofs_in
 			continue;
 
 		/* skip if it's a exclude file */
-		if (erofs_is_exclude_path(dir->i_srcpath, dp->d_name))
+		rule = erofs_is_exclude_path(dir->i_srcpath, dp->d_name);
+		if (IS_ERR(rule)) {
+			ret = PTR_ERR(rule);
+			goto err_closedir;
+		}
+		if (rule)
 			continue;
 
 		d = erofs_d_alloc(dir, dp->d_name);

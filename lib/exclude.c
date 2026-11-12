@@ -108,7 +108,12 @@ struct erofs_exclude_rule *erofs_is_exclude_path(const char *dir,
 		/* no prefix */
 		s = name;
 	} else {
-		sprintf(buf, "%s/%s", dir, name);
+		int ret = snprintf(buf, sizeof(buf), "%s/%s", dir, name);
+
+		if (ret < 0)
+			return ERR_PTR(-errno);
+		if ((size_t)ret >= sizeof(buf))
+			return ERR_PTR(-ENAMETOOLONG);
 		s = buf;
 	}
 
