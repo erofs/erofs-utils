@@ -1386,7 +1386,7 @@ int z_erofs_compress_segment(struct z_erofs_compress_sctx *ctx,
 			erofs_io_pread(vf, ctx->queue + ctx->tail, rx,
 				       ictx->fpos + offset));
 		if (ret != rx)
-			return -errno;
+			return ret < 0 ? ret : -EIO;
 
 		ctx->remaining -= rx;
 		ctx->tail += rx;

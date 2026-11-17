@@ -691,7 +691,7 @@ static int erofs_write_unencoded_data(struct erofs_inode *inode,
 		if (ret < inode->idata_size) {
 			free(inode->idata);
 			inode->idata = NULL;
-			return -EIO;
+			return ret < 0 ? ret : -EIO;
 		}
 	}
 	return 0;

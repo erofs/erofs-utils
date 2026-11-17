@@ -600,6 +600,8 @@ int erofs_nbd_get_request(int skfd, struct erofs_nbd_request *rq)
 	int err;
 
 	err = erofs_io_read(&vf, rq, sizeof(*rq));
+	if (err < 0)
+		return err;
 	if (err < sizeof(*rq))
 		return -EPIPE;
 
