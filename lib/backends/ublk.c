@@ -630,7 +630,7 @@ static int ublk_handle_io(struct erofs_ublk_queue *q, int tag)
 		if (ret < 0)
 			io->result = ret;
 		else
-			io->result = req.nr_sectors << 9;
+			io->result = req.result;
 	} else {
 		io->result = -EOPNOTSUPP;
 	}
