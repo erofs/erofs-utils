@@ -148,7 +148,7 @@ int erofs_fragment_findmatch(struct erofs_inode *inode,
 	ret = erofs_io_pread(vf, data, s1, fpos + inode->i_size - s1);
 	if (ret != s1) {
 		free(data);
-		return -errno;
+		return ret < 0 ? ret : -EIO;
 	}
 	e1 = s1 - EROFS_TOF_HASHLEN;
 	deduped = 0;

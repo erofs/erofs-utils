@@ -169,7 +169,8 @@ static int erofs_fanotify_handle_range(struct erofs_fanotify_ctx *ctx,
 		  (unsigned long long)(offset + length));
 
 	read_len = erofs_io_pread(&ctx->vd, ctx->fetch_buf, length, offset);
-	if (read_len < 0) {
+	if (read_len != length) {
+		read_len = read_len < 0 ? read_len : -EIO;
 		erofs_err("Failed to fetch range [%llu, %llu): %s",
 			  (unsigned long long)offset,
 			  (unsigned long long)(offset + length),

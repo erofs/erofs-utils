@@ -591,8 +591,8 @@ static ssize_t erofsmount_tarindex_pread(struct erofs_vfile *vf, void *buf,
 	if (index_part) {
 		local_read = erofs_io_pread(&tp->tarindex_vf, buf,
 					    index_part, offset);
-		if (local_read < 0)
-			return local_read;
+		if (local_read != index_part)
+			return local_read < 0 ? local_read : -EIO;
 	}
 	if (tardata_part) {
 		remote_read = erofs_io_pread(tp->zinfo_vf, buf + local_read,
@@ -1460,9 +1460,9 @@ static int erofsmount_ublk_handler(void *ctx, struct erofs_ublk_request *rq)
 
 	ret = erofs_io_pread(vf, rq->buf, rq->nr_sectors << 9,
 			     rq->start_sector << 9);
-	if (ret < 0) {
-		rq->result = -EIO;
-		return (int)ret;
+	if (ret != (rq->nr_sectors << 9)) {
+		rq->result = ret < 0 ? ret : -EIO;
+		return rq->result;
 	}
 	rq->result = ret;
 	return 0;

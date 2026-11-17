@@ -2025,18 +2025,17 @@ static int erofs_set_inode_fingerprint(struct erofs_inode *inode, int fd,
 	if (!ishare_xattr_prefix_id)
 		return 0;
 	erofs_sha256_init(&md);
-	do {
+	while (remaining) {
 		u8 buf[32768];
 
 		ret = erofs_io_pread(&vf, buf,
 				     min_t(u64, remaining, sizeof(buf)), pos);
-		if (ret < 0)
-			return ret;
-		if (ret > 0)
-			erofs_sha256_process(&md, buf, ret);
+		if (ret <= 0)
+			return ret < 0 ? ret : -EIO;
+		erofs_sha256_process(&md, buf, ret);
 		remaining -= ret;
 		pos += ret;
-	} while (remaining);
+	}
 	erofs_sha256_done(&md, out + sizeof("sha256:") - 1);
 #if defined(_WIN32) && !defined(__CYGWIN__)
 	ret = erofs_io_lseek(&vf, pos - inode->i_size, SEEK_SET);
