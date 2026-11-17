@@ -53,6 +53,8 @@ static ssize_t __erofs_io_write(int fd, const void *buf, size_t len)
 
 int erofs_io_fstat(struct erofs_vfile *vf, erofs_os_stat_t *buf)
 {
+	int ret;
+
 	if (__erofs_unlikely(cfg.c_dry_run)) {
 		buf->st_size = 0;
 		buf->st_mode = S_IFREG | 0777;
@@ -61,7 +63,8 @@ int erofs_io_fstat(struct erofs_vfile *vf, erofs_os_stat_t *buf)
 
 	if (vf->ops)
 		return vf->ops->fstat(vf, buf);
-	return erofs_os_fstat(vf->fd, buf);
+	ret = erofs_os_fstat(vf->fd, buf);
+	return ret < 0 ? -errno : ret;
 }
 
 ssize_t __erofs_io_pwrite(int fd, const void *buf, size_t len, u64 pos)
@@ -217,7 +220,8 @@ int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length)
 	length += vf->offset;
 	if (S_ISBLK(st.st_mode) || st.st_size == length)
 		return 0;
-	return ftruncate(vf->fd, length);
+	ret = ftruncate(vf->fd, length);
+	return ret < 0 ? -errno : ret;
 }
 
 ssize_t erofs_io_pread(struct erofs_vfile *vf, void *buf, size_t len, u64 pos)
