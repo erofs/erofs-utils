@@ -368,7 +368,6 @@ int erofs_fragment_commit(struct erofs_inode *inode, u32 tofh)
 		nb = realloc(fi->data, sz);
 		if (!nb) {
 			erofs_up_write(&bk->lock);
-			fi->data = NULL;
 			return -ENOMEM;
 		}
 		fi->data = nb;
