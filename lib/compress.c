@@ -2607,6 +2607,8 @@ int z_erofs_rebuild_load_metadata(struct erofs_sb_info *dst_sbi,
 err_free_ei:
 	free(ei);
 err_out:
+	free(inode->idata);
+	inode->idata = NULL;
 	list_for_each_entry_safe(ei, n, &extents, list) {
 		list_del(&ei->list);
 		free(ei);
