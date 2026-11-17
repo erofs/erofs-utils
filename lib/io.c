@@ -120,11 +120,10 @@ ssize_t erofs_io_pwritev(struct erofs_vfile *vf, const struct iovec *iov,
 	written = 0;
 	for (i = 0; i < iovcnt; ++i) {
 		ret = erofs_io_pwrite(vf, iov[i].iov_base, pos, iov[i].iov_len);
-		if (ret < iov[i].iov_len) {
-			if (ret < 0)
-				return ret;
+		if (ret < 0)
+			return ret;
+		if (ret < iov[i].iov_len)
 			return written + ret;
-		}
 		written += iov[i].iov_len;
 		pos += iov[i].iov_len;
 	}
@@ -188,12 +187,15 @@ int erofs_io_fallocate(struct erofs_vfile *vf, u64 offset,
 	while (len > sizeof(erofs_zeroed)) {
 		ret = erofs_io_pwrite(vf, erofs_zeroed, offset,
 				      sizeof(erofs_zeroed));
-		if (ret < 0)
-			return (int)ret;
+		if (ret <= 0)
+			return ret < 0 ? ret : -EIO;
 		len -= ret;
 		offset += ret;
 	}
-	return erofs_io_pwrite(vf, erofs_zeroed, offset, len) == len ? 0 : -EIO;
+	ret = erofs_io_pwrite(vf, erofs_zeroed, offset, len);
+	if (ret < 0)
+		return ret;
+	return ret == len ? 0 : -EIO;
 }
 
 int erofs_io_ftruncate(struct erofs_vfile *vf, u64 length)
