@@ -350,7 +350,7 @@ int erofs_fragment_commit(struct erofs_inode *inode, u32 tofh)
 	ret = __erofs_io_pwrite(epi->fd, fi->data, fi->length, offset);
 	if (ret != fi->length) {
 		if (ret < 0)
-			return -errno;
+			return ret;
 		return -EIO;
 	}
 	offset += fi->length;
@@ -558,7 +558,6 @@ static void *erofs_packedfile_preload(struct erofs_inode *pi,
 
 	err = __erofs_io_pwrite(epi->fd, buffer, map->m_llen, map->m_la);
 	if (err < 0) {
-		err = -errno;
 		if (err == -ENOSPC) {
 			memset(epi->uptodate, 0, epi->uptodate_bits >> 3);
 			(void)!ftruncate(epi->fd, 0);
