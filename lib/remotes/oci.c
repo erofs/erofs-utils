@@ -1491,6 +1491,7 @@ static ssize_t ocierofs_io_pread(struct erofs_vfile *vf, void *buf, size_t len, 
 		return ret;
 
 	if (download_buf && download_size > 0) {
+		download_size = min_t(size_t, download_size, len);
 		memcpy(buf, download_buf, download_size);
 		free(download_buf);
 		return download_size;
