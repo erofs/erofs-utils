@@ -230,7 +230,7 @@ ssize_t erofs_io_pread(struct erofs_vfile *vf, void *buf, size_t len, u64 pos)
 
 	pos += vf->offset;
 	do {
-		ret = erofs_os_pread(vf->fd, buf, len, (off_t)pos);
+		ret = erofs_os_pread(vf->fd, buf, len - read, (off_t)pos);
 		if (ret <= 0) {
 			if (!ret)
 				break;
