@@ -1047,12 +1047,14 @@ out_eot:
 		major = tarerofs_parsenum(th->devmajor, sizeof(th->devmajor));
 		if (errno) {
 			erofs_err("invalid device major @ %llu", tar_offset);
+			ret = -EIO;
 			goto out;
 		}
 
 		minor = tarerofs_parsenum(th->devminor, sizeof(th->devminor));
 		if (errno) {
 			erofs_err("invalid device minor @ %llu", tar_offset);
+			ret = -EIO;
 			goto out;
 		}
 
