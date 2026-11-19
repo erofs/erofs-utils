@@ -38,9 +38,9 @@ int erofs_sha256_done(struct sha256_state *md, unsigned char *out)
 	if (!md->ctx)
 		return -1;
 	ret = EVP_DigestFinal_ex(md->ctx, out, &mdsize);
+	EVP_MD_CTX_free(md->ctx);
 	if (ret != 1)
 		return -1;
-	EVP_MD_CTX_free(md->ctx);
 	return 0;
 }
 #else
@@ -228,14 +228,18 @@ int erofs_sha256_done(struct sha256_state *md, unsigned char *out)
 void erofs_sha256(const unsigned char *in, unsigned long in_size,
 		  unsigned char out[32])
 {
+#ifdef __USE_OPENSSL_SHA256
+	unsigned int mdsize;
+	int ret = EVP_Digest(in, in_size, out, &mdsize, EVP_sha256(), NULL);
+
+	DBG_BUGON(ret != 1);
+#else
 	struct sha256_state md;
 
 	erofs_sha256_init(&md);
-#ifdef __USE_OPENSSL_SHA256
-	EVP_MD_CTX_set_flags(md.ctx, EVP_MD_CTX_FLAG_ONESHOT);
-#endif
 	erofs_sha256_process(&md, in, in_size);
 	erofs_sha256_done(&md, out);
+#endif
 }
 
 #ifdef UNITTEST
