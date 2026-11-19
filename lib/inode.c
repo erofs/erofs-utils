@@ -651,6 +651,7 @@ static int erofs_write_unencoded_data(struct erofs_inode *inode,
 			return -EIO;
 	}
 
+	inode->idata_type = EROFS_IDATA_TYPE_RAW;
 	inode->idata_size = inode->i_size % erofs_blksiz(sbi);
 	remaining = inode->i_size - inode->idata_size;
 
