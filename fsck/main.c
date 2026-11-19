@@ -1188,6 +1188,7 @@ int main(int argc, char *argv[])
 	    erofs_superblock_csum_verify(&g_sbi)) {
 		fsckcfg.corrupted = true;
 		erofs_err("failed to verify superblock checksum");
+		err = -EFSCORRUPTED;
 		goto exit_put_super;
 	}
 
