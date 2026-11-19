@@ -705,7 +705,7 @@ AS_IF([test "x$with_openssl" != "xno"], [
     CPPFLAGS="${openssl_CFLAGS} ${CPPFLAGS}"
     LIBS="${openssl_LIBS} $LIBS"
     AC_CHECK_HEADERS([openssl/hmac.h],[
-      AC_CHECK_LIB(ssl, EVP_sha1, [], [
+      AC_SEARCH_LIBS([EVP_sha1], [crypto], [], [
         AC_MSG_ERROR([openssl doesn't work properly])])
       AC_CHECK_DECL(EVP_sha1, [have_openssl="yes"],
         [AC_MSG_ERROR([openssl doesn't work properly])], [[

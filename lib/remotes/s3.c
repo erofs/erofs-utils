@@ -12,6 +12,7 @@
 #include <time.h>
 #include <curl/curl.h>
 #include <libxml/parser.h>
+#include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include "erofs/print.h"
 #include "erofs/inode.h"
