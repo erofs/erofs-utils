@@ -86,11 +86,23 @@ struct erofs_dentry *erofs_d_lookup(struct erofs_inode *dir, const char *name)
 /* Bound symlink chains during path resolution, like the kernel's MAXSYMLINKS. */
 #define EROFS_REBUILD_SYMLINK_DEPTH	40
 
+static struct erofs_dentry *erofs_d_find_any_alias(struct erofs_inode *inode)
+{
+	struct erofs_dentry *d;
+
+	if (IS_ROOT(inode))
+		return NULL;
+	list_for_each_entry(d, &erofs_parent_inode(inode)->i_subdirs, d_child)
+		if (d->inode == inode)
+			return d;
+	return ERR_PTR(-ENOENT);
+}
+
 static struct erofs_dentry *__erofs_rebuild_get_dentry(struct erofs_inode *root,
 		struct erofs_inode *pwd, char *path, bool aufs,
 		bool *whout, bool *opq, bool to_head, unsigned int depth);
 
-static struct erofs_inode *erofs_rebuild_follow_link(struct erofs_inode *root,
+static struct erofs_dentry *erofs_rebuild_follow_link(struct erofs_inode *root,
 		struct erofs_inode *pwd, struct erofs_inode *link,
 		unsigned int depth)
 {
@@ -113,13 +125,8 @@ static struct erofs_inode *erofs_rebuild_follow_link(struct erofs_inode *root,
 		base = target[0] == '/' ? root : pwd;
 		d = __erofs_rebuild_get_dentry(root, base, target, false,
 					       &dumb_wh, &dumb_opq, false, depth);
-		if (IS_ERR(d))
-			return ERR_CAST(d);
-		/* target referred to the root or base directory itself ("/", ".") */
-		if (!d)
-			return base;
-		if (d->type == EROFS_FT_DIR)
-			return d->inode;
+		if (IS_ERR(d) || !d || d->type == EROFS_FT_DIR)
+			return d;
 		if (d->type != EROFS_FT_SYMLINK)
 			return ERR_PTR(-ENOTDIR);
 		/* the target is itself a symlink: keep following the chain */
@@ -132,9 +139,13 @@ static struct erofs_dentry *__erofs_rebuild_get_dentry(struct erofs_inode *root,
 		struct erofs_inode *pwd, char *path, bool aufs,
 		bool *whout, bool *opq, bool to_head, unsigned int depth)
 {
-	struct erofs_dentry *d = NULL;
+	struct erofs_dentry *d, *parent = NULL;
 	char *s = path;
+	bool parent_cached = false;
 
+	d = (pwd == root ? NULL : erofs_d_find_any_alias(pwd));
+	if (IS_ERR(d))
+		return d;
 	*whout = false;
 	*opq = false;
 
@@ -154,6 +165,11 @@ static struct erofs_dentry *__erofs_rebuild_get_dentry(struct erofs_inode *root,
 		if (__erofs_unlikely(is_dot_dotdot(s))) {
 			if (s[1] == '.') {
 				pwd = pwd->i_parent;
+				d = parent_cached ? parent :
+					(pwd == root ? NULL : erofs_d_find_any_alias(pwd));
+				if (IS_ERR(d))
+					return d;
+				parent_cached = false;
 			}
 		} else {
 			if (aufs && !slash) {
@@ -167,13 +183,17 @@ static struct erofs_dentry *__erofs_rebuild_get_dentry(struct erofs_inode *root,
 				}
 			}
 
+			parent = d;
 			d = erofs_d_lookup(pwd, s);
 			/* follow a symlinked intermediate component like a real fs */
 			if (d && slash && d->type == EROFS_FT_SYMLINK) {
-				pwd = erofs_rebuild_follow_link(root, pwd,
+				d = erofs_rebuild_follow_link(root, pwd,
 							d->inode, depth);
-				if (IS_ERR(pwd))
-					return ERR_CAST(pwd);
+				if (IS_ERR(d))
+					return d;
+				pwd = d ? d->inode : root;
+				/* The target may have a different parent. */
+				parent_cached = false;
 				*slash = '/';
 				s = slash + 1;
 				continue;
@@ -198,6 +218,7 @@ static struct erofs_dentry *__erofs_rebuild_get_dentry(struct erofs_inode *root,
 				d->type = EROFS_FT_UNKNOWN;
 				d->inode = pwd;
 			}
+			parent_cached = true;
 			pwd = d->inode;
 		}
 
