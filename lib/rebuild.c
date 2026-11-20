@@ -127,6 +127,12 @@ static struct erofs_dentry *erofs_rebuild_follow_link(struct erofs_inode *root,
 					       &dumb_wh, &dumb_opq, false, depth);
 		if (IS_ERR(d) || !d || d->type == EROFS_FT_DIR)
 			return d;
+		if (d->type == EROFS_FT_UNKNOWN) {
+			/* The unresolved target does not own an inode. */
+			list_del(&d->d_child);
+			free(d);
+			return ERR_PTR(-ENOENT);
+		}
 		if (d->type != EROFS_FT_SYMLINK)
 			return ERR_PTR(-ENOTDIR);
 		/* the target is itself a symlink: keep following the chain */
