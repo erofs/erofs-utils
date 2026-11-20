@@ -1950,6 +1950,8 @@ int main(int argc, char **argv)
 	}
 
 	if (source_mode == EROFS_MKFS_SOURCE_LOCALDIR) {
+		erofs_os_stat_t st;
+
 		err = erofs_load_shared_xattrs_from_path(&g_sbi, cfg.c_src_path,
 						mkfscfg.inlinexattr_tolerance);
 		if (err) {
@@ -1971,6 +1973,14 @@ int main(int argc, char **argv)
 			err = PTR_ERR(root);
 			goto exit;
 		}
+		err = erofs_os_lstat(cfg.c_src_path, &st);
+		if (err) {
+			err = -errno;
+			goto exit;
+		}
+		err = erofs_fill_inode(&importer, root, &st, cfg.c_src_path);
+		if (err)
+			goto exit;
 	} else {
 		err = erofs_xattr_flush_name_prefixes(&importer,
 						      mkfs_plain_xattr_pfx);
