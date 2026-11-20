@@ -688,6 +688,19 @@ int erofs_scan_file_xattrs(struct erofs_inode *inode)
 	return erofs_droid_xattr_set_caps(inode);
 }
 
+void erofs_inode_clear_xattrs(struct erofs_inode *inode)
+{
+	struct erofs_inode_xattr_node *node, *n;
+
+	list_for_each_entry_safe(node, n, &inode->i_xattrs, list) {
+		list_del(&node->list);
+		put_xattritem(node->item);
+		free(node);
+	}
+	inode->opaque = false;
+	inode->origin = false;
+}
+
 int erofs_read_xattrs_from_disk(struct erofs_inode *inode)
 {
 	ssize_t kllen;
@@ -1001,27 +1014,18 @@ static void erofs_write_xattr_entry(char *buf, struct erofs_xattritem *item)
 			item->prefix, item->kvbuf + item->prefix_len);
 }
 
-int erofs_load_shared_xattrs_from_path(struct erofs_sb_info *sbi, const char *path,
-				       long inlinexattr_tolerance)
+static int erofs_write_shared_xattrs(struct erofs_sb_info *sbi,
+				     unsigned int sharedxattr_count)
 {
 	struct erofs_xattrmgr *xamgr = sbi->xamgr;
 	struct erofs_xattritem *item, *n, **sorted_n;
-	unsigned int sharedxattr_count, p, i;
+	unsigned int p, i;
 	struct erofs_buffer_head *bh;
 	char *buf;
 	int ret;
 	erofs_off_t off;
 	erofs_off_t shared_xattrs_size = 0;
 
-	/* check if xattr or shared xattr is disabled */
-	if (inlinexattr_tolerance < 0 || inlinexattr_tolerance >= INT_MAX)
-		return 0;
-
-	ret = erofs_count_all_xattrs_from_path(sbi, path);
-	if (ret)
-		return ret;
-
-	sharedxattr_count = erofs_cleanxattrs(xamgr, inlinexattr_tolerance);
 	if (!sharedxattr_count)
 		return 0;
 
@@ -1075,6 +1079,43 @@ int erofs_load_shared_xattrs_from_path(struct erofs_sb_info *sbi, const char *pa
 	free(buf);
 	erofs_bdrop(bh, false);
 	return ret;
+}
+
+int erofs_load_shared_xattrs_from_path(struct erofs_sb_info *sbi, const char *path,
+				       long inlinexattr_tolerance)
+{
+	int ret;
+
+	if (inlinexattr_tolerance < 0 || inlinexattr_tolerance >= INT_MAX)
+		return 0;
+	ret = erofs_count_all_xattrs_from_path(sbi, path);
+	if (ret)
+		return ret;
+	return erofs_write_shared_xattrs(sbi,
+			erofs_cleanxattrs(sbi->xamgr, inlinexattr_tolerance));
+}
+
+int erofs_build_shared_xattrs(struct erofs_sb_info *sbi,
+			      long inlinexattr_tolerance)
+{
+	struct erofs_xattrmgr *xamgr = sbi->xamgr;
+	struct erofs_xattritem *item;
+	unsigned int i, count = 0;
+
+	if (inlinexattr_tolerance < 0 || inlinexattr_tolerance >= INT_MAX)
+		return 0;
+	for (i = 0; i < ARRAY_SIZE(xamgr->hash); ++i) {
+		list_for_each_entry(item, xamgr->hash + i, node) {
+			if (item->count > inlinexattr_tolerance) {
+				/* keep shared items alive after inode references drop */
+				++item->count;
+				item->next_shared_xattr = xamgr->shared_xattrs;
+				xamgr->shared_xattrs = item;
+				++count;
+			}
+		}
+	}
+	return erofs_write_shared_xattrs(sbi, count);
 }
 
 char *erofs_export_xattr_ibody(struct erofs_inode *inode)

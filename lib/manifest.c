@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include "erofs/importer.h"
 #include "erofs/inode.h"
+#include "erofs/xattr.h"
 #include "erofs/print.h"
 #include "erofs/manifest.h"
 #include "liberofs_rebuild.h"
@@ -136,6 +137,7 @@ static int erofs_manifest_load_local(struct erofs_importer *im,
 		free(inode->i_srcpath);
 		inode->i_srcpath = NULL;
 		erofs_remove_ihash(inode);
+		erofs_inode_clear_xattrs(inode);
 	} else {
 		parent = d->inode;
 		if (!S_ISDIR(st.st_mode) && !im->params->hard_dereference) {
@@ -179,6 +181,12 @@ static int erofs_manifest_load_local(struct erofs_importer *im,
 		}
 		inode->i_link[len] = '\0';
 		inode->i_size = len;
+	}
+
+	if (!im->params->no_xattrs) {
+		ret = erofs_scan_file_xattrs(inode);
+		if (ret)
+			goto out_inode;
 	}
 
 	if (!existing) {
