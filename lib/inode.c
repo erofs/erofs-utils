@@ -1335,7 +1335,7 @@ int __erofs_fill_inode(struct erofs_importer *im, struct erofs_inode *inode,
 	return 0;
 }
 
-static int erofs_fill_inode(struct erofs_importer *im, struct erofs_inode *inode,
+int erofs_fill_inode(struct erofs_importer *im, struct erofs_inode *inode,
 			    erofs_os_stat_t *st, const char *path)
 {
 	const struct erofs_importer_params *params = im->params;
@@ -2268,30 +2268,6 @@ struct erofs_mkfs_buildtree_ctx {
 	struct erofs_importer *im;
 	bool rebuild, incremental;
 };
-#ifndef EROFS_MT_ENABLED
-#define __erofs_mkfs_build_tree erofs_mkfs_build_tree
-#endif
-
-static int __erofs_mkfs_build_tree(const struct erofs_mkfs_btctx *ctx)
-{
-	struct erofs_importer *im = ctx->im;
-
-	if (!ctx->rebuild) {
-		struct erofs_importer_params *params = im->params;
-		erofs_os_stat_t st;
-		int err;
-
-		err = erofs_os_lstat(params->source, &st);
-		if (err)
-			return -errno;
-
-		err = erofs_fill_inode(im, im->root, &st, params->source);
-		if (err)
-			return err;
-	}
-	return erofs_mkfs_dump_tree(ctx);
-}
-
 #ifdef EROFS_MT_ENABLED
 
 #ifdef HAVE_SYS_RESOURCE_H
@@ -2358,7 +2334,7 @@ static int erofs_mkfs_build_tree(struct erofs_mkfs_btctx *ctx)
 	if (err)
 		goto fail;
 
-	err = __erofs_mkfs_build_tree(ctx);
+	err = erofs_mkfs_dump_tree(ctx);
 	erofs_mkfs_go(ctx, ~0, NULL, 0);
 	err2 = pthread_join(sbi->dfops_worker, &retval);
 	DBG_BUGON(!q->exited);
@@ -2377,6 +2353,8 @@ fail:
 	free(q);
 	return err;
 }
+#else
+#define erofs_mkfs_build_tree erofs_mkfs_dump_tree
 #endif
 
 int erofs_importer_load_tree(struct erofs_importer *im, bool rebuild,
