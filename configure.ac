@@ -300,6 +300,7 @@ AC_CHECK_FUNCS(m4_flatten([
 	copy_file_range
 	fallocate
 	getrandom
+	getline
 	getrlimit
 	gettid
 	gettimeofday
@@ -317,6 +318,7 @@ AC_CHECK_FUNCS(m4_flatten([
 	strdup
 	strerror
 	strrchr
+	strsep
 	strtoull
 	sysconf
 	utimensat]))
