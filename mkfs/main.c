@@ -24,6 +24,7 @@
 #include "erofs/exclude.h"
 #include "erofs/block_list.h"
 #include "erofs/compress_hints.h"
+#include "erofs/manifest.h"
 #include "../lib/compressor.h"
 #include "../lib/liberofs_chunk.h"
 #include "../lib/liberofs_gzran.h"
@@ -105,6 +106,7 @@ static struct option long_options[] = {
 	{"MZ", optional_argument, NULL, 537},
 	{"xattr-prefix", required_argument, NULL, 538},
 	{"xattr-inode-digest", optional_argument, NULL, 539},
+	{"manifest", required_argument, NULL, 540},
 	{0, 0, 0, 0},
 };
 
@@ -212,6 +214,7 @@ static void usage(int argc, char **argv)
 		" --hard-dereference     dereference hardlinks, add links as separate inodes\n"
 		" --ignore-mtime         use build time instead of strict per-file modification time\n"
 		" --max-extent-bytes=#   set maximum decompressed extent size # in bytes\n"
+		" --manifest=X           build an image from a manifest file X and DATADIR\n"
 		" --mount-point=X        X=prefix of target fs path (default: /)\n"
 		" --preserve-mtime       keep per-file modification time strictly\n"
 		" --offset=#             skip # bytes at the beginning of IMAGE.\n"
@@ -324,8 +327,10 @@ static enum {
 	EROFS_MKFS_SOURCE_S3,
 	EROFS_MKFS_SOURCE_OCI,
 	EROFS_MKFS_SOURCE_REBUILD,
+	EROFS_MKFS_SOURCE_MANIFEST,
 } source_mode;
 
+static const char *manifest_file;
 static unsigned int rebuild_src_count;
 static LIST_HEAD(rebuild_src_list);
 static u8 fixeduuid[16];
@@ -971,6 +976,7 @@ static int mkfs_parse_sources(int argc, char *argv[], int optind)
 	char *s;
 
 	switch (source_mode) {
+	case EROFS_MKFS_SOURCE_MANIFEST:
 	case EROFS_MKFS_SOURCE_LOCALDIR:
 		err = erofs_os_lstat((s = argv[optind++]), &st);
 		if (err) {
@@ -985,7 +991,10 @@ static int mkfs_parse_sources(int argc, char *argv[], int optind)
 					  erofs_strerror(-errno));
 				return -ENOENT;
 			}
-			erofs_set_fs_root(cfg.c_src_path);
+			if (source_mode == EROFS_MKFS_SOURCE_LOCALDIR)
+				erofs_set_fs_root(cfg.c_src_path);
+		} else if (source_mode == EROFS_MKFS_SOURCE_MANIFEST) {
+			return -ENOTDIR;
 		} else {
 			cfg.c_src_path = strdup(s);
 			if (!cfg.c_src_path)
@@ -1497,6 +1506,14 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 				return err;
 			}
 			break;
+		case 540:
+			if (manifest_file) {
+				erofs_err("duplicated manifest %s", optarg);
+				return -EOPNOTSUPP;
+			}
+			manifest_file = optarg;
+			source_mode = EROFS_MKFS_SOURCE_MANIFEST;
+			break;
 		case 'V':
 			version();
 			exit(0);
@@ -1534,6 +1551,9 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			erofs_err("--blobdev is currently incompatible with rebuild mode");
 			return -EINVAL;
 		}
+	} else if (source_mode == EROFS_MKFS_SOURCE_MANIFEST) {
+		erofs_err("missing argument: DATADIR");
+		return -EINVAL;
 	} else if (source_mode != EROFS_MKFS_SOURCE_TAR) {
 		erofs_err("missing argument: SOURCE(s)");
 		return -EINVAL;
@@ -1981,7 +2001,7 @@ int main(int argc, char **argv)
 		err = erofs_fill_inode(&importer, root, &st, cfg.c_src_path);
 		if (err)
 			goto exit;
-	} else {
+	} else if (source_mode != EROFS_MKFS_SOURCE_MANIFEST) {
 		err = erofs_xattr_flush_name_prefixes(&importer,
 						      mkfs_plain_xattr_pfx);
 		if (err) {
@@ -1998,7 +2018,21 @@ int main(int argc, char **argv)
 	}
 
 	importer.root = root;
-	if (source_mode == EROFS_MKFS_SOURCE_TAR) {
+	if (source_mode == EROFS_MKFS_SOURCE_MANIFEST) {
+		FILE *fp = fopen(manifest_file, "r");
+
+		if (!fp) {
+			err = -errno;
+			erofs_err("cannot open manifest %s: %s",
+				  manifest_file, erofs_strerror(err));
+			goto exit;
+		}
+		err = erofs_manifest_load(&importer, fp);
+		fclose(fp);
+		if (err)
+			goto exit;
+		root = importer.root;
+	} else if (source_mode == EROFS_MKFS_SOURCE_TAR) {
 		while (!(err = tarerofs_parse_tar(&importer, &erofstar)))
 			;
 	} else if (source_mode == EROFS_MKFS_SOURCE_REBUILD) {

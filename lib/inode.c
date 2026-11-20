@@ -98,6 +98,7 @@ void erofs_remove_ihash(struct erofs_inode *inode)
 {
 	erofs_down_write(&erofs_ihashlock);
 	list_del(&inode->i_hash);
+	init_list_head(&inode->i_hash);
 	erofs_up_write(&erofs_ihashlock);
 }
 
