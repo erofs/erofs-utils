@@ -481,14 +481,30 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 			goto out;
 		mergedir = d->inode;
 		if (erofs_inode_is_whiteout(&src)) {
-			mergedir->opaque = true;
+			/*
+			 * The upper directory hides this whiteout, but older
+			 * layers must stay hidden as well.  Mark the merged
+			 * directory opaque to stop both the current tree merge
+			 * and a later overlayfs merge.
+			 */
+			ret = erofs_set_ovl_xattr(mergedir,
+						  EROFS_OVL_XATTR_OPAQUE,
+						  "y", 1);
 			goto out;
 		}
 		if (!S_ISDIR(src.i_mode))
 			goto out;
-		mergedir->opaque |= erofs_has_ovl_xattr(&src,
-							EROFS_OVL_XATTR_OPAQUE);
+		/*
+		 * The lower directory is opaque, so layers below it must stay
+		 * hidden.  Preserve that property on the merged directory.
+		 */
+		if (erofs_has_ovl_xattr(&src, EROFS_OVL_XATTR_OPAQUE))
+			ret = erofs_set_ovl_xattr(mergedir,
+						  EROFS_OVL_XATTR_OPAQUE,
+						  "y", 1);
 		erofs_inode_free_xattrs(&src);
+		if (ret)
+			goto out;
 		inode = dir = &src;
 	} else {
 		u64 nid;
