@@ -501,6 +501,7 @@ static int z_erofs_map_blocks_fo(struct erofs_inode *vi,
 		if (erofs_blkoff(sbi, map->m_pa) + map->m_plen > erofs_blksiz(sbi)) {
 			erofs_err("invalid tail-packing pclustersize %llu",
 				  map->m_plen | 0ULL);
+			err = -EFSCORRUPTED;
 			goto out;
 		}
 	} else if (fragment && m.lcn == vi->z_tailextent_headlcn) {
