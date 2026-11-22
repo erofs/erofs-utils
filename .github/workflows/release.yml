@@ -48,7 +48,32 @@ jobs:
         run: |
           VERSION=${{ needs.getvers.outputs.string }}-linux-${{ matrix.arch }}
           echo "VERS_OSARCH=${VERSION}" >> $GITHUB_ENV
-          docker build -o - . | xz -e9 > erofs-utils-static-${VERSION}.tar.xz
+          docker build --target linux -o - . | xz -e9 > erofs-utils-static-${VERSION}.tar.xz
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: erofs-utils-static-${{ env.VERS_OSARCH }}
+          path: erofs-utils-static-${{ env.VERS_OSARCH }}.tar.xz
+          archive: false
+
+  windows-static-build:
+    name: Static binaries for windows/amd64
+    runs-on: ubuntu-latest
+    needs: [getvers]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build static release
+        id: rel
+        run: |
+          VERSION=${{ needs.getvers.outputs.string }}-windows-amd64
+          echo "VERS_OSARCH=${VERSION}" >> $GITHUB_ENV
+          docker build --target windows -o - . | xz -e9 > erofs-utils-static-${VERSION}.tar.xz
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v7
@@ -63,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [getvers, linux-static-build]
+    needs: [getvers, linux-static-build, windows-static-build]
     steps:
       - name: Download release artifacts
         uses: actions/download-artifact@v8
