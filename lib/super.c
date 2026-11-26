@@ -521,6 +521,18 @@ int erofs_mkfs_load_fs(struct erofs_sb_info *sbi, unsigned int dsunit)
 		return -EOPNOTSUPP;
 	}
 
+	/*
+	 * TODO: fix up unified block addresses in inherited inodes.
+	 *
+	 * Growing the primary device moves external devices in the unified
+	 * address space, while inherited inodes still use the old addresses.
+	 * Disable incremental builds with external devices for now.
+	 */
+	if (sbi->extra_devices) {
+		erofs_err("incremental builds with external devices are not supported");
+		return -EOPNOTSUPP;
+	}
+
 	err = erofs_io_fstat(&sbi->bdev, &u.st);
 	if (!err && S_ISREG(u.st.st_mode))
 		u.startblk = DIV_ROUND_UP(u.st.st_size, erofs_blksiz(sbi));
