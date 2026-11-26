@@ -192,8 +192,8 @@ void erofs_inode_fixup_chunkformat(struct erofs_inode *inode)
 		inode->u.chunkformat |= EROFS_CHUNK_FORMAT_48BIT;
 }
 
-int erofs_write_chunk_indexes(struct erofs_inode *inode, struct erofs_vfile *vf,
-			      erofs_off_t off)
+s64 erofs_write_chunk_indexes(struct erofs_inode *inode, struct erofs_vfile *vf,
+				 erofs_off_t off)
 {
 	struct erofs_sb_info *sbi = inode->sbi;
 	erofs_blk_t remaining_blks = BLK_ROUND_UP(sbi, inode->i_size);
@@ -201,7 +201,8 @@ int erofs_write_chunk_indexes(struct erofs_inode *inode, struct erofs_vfile *vf,
 	erofs_blk_t extent_end = EROFS_NULL_ADDR, chunkblks, addrmask;
 	erofs_blk_t extent_start = EROFS_NULL_ADDR;
 	erofs_off_t source_offset;
-	unsigned int dst, src, unit, zeroedlen;
+	unsigned int unit, zeroedlen;
+	u64 dst, src;
 	bool _48bit;
 
 	if (inode->u.chunkformat & EROFS_CHUNK_FORMAT_INDEXES)

@@ -799,7 +799,8 @@ int erofs_iflush(struct erofs_inode *inode)
 	struct iovec iov[2];
 	char *xattrs = NULL;
 	bool nlink_1 = true;
-	int ret, fmt;
+	int fmt;
+	s64 ret;
 
 	DBG_BUGON(inode->nid == EROFS_NID_UNALLOCATED);
 	DBG_BUGON(bh && erofs_btell(bh, false) != off);
@@ -981,11 +982,11 @@ static bool erofs_inode_need_48bit(struct erofs_inode *inode)
 	return false;
 }
 
-static unsigned int erofs_inode_meta_size(struct erofs_inode *inode)
+static u64 erofs_inode_meta_size(struct erofs_inode *inode)
 {
-	unsigned int inodesize;
+	u64 inodesize;
 
-	inodesize = inode->inode_isize + inode->xattr_isize;
+	inodesize = inode->inode_isize + (u64)inode->xattr_isize;
 	if (inode->extent_isize)
 		inodesize = roundup(inodesize, 8) + inode->extent_isize;
 	return inodesize;
@@ -997,7 +998,7 @@ static int erofs_prepare_inode_buffer(struct erofs_importer *im,
 	const struct erofs_importer_params *params = im->params;
 	struct erofs_sb_info *sbi = im->sbi;
 	struct erofs_bufmgr *ibmgr;
-	unsigned int inodesize;
+	u64 inodesize;
 	struct erofs_buffer_head *bh, *ibh;
 
 	DBG_BUGON(inode->bh || inode->bh_inline);
@@ -2443,7 +2444,8 @@ int erofs_fixup_root_inode(struct erofs_inode *root)
 {
 	struct erofs_sb_info *sbi = root->sbi;
 	struct erofs_inode oi;
-	unsigned int ondisk_capacity, ondisk_size;
+	unsigned int ondisk_capacity;
+	erofs_off_t ondisk_size;
 	char *ibuf;
 	int err;
 
@@ -2471,10 +2473,7 @@ int erofs_fixup_root_inode(struct erofs_inode *root)
 	if (oi.datalayout == EROFS_INODE_FLAT_INLINE)
 		ondisk_capacity += erofs_blkoff(sbi, oi.i_size);
 
-	ondisk_size = root->inode_isize + root->xattr_isize;
-	if (root->extent_isize)
-		ondisk_size = roundup(ondisk_size, 8) + root->extent_isize;
-	ondisk_size += root->idata_size;
+	ondisk_size = erofs_inode_meta_size(root) + root->idata_size;
 
 	if (ondisk_size > ondisk_capacity) {
 		erofs_err("no enough room for the root inode from nid %llu",
