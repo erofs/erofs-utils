@@ -151,7 +151,7 @@ int __erofs_map_blocks(struct erofs_inode *inode,
 		}
 	} else {
 		startblk = le32_to_cpu(*(__le32 *)idx);
-		if (startblk != EROFS_NULL_ADDR) {
+		if (startblk != UINT32_MAX) {
 			map->m_pa = erofs_pos(sbi, startblk);
 			map->m_flags = EROFS_MAP_MAPPED;
 		}
