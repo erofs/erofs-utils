@@ -390,21 +390,21 @@ int erofs_superblock_csum_verify(struct erofs_sb_info *sbi)
 
 int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices)
 {
+	struct erofs_device_info *devs;
 	struct erofs_buffer_head *bh;
 	erofs_off_t slotoff;
 
 	if (!devices)
 		return 0;
 
-	sbi->devs = calloc(devices, sizeof(sbi->devs[0]));
-	if (!sbi->devs)
+	devs = calloc(devices, sizeof(devs[0]));
+	if (!devs)
 		return -ENOMEM;
 
 	bh = erofs_balloc(sbi->bmgr, DEVT,
 			  sizeof(struct erofs_deviceslot) * devices, 0);
 	if (IS_ERR(bh)) {
-		free(sbi->devs);
-		sbi->devs = NULL;
+		free(devs);
 		return PTR_ERR(bh);
 	}
 	erofs_mapbh(NULL, bh->block);
@@ -412,8 +412,7 @@ int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices)
 	/* the on-disk devt_slotoff is a 16-bit index */
 	if (slotoff > UINT16_MAX) {
 		erofs_bdrop(bh, true);
-		free(sbi->devs);
-		sbi->devs = NULL;
+		free(devs);
 		return -EOVERFLOW;
 	}
 	bh->op = &erofs_skip_write_bhops;
@@ -421,6 +420,7 @@ int erofs_mkfs_init_devices(struct erofs_sb_info *sbi, unsigned int devices)
 	sbi->devt_slotoff = slotoff;
 	sbi->extra_devices = devices;
 	erofs_sb_set_device_table(sbi);
+	sbi->devs = devs;
 	return 0;
 }
 
