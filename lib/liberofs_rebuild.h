@@ -10,11 +10,16 @@ enum erofs_rebuild_datamode {
 	EROFS_REBUILD_DATA_FULL,
 };
 
+struct erofs_rebuild_params {
+	struct erofs_inode *mergeroot;
+	struct erofs_sb_info *sbi;
+	enum erofs_rebuild_datamode datamode;
+};
+
 struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
 		char *path, bool aufs, bool *whout, bool *opq, bool to_head);
 
-int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi,
-			    enum erofs_rebuild_datamode mode);
+int erofs_rebuild_load_tree(struct erofs_rebuild_params *params);
 
 int erofs_rebuild_load_basedir(struct erofs_inode *dir, u64 *nr_subdirs,
 			       unsigned int *i_nlink);

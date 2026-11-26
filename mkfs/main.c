@@ -1688,17 +1688,17 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 	unsigned int extra_devices = 0;
 	erofs_blk_t nblocks;
 	int ret, idx;
-	enum erofs_rebuild_datamode datamode;
+	struct erofs_rebuild_params params = { .mergeroot = root };
 
 	switch (dataimport_mode) {
 	case EROFS_MKFS_DATA_IMPORT_DEFAULT:
-		datamode = EROFS_REBUILD_DATA_BLOB_INDEX;
+		params.datamode = EROFS_REBUILD_DATA_BLOB_INDEX;
 		break;
 	case EROFS_MKFS_DATA_IMPORT_FULLDATA:
-		datamode = EROFS_REBUILD_DATA_FULL;
+		params.datamode = EROFS_REBUILD_DATA_FULL;
 		break;
 	case EROFS_MKFS_DATA_IMPORT_RVSP:
-		datamode = EROFS_REBUILD_DATA_RESVSP;
+		params.datamode = EROFS_REBUILD_DATA_RESVSP;
 		break;
 	default:
 		return -EINVAL;
@@ -1706,7 +1706,8 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 
 	list_for_each_entry(src, &rebuild_src_list, list) {
 		src->xamgr = g_sbi.xamgr;
-		ret = erofs_rebuild_load_tree(root, src, datamode);
+		params.sbi = src;
+		ret = erofs_rebuild_load_tree(&params);
 		src->xamgr = NULL;
 		if (ret) {
 			erofs_err("failed to load %s", src->dif0.src_path);
@@ -1720,7 +1721,7 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 		extra_devices += src->extra_devices;
 	}
 
-	if (datamode == EROFS_REBUILD_DATA_RESVSP)
+	if (params.datamode == EROFS_REBUILD_DATA_RESVSP)
 		return 0;
 
 	/* Each blob has either no extra device or only one device for TarFS */
@@ -1730,7 +1731,7 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 		return -EOPNOTSUPP;
 	}
 
-	if (datamode == EROFS_REBUILD_DATA_FULL)
+	if (params.datamode == EROFS_REBUILD_DATA_FULL)
 		return 0;
 
 	ret = erofs_mkfs_init_devices(&g_sbi, rebuild_src_count);

@@ -389,10 +389,11 @@ static int erofs_rebuild_write_full_data(struct erofs_inode *inode)
 	return err;
 }
 
-static int erofs_rebuild_update_inode(struct erofs_sb_info *dst_sb,
-				      struct erofs_inode *inode,
-				      enum erofs_rebuild_datamode datamode)
+static int erofs_rebuild_update_inode(struct erofs_rebuild_params *params,
+				      struct erofs_inode *inode)
 {
+	struct erofs_sb_info *dst_sb = params->mergeroot->sbi;
+	enum erofs_rebuild_datamode datamode = params->datamode;
 	int err = 0;
 
 	switch (inode->i_mode & S_IFMT) {
@@ -450,8 +451,7 @@ struct erofs_rebuild_dir_context {
 	struct erofs_dir_context ctx;
 	struct erofs_inode *mergedir;	/* parent directory in the merged tree */
 	union {
-		/* indicate how to import inode data */
-		enum erofs_rebuild_datamode datamode;
+		struct erofs_rebuild_params *params;
 		struct {
 			u64 *nr_subdirs;
 			unsigned int *i_nlink;
@@ -581,8 +581,7 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 			inode->i_ino[1] = inode->nid;
 			inode->i_nlink = 1;
 
-			ret = erofs_rebuild_update_inode(&g_sbi, inode,
-							 rctx->datamode);
+			ret = erofs_rebuild_update_inode(rctx->params, inode);
 			if (ret) {
 				erofs_iput(inode);
 				goto out;
@@ -607,17 +606,17 @@ static int erofs_rebuild_dirent_iter(struct erofs_dir_context *ctx)
 	}
 
 	/* reset sbi, nid after subdirs are all loaded for the final dump */
-	inode->sbi = &g_sbi;
+	inode->sbi = rctx->params->mergeroot->sbi;
 	inode->nid = EROFS_NID_UNALLOCATED;
 out:
 	free(path);
 	return ret;
 }
 
-int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi,
-			    enum erofs_rebuild_datamode mode)
+int erofs_rebuild_load_tree(struct erofs_rebuild_params *params)
 {
-	struct erofs_sb_info *dst_sbi = root->sbi;
+	struct erofs_sb_info *dst_sbi = params->mergeroot->sbi;
+	struct erofs_sb_info *sbi = params->sbi;
 	struct erofs_inode inode = {};
 	struct erofs_rebuild_dir_context ctx;
 	char uuid_str[37];
@@ -635,7 +634,7 @@ int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi,
 		return ret;
 	}
 
-	if (mode == EROFS_REBUILD_DATA_BLOB_INDEX) {
+	if (params->datamode == EROFS_REBUILD_DATA_BLOB_INDEX) {
 		if (erofs_sb_has_ztailpacking(sbi))
 			erofs_sb_set_ztailpacking(dst_sbi);
 		if (erofs_sb_has_dedupe(sbi))
@@ -664,8 +663,8 @@ int erofs_rebuild_load_tree(struct erofs_inode *root, struct erofs_sb_info *sbi,
 	ctx = (struct erofs_rebuild_dir_context) {
 		.ctx.dir = &inode,
 		.ctx.cb = erofs_rebuild_dirent_iter,
-		.mergedir = root,
-		.datamode = mode,
+		.mergedir = params->mergeroot,
+		.params = params,
 	};
 	ret = erofs_iterate_dir(&ctx.ctx, false);
 	free(inode.i_srcpath);
