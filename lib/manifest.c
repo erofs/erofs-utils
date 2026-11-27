@@ -11,6 +11,8 @@
 #include "erofs/print.h"
 #include "erofs/manifest.h"
 #include "liberofs_rebuild.h"
+#include "liberofs_file_delta.h"
+#include "liberofs_chunk.h"
 
 #ifndef HAVE_STRSEP
 static char *__erofs_strsep(char **stringp, const char *delim)
@@ -111,7 +113,8 @@ static int erofs_manifest_decode(char *s)
 }
 
 static int erofs_manifest_load_local(struct erofs_importer *im,
-		struct erofs_inode *root, char *imagepath, const char *srcpath)
+		struct erofs_inode *root,
+		char *imagepath, const char *srcpath, bool delta_fmt)
 {
 	struct erofs_inode *inode, *parent;
 	struct erofs_dentry *d;
@@ -119,15 +122,52 @@ static int erofs_manifest_load_local(struct erofs_importer *im,
 	bool dumb, existing;
 	int ret;
 
-	ret = erofs_os_lstat(srcpath, &st) ? -errno : 0;
-	if (ret)
-		return ret;
-
+	if (delta_fmt && cfg.c_force_chunkformat == FORCE_INODE_BLOCK_MAP)
+		return -EOPNOTSUPP;
 	d = erofs_rebuild_get_dentry(root, imagepath, false,
 				      &dumb, &dumb, false);
 	if (IS_ERR(d))
 		return PTR_ERR(d);
 	existing = !d || d->type != EROFS_FT_UNKNOWN;
+
+	if (delta_fmt) {
+		struct erofs_file_delta *fdl;
+		struct erofs_vfile input = {};
+
+		if (!existing) {
+			ret = -ENOENT;
+			goto out_dentry;
+		}
+		inode = d ? d->inode : root;
+		if (!S_ISREG(inode->i_mode) || !inode->i_size)
+			return -EINVAL;
+		/* TODO: prepare chunk indexes for locally imported targets. */
+		if (inode->datalayout != EROFS_INODE_CHUNK_BASED || !inode->chunkindexes)
+			return -EOPNOTSUPP;
+		input.fd = erofs_os_open(srcpath, O_RDONLY | O_BINARY);
+		if (input.fd < 0)
+			return -errno;
+		fdl = erofs_dm_persistent_open(&input);
+		if (IS_ERR(fdl)) {
+			ret = PTR_ERR(fdl);
+		} else {
+			ret = erofs_chunk_apply_deltas(inode, fdl);
+			/* TODO: update inode digest xattrs after COW updates. */
+			if (!ret)
+				erofs_inode_clear_digest(inode);
+			fdl->ops->close(fdl);
+		}
+		erofs_io_close(&input);
+		return ret;
+	}
+
+	ret = erofs_os_lstat(srcpath, &st) ? -errno : 0;
+	if (ret) {
+		if (!existing)
+			goto out_dentry;
+		return ret;
+	}
+
 	if (existing) {
 		inode = d ? d->inode : root;
 		/* Allow updating directory meta while preserving existing children */
@@ -208,34 +248,49 @@ out_dentry:
 }
 
 static int erofs_manifest_parse_record(struct erofs_importer *im,
-				 struct erofs_inode *root, char *line)
+		struct erofs_inode *root,
+		char *line)
 {
-	char *fields[2], *token, *path;
-	int i, ret;
+	char *fields[3], *token, *imagepath, *srcpath;
+	unsigned int nr = 0;
+	bool dm_snap = false;
+	int ret;
 
-	for (i = 0; i < ARRAY_SIZE(fields); ++i) {
-		do {
-			token = strsep(&line, " ");
-		} while (token && !*token);
-		if (!token)
+	while ((token = strsep(&line, " "))) {
+		if (!*token)
+			continue;
+		if (nr == ARRAY_SIZE(fields))
 			return -EINVAL;
-		fields[i] = token;
+		fields[nr++] = token;
 	}
-	while ((token = strsep(&line, " ")))
-		if (*token)
-			return -EINVAL;
-
-	if (erofs_manifest_decode(fields[0]) || *fields[0] != '/' ||
-	    erofs_manifest_decode(fields[1]))
+	if (!nr)
 		return -EINVAL;
-	if (asprintf(&path, "%s/%s", im->params->source, fields[1]) < 0)
+	if (!strncmp(fields[0], "DIFF[", 5)) {
+		size_t len = strlen(fields[0]);
+
+		if (len <= 6 || fields[0][len - 1] != ']' || nr != 3)
+			return -EINVAL;
+		fields[0][len - 1] = '\0';
+		if (strcmp(fields[0] + 5, "DM_SNAP"))
+			return -EOPNOTSUPP;
+		dm_snap = true;
+	}
+	if (nr != (dm_snap ? 3 : 2))
+		return -EINVAL;
+	imagepath = fields[dm_snap ? 1 : 0];
+	token = fields[dm_snap ? 2 : 1];
+	if (erofs_manifest_decode(imagepath) || *imagepath != '/' ||
+	    erofs_manifest_decode(token))
+		return -EINVAL;
+	if (asprintf(&srcpath, "%s/%s", im->params->source, token) < 0)
 		return -ENOMEM;
-	ret = erofs_manifest_load_local(im, root, fields[0], path);
-	free(path);
+	ret = erofs_manifest_load_local(im, root,
+				       imagepath, srcpath, dm_snap);
+	free(srcpath);
 	return ret;
 }
 
-/* The importer has not taken ownership of the tree on a parse error. */
+/* The importer has not taken ownership of a new tree on a load error. */
 static void erofs_manifest_drop_children(struct erofs_inode *dir)
 {
 	struct erofs_dentry *d, *next;
@@ -253,18 +308,26 @@ static void erofs_manifest_drop_children(struct erofs_inode *dir)
 
 int erofs_manifest_load(struct erofs_importer *im, FILE *fp)
 {
-	struct erofs_inode *root;
+	struct erofs_inode *root = im->root;
+	bool newroot = !root;
 	char *line = NULL;
 	size_t capacity = 0;
 	unsigned long lineno = 0;
 	ssize_t len;
 	int ret = 0;
 
-	root = erofs_make_empty_root_inode(im, im->sbi);
-	if (IS_ERR(root))
-		return PTR_ERR(root);
-	/* Synthesized directories do not belong to the base image. */
-	root->dev = im->sbi->dev + 1;
+	if (newroot) {
+		root = erofs_make_empty_root_inode(im, im->sbi);
+		if (IS_ERR(root))
+			return PTR_ERR(root);
+	}
+	/*
+	 * Directories created for manifest paths inherit root->dev but have
+	 * no base NID.
+	 * Keep them out of base directory reads until incremental merging
+	 * finds an existing directory and sets its device and NID.
+	 */
+	root->dev = UINT32_MAX;
 
 	while ((len = getline(&line, &capacity, fp)) >= 0) {
 		++lineno;
@@ -290,13 +353,15 @@ int erofs_manifest_load(struct erofs_importer *im, FILE *fp)
 	if (!ret && !lineno)
 		ret = -EINVAL;
 	if (ret) {
-		erofs_manifest_drop_children(root);
-		erofs_iput(root);
+		if (newroot) {
+			erofs_manifest_drop_children(root);
+			erofs_iput(root);
+		}
 		erofs_err("failed to parse manifest at line %lu: %s",
 			  lineno, erofs_strerror(ret));
-	} else {
-		im->root = root;
 	}
+	if (!ret)
+		im->root = root;
 	free(line);
 	return ret;
 }

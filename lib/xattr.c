@@ -597,6 +597,23 @@ static void erofs_removexattr(struct erofs_inode *inode, const char *key)
 	}
 }
 
+void erofs_inode_clear_digest(struct erofs_inode *inode)
+{
+	u8 prefix = inode->sbi->ishare_xattr_prefix_id;
+	struct erofs_inode_xattr_node *node, *n;
+
+	if (!prefix)
+		return;
+	list_for_each_entry_safe(node, n, &inode->i_xattrs, list) {
+		if (node->item->prefix != prefix ||
+		    node->item->len[0] != node->item->prefix_len)
+			continue;
+		list_del(&node->list);
+		put_xattritem(node->item);
+		free(node);
+	}
+}
+
 static const char * const erofs_ovl_xattr_names[] = {
 	[EROFS_OVL_XATTR_OPAQUE] = OVL_XATTR_OPAQUE,
 	[EROFS_OVL_XATTR_ORIGIN] = OVL_XATTR_ORIGIN,

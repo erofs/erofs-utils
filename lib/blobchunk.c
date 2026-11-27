@@ -10,6 +10,7 @@
 #include "erofs/importer.h"
 #include "liberofs_cache.h"
 #include "liberofs_chunk.h"
+#include "liberofs_file_delta.h"
 #include "liberofs_private.h"
 #include "liberofs_sha256.h"
 #include <unistd.h>
@@ -81,8 +82,7 @@ static unsigned int memhash(const void *buf, size_t len)
 }
 
 static struct erofs_chunkitem *erofs_get_chunk(struct erofs_sb_info *sbi,
-					       int device_id,
-					       u8 *buf, u64 size)
+					       int device_id, u8 *buf, u64 size)
 {
 	struct erofs_bufmgr *bmgr = device_id ? sbi->devs[device_id - 1].bmgr : sbi->bmgr;
 	struct erofs_chunkmgr *chunkmgr = sbi->chunkmgr;
@@ -159,6 +159,132 @@ static struct erofs_chunkitem *erofs_get_chunk(struct erofs_sb_info *sbi,
 	list_add(&chunk->list, head);
 	erofs_bdrop(bh, false);
 	return chunk;
+}
+
+/* Bound the buffer for a single newly written chunk, even after extent merging. */
+#define EROFS_DELTA_CHUNK_MAX_BITS	26
+
+int erofs_chunk_apply_deltas(struct erofs_inode *inode,
+			     struct erofs_file_delta *fdl)
+{
+	struct erofs_sb_info *sbi = inode->sbi;
+	struct erofs_delta_map delta;
+	struct erofs_chunkitem **indexes, **old = inode->chunkindexes, *chunk;
+	erofs_off_t pos, alignment, len;
+	unsigned int oldbits, chunkbits;
+	u64 count, i;
+	size_t buflen;
+	u8 *buf = NULL;
+	int ret;
+
+	if (inode->datalayout != EROFS_INODE_CHUNK_BASED)
+		return -EOPNOTSUPP;
+	if (!fdl)
+		return 0;
+	alignment = fdl->ops->get_alignment(fdl);
+	if (!alignment)
+		return 0;
+	DBG_BUGON(!old);
+	oldbits = inode->u.chunkbits;
+	chunkbits = min_t(unsigned int, oldbits, ilog2(alignment));
+	chunkbits = min_t(unsigned int, chunkbits, EROFS_DELTA_CHUNK_MAX_BITS);
+	if (chunkbits < sbi->blkszbits)
+		return -EOPNOTSUPP;
+	count = round_up(inode->i_size, 1ULL << chunkbits) >> chunkbits;
+	if (count > min_t(u64, UINT_MAX, SSIZE_MAX) /
+		    sizeof(struct erofs_inode_chunk_index))
+		return -E2BIG;
+	indexes = calloc(count, sizeof(*indexes));
+	if (!indexes)
+		return -ENOMEM;
+	ret = erofs_blob_init(sbi, 0);
+	if (ret)
+		goto out;
+	for (i = 0; i < count; ++i) {
+		erofs_off_t within;
+
+		pos = i << chunkbits;
+		chunk = old[pos >> oldbits];
+		within = pos & ((1ULL << oldbits) - 1);
+		if (within && chunk->blkaddr != EROFS_NULL_ADDR) {
+			chunk = erofs_get_unhashed_chunk(sbi, chunk->device_id,
+				chunk->blkaddr + erofs_blknr(sbi, within), 0);
+			if (IS_ERR(chunk)) {
+				ret = PTR_ERR(chunk);
+				goto out;
+			}
+		}
+		indexes[i] = chunk;
+	}
+	delta.offset = 0;
+	while (delta.offset < inode->i_size) {
+		pos = delta.offset;
+		ret = fdl->ops->map(fdl, &delta);
+		if (ret)
+			goto out;
+		if (!delta.length)
+			break;
+		if (delta.offset < pos) {
+			ret = -EINVAL;
+			goto out;
+		}
+		if (delta.offset >= inode->i_size)
+			break;
+		delta.length = min(delta.length, inode->i_size - delta.offset);
+		if (delta.vf && delta.sourceoffset > UINT64_MAX - delta.length) {
+			ret = -EINVAL;
+			goto out;
+		}
+		if (delta.vf && !buf) {
+			buflen = min_t(erofs_off_t, 1ULL << chunkbits, inode->i_size);
+			buf = malloc(buflen);
+			if (!buf) {
+				ret = -ENOMEM;
+				goto out;
+			}
+		}
+		for (pos = 0; pos < delta.length; pos += len) {
+			bool zero = !delta.vf;
+
+			len = min_t(erofs_off_t, 1ULL << chunkbits, delta.length - pos);
+			if (!zero) {
+				const u8 *p = buf, *end = buf + len;
+
+				ret = erofs_pread(delta.vf, buf, len,
+						  delta.sourceoffset + pos);
+				if (ret)
+					goto out;
+				while (p < end && !*p)
+					++p;
+				zero = p == end;
+			}
+			/* All-zero chunks collapse into a hole. */
+			if (zero)
+				chunk = erofs_get_unhashed_chunk(sbi, 0, EROFS_NULL_ADDR, 0);
+			else
+				chunk = erofs_get_chunk(sbi, 0, buf, len);
+			if (IS_ERR(chunk)) {
+				ret = PTR_ERR(chunk);
+				goto out;
+			}
+			indexes[(delta.offset + pos) >> chunkbits] = chunk;
+		}
+		delta.offset += delta.length;
+	}
+	free(old);
+	inode->chunkindexes = indexes;
+	inode->extent_isize = count * sizeof(struct erofs_inode_chunk_index);
+	inode->datalayout = EROFS_INODE_CHUNK_BASED;
+	inode->u.chunkbits = chunkbits;
+	inode->u.chunkformat = (inode->u.chunkformat & EROFS_CHUNK_FORMAT_48BIT) |
+		EROFS_CHUNK_FORMAT_INDEXES |
+		(chunkbits - sbi->blkszbits);
+	indexes = NULL;
+	ret = 0;
+out:
+	free(buf);
+	free(indexes);
+	return ret;
 }
 
 void erofs_inode_fixup_chunkformat(struct erofs_inode *inode)

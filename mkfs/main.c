@@ -27,6 +27,7 @@
 #include "erofs/manifest.h"
 #include "../lib/compressor.h"
 #include "../lib/liberofs_chunk.h"
+#include "../lib/liberofs_file_delta.h"
 #include "../lib/liberofs_gzran.h"
 #include "../lib/liberofs_metabox.h"
 #include "../lib/liberofs_oci.h"
@@ -215,7 +216,7 @@ static void usage(int argc, char **argv)
 		" --hard-dereference     dereference hardlinks, add links as separate inodes\n"
 		" --ignore-mtime         use build time instead of strict per-file modification time\n"
 		" --max-extent-bytes=#   set maximum decompressed extent size # in bytes\n"
-		" --manifest=X           build an image from a manifest file X and DATADIR\n"
+		" --manifest=X           build from manifest X and DATADIR, optionally with base images\n"
 		" --mount-point=X        X=prefix of target fs path (default: /)\n"
 		" --omit-fsmeta          omit source fsmeta devices in blob-index rebuilds\n"
 		" --preserve-mtime       keep per-file modification time strictly\n"
@@ -330,12 +331,12 @@ static enum {
 	EROFS_MKFS_SOURCE_S3,
 	EROFS_MKFS_SOURCE_OCI,
 	EROFS_MKFS_SOURCE_REBUILD,
-	EROFS_MKFS_SOURCE_MANIFEST,
 } source_mode;
 
 static const char *manifest_file;
 static unsigned int rebuild_src_count;
 static LIST_HEAD(rebuild_src_list);
+static bool mkfs_manifest_rebuild;
 static u8 fixeduuid[16];
 static bool valid_fixeduuid;
 static unsigned int dsunit;
@@ -976,10 +977,14 @@ static int mkfs_parse_sources(int argc, char *argv[], int optind)
 {
 	erofs_os_stat_t st;
 	int err, fd;
-	char *s;
+	char *s, *datadir = NULL;
 
+	if (manifest_file) {
+		datadir = argv[--argc];
+		if (optind == argc)
+			goto out_datadir;
+	}
 	switch (source_mode) {
-	case EROFS_MKFS_SOURCE_MANIFEST:
 	case EROFS_MKFS_SOURCE_LOCALDIR:
 		err = erofs_os_lstat((s = argv[optind++]), &st);
 		if (err) {
@@ -988,16 +993,15 @@ static int mkfs_parse_sources(int argc, char *argv[], int optind)
 			return -ENOENT;
 		}
 		if (S_ISDIR(st.st_mode)) {
+			if (datadir)
+				return -EINVAL;
 			cfg.c_src_path = erofs_os_realpath(s, NULL);
 			if (!cfg.c_src_path) {
 				erofs_err("failed to parse source directory: %s",
 					  erofs_strerror(-errno));
 				return -ENOENT;
 			}
-			if (source_mode == EROFS_MKFS_SOURCE_LOCALDIR)
-				erofs_set_fs_root(cfg.c_src_path);
-		} else if (source_mode == EROFS_MKFS_SOURCE_MANIFEST) {
-			return -ENOTDIR;
+			erofs_set_fs_root(cfg.c_src_path);
 		} else {
 			cfg.c_src_path = strdup(s);
 			if (!cfg.c_src_path)
@@ -1079,6 +1083,18 @@ static int mkfs_parse_sources(int argc, char *argv[], int optind)
 	} else if (optind < argc) {
 		erofs_err("unexpected argument: %s\n", argv[optind]);
 		return -EINVAL;
+	}
+out_datadir:
+	if (datadir) {
+		if (erofs_os_stat(datadir, &st))
+			return -errno;
+		if (!S_ISDIR(st.st_mode))
+			return -ENOTDIR;
+		s = erofs_os_realpath(datadir, NULL);
+		if (!s)
+			return -errno;
+		free(cfg.c_src_path);
+		cfg.c_src_path = s;
 	}
 	return 0;
 }
@@ -1286,7 +1302,6 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 					  optarg);
 				return -EINVAL;
 			}
-			erofs_sb_set_chunked_file(&g_sbi);
 			break;
 		case 12:
 			quiet = true;
@@ -1515,7 +1530,6 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 				return -EOPNOTSUPP;
 			}
 			manifest_file = optarg;
-			source_mode = EROFS_MKFS_SOURCE_MANIFEST;
 			break;
 		case 541:
 			mkfscfg.omit_fsmeta = true;
@@ -1531,6 +1545,9 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			return -EINVAL;
 		}
 	}
+
+	if (manifest_file && source_mode != EROFS_MKFS_SOURCE_LOCALDIR)
+		return -EINVAL;
 
 	/* TODO: can be implemented with (deviceslot) mapped_blkaddr */
 	if (mkfscfg.blobdev_path &&
@@ -1557,7 +1574,7 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			erofs_err("--blobdev is currently incompatible with rebuild mode");
 			return -EINVAL;
 		}
-	} else if (source_mode == EROFS_MKFS_SOURCE_MANIFEST) {
+	} else if (manifest_file) {
 		erofs_err("missing argument: DATADIR");
 		return -EINVAL;
 	} else if (source_mode != EROFS_MKFS_SOURCE_TAR) {
@@ -1584,6 +1601,13 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 		return -EINVAL;
 	}
 
+	/*
+	 * TODO: prepare COW target chunk indexes for full-data and
+	 * reserved-space imports.
+	 */
+	mkfs_manifest_rebuild = manifest_file &&
+		source_mode == EROFS_MKFS_SOURCE_REBUILD && !incremental_mode;
+
 	if (quiet) {
 		cfg.c_dbg_lvl = EROFS_ERR;
 		cfg.c_showprogress = false;
@@ -1599,7 +1623,8 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 		params->pclusterblks_max = pclustersize_max >> mkfs_blkszbits;
 		params->pclusterblks_def = params->pclusterblks_max;
 	}
-	if (mkfscfg.chunkbits && mkfscfg.chunkbits < mkfs_blkszbits) {
+	if (source_mode != EROFS_MKFS_SOURCE_REBUILD && mkfscfg.chunkbits &&
+	    mkfscfg.chunkbits < mkfs_blkszbits) {
 		erofs_err("chunksize %u must be larger than block size",
 			  1u << mkfscfg.chunkbits);
 		return -EINVAL;
@@ -1903,6 +1928,11 @@ int main(int argc, char **argv)
 			goto exit;
 		}
 		mkfs_blkszbits = src->blkszbits;
+		if (mkfscfg.chunkbits && mkfscfg.chunkbits < src->blkszbits) {
+			erofs_err("chunksize must be at least the source block size");
+			err = -EINVAL;
+			goto exit;
+		}
 	} else if (mkfs_oci_tarindex_mode) {
 		mkfs_blkszbits = 9;
 		tar_index_512b = true;
@@ -1952,6 +1982,8 @@ int main(int argc, char **argv)
 		mkfscfg.chunkbits = g_sbi.blkszbits;
 	}
 	importer_params.chunkszbits_def = mkfscfg.chunkbits;
+	if (mkfs_manifest_rebuild && !mkfscfg.chunkbits)
+		importer_params.chunkszbits_def = g_sbi.blkszbits;
 	err = erofs_importer_init(&importer);
 	if (err)
 		goto exit;
@@ -1989,13 +2021,13 @@ int main(int argc, char **argv)
 		importer_params.ddev_id_def = mkfscfg.blobdev_path ? 1 : 0;
 	}
 
-	if (tar_index_512b || mkfscfg.chunkbits) {
-		err = erofs_blob_init(&g_sbi, mkfscfg.chunkbits);
+	if (tar_index_512b || importer_params.chunkszbits_def) {
+		err = erofs_blob_init(&g_sbi, importer_params.chunkszbits_def);
 		if (err)
 			goto exit;
 	}
 
-	if (source_mode == EROFS_MKFS_SOURCE_LOCALDIR) {
+	if (source_mode == EROFS_MKFS_SOURCE_LOCALDIR && !manifest_file) {
 		erofs_os_stat_t st;
 
 		err = erofs_load_shared_xattrs_from_path(&g_sbi, cfg.c_src_path,
@@ -2027,14 +2059,6 @@ int main(int argc, char **argv)
 		err = erofs_fill_inode(&importer, root, &st, cfg.c_src_path);
 		if (err)
 			goto exit;
-	} else if (source_mode == EROFS_MKFS_SOURCE_MANIFEST)  {
-		err = erofs_xattr_flush_name_prefixes(&importer,
-						      mkfs_plain_xattr_pfx);
-		if (err) {
-			erofs_err("failed to flush long xattr prefixes: %s",
-				  erofs_strerror(err));
-			goto exit;
-		}
 	} else {
 		err = erofs_xattr_flush_name_prefixes(&importer,
 						      mkfs_plain_xattr_pfx);
@@ -2052,29 +2076,7 @@ int main(int argc, char **argv)
 	}
 
 	importer.root = root;
-	if (source_mode == EROFS_MKFS_SOURCE_MANIFEST) {
-		FILE *fp = fopen(manifest_file, "r");
-
-		if (!fp) {
-			err = -errno;
-			erofs_err("cannot open manifest %s: %s",
-				  manifest_file, erofs_strerror(err));
-			goto exit;
-		}
-		err = erofs_manifest_load(&importer, fp);
-		fclose(fp);
-		if (err)
-			goto exit;
-		root = importer.root;
-
-		if (!incremental_mode) {
-			err = erofs_build_shared_xattrs(&g_sbi, mkfscfg.inlinexattr_tolerance);
-			if (err) {
-				erofs_err("failed to build shared xattrs: %s", erofs_strerror(err));
-				goto exit;
-			}
-		}
-	} else if (source_mode == EROFS_MKFS_SOURCE_TAR) {
+	if (source_mode == EROFS_MKFS_SOURCE_TAR) {
 		while (!(err = tarerofs_parse_tar(&importer, &erofstar)))
 			;
 	} else if (source_mode == EROFS_MKFS_SOURCE_REBUILD) {
@@ -2121,7 +2123,30 @@ int main(int argc, char **argv)
 	if (err < 0)
 		goto exit;
 
-	err = erofs_importer_load_tree(&importer,
+	if (manifest_file) {
+		FILE *fp = fopen(manifest_file, "r");
+
+		if (!fp) {
+			err = -errno;
+			erofs_err("cannot open manifest %s: %s", manifest_file,
+				  erofs_strerror(err));
+			goto exit;
+		}
+		err = erofs_manifest_load(&importer, fp);
+		fclose(fp);
+		if (err)
+			goto exit;
+		root = importer.root;
+		if (!incremental_mode) {
+			err = erofs_build_shared_xattrs(&g_sbi, mkfscfg.inlinexattr_tolerance);
+			if (err) {
+				erofs_err("failed to build shared xattrs: %s", erofs_strerror(err));
+				goto exit;
+			}
+		}
+	}
+
+	err = erofs_importer_load_tree(&importer, manifest_file ||
 				       source_mode != EROFS_MKFS_SOURCE_LOCALDIR,
 				       incremental_mode);
 	if (err)

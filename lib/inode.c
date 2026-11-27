@@ -1021,8 +1021,10 @@ static int erofs_prepare_inode_buffer(struct erofs_importer *im,
 		goto noinline;
 
 	/* TODO: tailpacking inline of chunk-based format isn't finalized */
-	if (inode->datalayout == EROFS_INODE_CHUNK_BASED)
+	if (inode->datalayout == EROFS_INODE_CHUNK_BASED) {
+		erofs_sb_set_chunked_file(sbi);
 		goto noinline;
+	}
 
 	if (!is_inode_layout_compression(inode)) {
 		if (params->no_datainline && S_ISREG(inode->i_mode)) {

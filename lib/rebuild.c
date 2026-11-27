@@ -673,7 +673,8 @@ int erofs_rebuild_load_tree(struct erofs_rebuild_params *params)
 		    !erofs_sb_has_big_pcluster(dst_sbi)) {
 			erofs_err("failed to load tree from image %d with big pclusters",
 				  sbi->dev);
-			return -EOPNOTSUPP;
+			ret = -EOPNOTSUPP;
+			goto out;
 		}
 		if (erofs_sb_has_48bit(sbi))
 			erofs_sb_set_48bit(dst_sbi);
@@ -684,11 +685,13 @@ int erofs_rebuild_load_tree(struct erofs_rebuild_params *params)
 	ret = erofs_read_inode_from_disk(&inode);
 	if (ret) {
 		erofs_err("failed to read root inode of %s", fsid);
-		return ret;
+		goto out;
 	}
 	inode.i_srcpath = strdup("/");
-	if (!inode.i_srcpath)
-		return -ENOMEM;
+	if (!inode.i_srcpath) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
 	ctx = (struct erofs_rebuild_dir_context) {
 		.ctx.dir = &inode,
@@ -697,6 +700,7 @@ int erofs_rebuild_load_tree(struct erofs_rebuild_params *params)
 		.params = params,
 	};
 	ret = erofs_iterate_dir(&ctx.ctx, false);
+out:
 	free(inode.i_srcpath);
 	return ret;
 }
