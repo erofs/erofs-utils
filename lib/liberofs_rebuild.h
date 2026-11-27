@@ -14,6 +14,7 @@ struct erofs_rebuild_params {
 	struct erofs_inode *mergeroot;
 	struct erofs_sb_info *sbi;
 	enum erofs_rebuild_datamode datamode;
+	bool force_omit_fsmeta;	/* reject data references to the primary device */
 };
 
 struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,

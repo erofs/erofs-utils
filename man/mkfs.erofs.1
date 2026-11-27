@@ -349,6 +349,11 @@ time.
 .BI "\-\-mount-point=" path
 Specify the prefix of target filesystem path (default: /).
 .TP
+.B \-\-omit-fsmeta
+Omit source fsmeta devices, e.g. for TarFS fsmerge with only tar blobs.
+Fail if data refers to an omitted device.
+Sources without external devices keep their primary device.
+.TP
 .BI "\-\-oci\fR[\fP=<f|i>\fR]\fP"
 Generate a full (f) or index-only (i) image from OCI remote source.
 Additional options can be specified:

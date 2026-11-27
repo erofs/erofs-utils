@@ -243,12 +243,14 @@ struct erofs_dentry *erofs_rebuild_get_dentry(struct erofs_inode *pwd,
 					  to_head, 0);
 }
 
-static int erofs_rebuild_load_chunk_index(struct erofs_sb_info *dst_sb,
+static int erofs_rebuild_load_chunk_index(struct erofs_rebuild_params *params,
 					  struct erofs_inode *inode)
 {
+	struct erofs_sb_info *dst_sb = params->mergeroot->sbi;
 	int ret;
-	unsigned int count, unit, chunkbits, i;
-	struct erofs_inode_chunk_index *idx;
+	unsigned int unit, chunkbits;
+	struct erofs_chunkitem **idx;
+	u64 count, i;
 	erofs_off_t chunksize;
 	erofs_blk_t blkaddr;
 
@@ -274,11 +276,13 @@ static int erofs_rebuild_load_chunk_index(struct erofs_sb_info *dst_sb,
 	}
 
 	chunksize = 1ULL << chunkbits;
-	count = DIV_ROUND_UP(inode->i_size, chunksize);
+	count = inode->i_size / chunksize + !!(inode->i_size % chunksize);
 
 	unit = sizeof(struct erofs_inode_chunk_index);
+	if (count > min_t(u64, UINT_MAX, SSIZE_MAX) / unit)
+		return -E2BIG;
 	inode->extent_isize = count * unit;
-	idx = calloc(count, max(sizeof(*idx), sizeof(void *)));
+	idx = calloc(count, max_t(size_t, sizeof(*idx), unit));
 	if (!idx)
 		return -ENOMEM;
 	inode->chunkindexes = idx;
@@ -294,16 +298,43 @@ static int erofs_rebuild_load_chunk_index(struct erofs_sb_info *dst_sb,
 		if (ret)
 			goto err;
 
-		blkaddr = erofs_blknr(dst_sb, map.m_pa);
-		chunk = erofs_get_unhashed_chunk(dst_sb, inode->dev, blkaddr, 0);
+		if (!(map.m_flags & EROFS_MAP_MAPPED)) {
+			chunk = erofs_get_unhashed_chunk(dst_sb, 0, EROFS_NULL_ADDR, 0);
+		} else {
+			struct erofs_sb_info *src = inode->sbi;
+			struct erofs_map_dev mdev = {
+				.m_deviceid = map.m_deviceid,
+				.m_pa = map.m_pa,
+			};
+
+			ret = erofs_map_dev(src, &mdev);
+			if (ret)
+				goto err;
+			blkaddr = erofs_blknr(src, mdev.m_pa);
+			/* dif->blocks may be 0; only uniaddr is valid for mapping */
+			if (erofs_blkoff(src, mdev.m_pa)) {
+				ret = -EFSCORRUPTED;
+				goto err;
+			}
+			if (params->force_omit_fsmeta && !mdev.m_deviceid) {
+				erofs_err("%s: file data refers to the source primary device",
+					  inode->i_srcpath);
+				ret = -EINVAL;
+				goto err;
+			}
+			chunk = erofs_get_unhashed_chunk(dst_sb,
+				params->sbi->dev + mdev.m_deviceid - params->force_omit_fsmeta,
+				blkaddr, 0);
+		}
 		if (IS_ERR(chunk)) {
 			ret = PTR_ERR(chunk);
 			goto err;
 		}
-		*(void **)idx++ = chunk;
+		*idx++ = chunk;
 
 	}
 	inode->datalayout = EROFS_INODE_CHUNK_BASED;
+	inode->u.chunkbits = chunkbits;
 	inode->u.chunkformat = EROFS_CHUNK_FORMAT_INDEXES;
 	inode->u.chunkformat |= chunkbits - dst_sb->blkszbits;
 	return 0;
@@ -313,15 +344,15 @@ err:
 	return ret;
 }
 
-static int erofs_rebuild_write_blob_index(struct erofs_sb_info *dst_sb,
+static int erofs_rebuild_write_blob_index(struct erofs_rebuild_params *params,
 					  struct erofs_inode *inode)
 {
-	int z_erofs_rebuild_load_metadata(struct erofs_sb_info *dst_sb,
+	int z_erofs_rebuild_load_metadata(struct erofs_rebuild_params *params,
 					  struct erofs_inode *inode);
 
 	if (is_inode_layout_compression(inode))
-		return z_erofs_rebuild_load_metadata(dst_sb, inode);
-	return erofs_rebuild_load_chunk_index(dst_sb, inode);
+		return z_erofs_rebuild_load_metadata(params, inode);
+	return erofs_rebuild_load_chunk_index(params, inode);
 }
 
 static int erofs_rebuild_write_full_data(struct erofs_inode *inode)
@@ -392,7 +423,6 @@ static int erofs_rebuild_write_full_data(struct erofs_inode *inode)
 static int erofs_rebuild_update_inode(struct erofs_rebuild_params *params,
 				      struct erofs_inode *inode)
 {
-	struct erofs_sb_info *dst_sb = params->mergeroot->sbi;
 	enum erofs_rebuild_datamode datamode = params->datamode;
 	int err = 0;
 
@@ -432,7 +462,7 @@ static int erofs_rebuild_update_inode(struct erofs_rebuild_params *params,
 			break;
 		}
 		if (datamode == EROFS_REBUILD_DATA_BLOB_INDEX)
-			err = erofs_rebuild_write_blob_index(dst_sb, inode);
+			err = erofs_rebuild_write_blob_index(params, inode);
 		else if (datamode == EROFS_REBUILD_DATA_RESVSP)
 			inode->datasource = EROFS_INODE_DATA_SOURCE_RESVSP;
 		else if (datamode == EROFS_REBUILD_DATA_FULL)

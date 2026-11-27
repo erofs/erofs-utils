@@ -24,6 +24,7 @@
 #endif
 #include "liberofs_cache.h"
 #include "liberofs_compress.h"
+#include "liberofs_rebuild.h"
 #include "liberofs_fragments.h"
 #include "liberofs_metabox.h"
 #include "erofs/decompress.h"
@@ -2496,9 +2497,10 @@ int z_erofs_compress_exit(struct erofs_sb_info *sbi)
 	return 0;
 }
 
-int z_erofs_rebuild_load_metadata(struct erofs_sb_info *dst_sbi,
+int z_erofs_rebuild_load_metadata(struct erofs_rebuild_params *params,
 				  struct erofs_inode *inode)
 {
+	struct erofs_sb_info *dst_sbi = params->mergeroot->sbi;
 	struct erofs_sb_info *sbi = inode->sbi;
 	struct erofs_map_blocks map = {
 		.buf = __EROFS_BUF_INITIALIZER,
@@ -2532,6 +2534,15 @@ int z_erofs_rebuild_load_metadata(struct erofs_sb_info *dst_sbi,
 		if (err)
 			goto err_out;
 
+		if (params->force_omit_fsmeta && (map.m_flags & EROFS_MAP_MAPPED) &&
+		    !(map.m_flags & (EROFS_MAP_META | __EROFS_MAP_FRAGMENT)) &&
+		    !mdev.m_deviceid) {
+			erofs_err("%s: file data refers to the source primary device",
+				  inode->i_srcpath);
+			err = -EINVAL;
+			goto err_out;
+		}
+
 		raw = (map.m_algorithmformat >= Z_EROFS_COMPRESSION_MAX);
 
 		ei = malloc(sizeof(*ei));
@@ -2562,7 +2573,7 @@ int z_erofs_rebuild_load_metadata(struct erofs_sb_info *dst_sbi,
 				.length = map.m_llen,
 				.plen = erofs_blksiz(sbi),
 				.pstart = (pend != EROFS_NULL_ADDR ? pend : 0),
-				.device_id = inode->dev,	/* FIXME! */
+				.device_id = device_id < 0 ? 0 : device_id,
 				.raw = raw,
 				.inlined = true,
 			};
@@ -2575,7 +2586,7 @@ int z_erofs_rebuild_load_metadata(struct erofs_sb_info *dst_sbi,
 				.length = map.m_llen,
 				.plen = map.m_plen,
 				.pstart = mdev.m_pa,
-				.device_id = inode->dev,	/* FIXME! */
+				.device_id = sbi->dev + mdev.m_deviceid - params->force_omit_fsmeta,
 				.partial = map.m_flags & EROFS_MAP_PARTIAL_REF,
 				.raw = raw,
 				.inlined = false,

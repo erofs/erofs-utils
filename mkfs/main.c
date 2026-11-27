@@ -107,6 +107,7 @@ static struct option long_options[] = {
 	{"xattr-prefix", required_argument, NULL, 538},
 	{"xattr-inode-digest", optional_argument, NULL, 539},
 	{"manifest", required_argument, NULL, 540},
+	{"omit-fsmeta", no_argument, NULL, 541},
 	{0, 0, 0, 0},
 };
 
@@ -216,6 +217,7 @@ static void usage(int argc, char **argv)
 		" --max-extent-bytes=#   set maximum decompressed extent size # in bytes\n"
 		" --manifest=X           build an image from a manifest file X and DATADIR\n"
 		" --mount-point=X        X=prefix of target fs path (default: /)\n"
+		" --omit-fsmeta          omit source fsmeta devices in blob-index rebuilds\n"
 		" --preserve-mtime       keep per-file modification time strictly\n"
 		" --offset=#             skip # bytes at the beginning of IMAGE.\n"
 		" --root-xattr-isize=#   ensure the inline xattr size of the root directory is # bytes at least\n"
@@ -290,6 +292,7 @@ static struct erofsmkfs_cfg {
 	long inlinexattr_tolerance;
 	bool inode_metazone;
 	char chunkbits;
+	bool omit_fsmeta;
 	u64 unix_timestamp;
 	unsigned int total_zcfgs;
 } mkfscfg = {
@@ -1514,6 +1517,9 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 			manifest_file = optarg;
 			source_mode = EROFS_MKFS_SOURCE_MANIFEST;
 			break;
+		case 541:
+			mkfscfg.omit_fsmeta = true;
+			break;
 		case 'V':
 			version();
 			exit(0);
@@ -1570,6 +1576,12 @@ static int mkfs_parse_options_cfg(struct erofs_importer_params *params,
 					  tarerofs_decoder);
 		if (err)
 			return err;
+	}
+
+	if (mkfscfg.omit_fsmeta && (source_mode != EROFS_MKFS_SOURCE_REBUILD ||
+			    dataimport_mode != EROFS_MKFS_DATA_IMPORT_DEFAULT)) {
+		erofs_err("--omit-fsmeta requires blob-index rebuild mode");
+		return -EINVAL;
 	}
 
 	if (quiet) {
@@ -1683,12 +1695,13 @@ void erofs_show_progs(int argc, char *argv[])
 
 static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 {
+	struct erofs_rebuild_params params = {
+		.mergeroot = root,
+	};
 	struct erofs_device_info *devs;
 	struct erofs_sb_info *src;
 	unsigned int extra_devices = 0;
-	erofs_blk_t nblocks;
 	int ret, idx;
-	struct erofs_rebuild_params params = { .mergeroot = root };
 
 	switch (dataimport_mode) {
 	case EROFS_MKFS_DATA_IMPORT_DEFAULT:
@@ -1704,59 +1717,71 @@ static int erofs_mkfs_rebuild_load_trees(struct erofs_inode *root)
 		return -EINVAL;
 	}
 
+	if (params.datamode == EROFS_REBUILD_DATA_BLOB_INDEX) {
+		bool omit_fsmeta;
+
+		/* Assign device ranges in command-line order. */
+		list_for_each_entry_reverse(src, &rebuild_src_list, list) {
+			ret = erofs_read_superblock(src);
+			if (ret)
+				return ret;
+			if (src->blkszbits != g_sbi.blkszbits) {
+				erofs_err("%s: source block size differs from the output",
+					  src->dif0.src_path);
+				return -EINVAL;
+			}
+			omit_fsmeta = mkfscfg.omit_fsmeta && src->extra_devices;
+			if (src->extra_devices >= ARRAY_SIZE(src->blobfd) ||
+			    src->extra_devices + !omit_fsmeta > UINT16_MAX - extra_devices)
+				return -E2BIG;
+			src->dev = extra_devices + 1;
+			extra_devices += src->extra_devices + !omit_fsmeta;
+		}
+		ret = erofs_mkfs_init_devices(&g_sbi, extra_devices);
+		if (ret)
+			return ret;
+		list_for_each_entry(src, &rebuild_src_list, list) {
+			omit_fsmeta = mkfscfg.omit_fsmeta && src->extra_devices;
+			if (!omit_fsmeta) {
+				devs = g_sbi.devs + src->dev - 1;
+				devs->blocks = src->dif0.blocks;
+				/* Preserve the source filename for --vmdk-desc extent paths. */
+				devs->src_path = strdup(src->dif0.src_path);
+				if (!devs->src_path)
+					return -ENOMEM;
+				erofs_uuid_unparse_as_tag(src->uuid, (char *)devs->tag);
+			}
+			for (idx = 0; idx < src->extra_devices; ++idx) {
+				devs = g_sbi.devs + src->dev + idx - omit_fsmeta;
+				devs->blocks = src->devs[idx].blocks;
+				memcpy(devs->tag, src->devs[idx].tag, sizeof(devs->tag));
+				if (omit_fsmeta && !idx && !devs->tag[0])
+					erofs_uuid_unparse_as_tag(src->uuid, (char *)devs->tag);
+			}
+		}
+	}
+
 	list_for_each_entry(src, &rebuild_src_list, list) {
+		if (params.datamode == EROFS_REBUILD_DATA_FULL) {
+			ret = erofs_read_superblock(src);
+			if (ret)
+				return ret;
+			/* TODO: read file data from the actual source device. */
+			if (src->extra_devices) {
+				erofs_err("%s: full-data rebuilds with external devices are not supported",
+					  src->dif0.src_path);
+				return -EOPNOTSUPP;
+			}
+		}
 		src->xamgr = g_sbi.xamgr;
 		params.sbi = src;
+		params.force_omit_fsmeta = mkfscfg.omit_fsmeta && src->extra_devices;
 		ret = erofs_rebuild_load_tree(&params);
 		src->xamgr = NULL;
 		if (ret) {
 			erofs_err("failed to load %s", src->dif0.src_path);
 			return ret;
 		}
-		if (src->extra_devices > 1) {
-			erofs_err("%s: unsupported number %u of extra devices",
-				  src->dif0.src_path, src->extra_devices);
-			return -EOPNOTSUPP;
-		}
-		extra_devices += src->extra_devices;
-	}
-
-	if (params.datamode == EROFS_REBUILD_DATA_RESVSP)
-		return 0;
-
-	/* Each blob has either no extra device or only one device for TarFS */
-	if (extra_devices && extra_devices != rebuild_src_count) {
-		erofs_err("extra_devices(%u) is mismatched with source images(%u)",
-			  extra_devices, rebuild_src_count);
-		return -EOPNOTSUPP;
-	}
-
-	if (params.datamode == EROFS_REBUILD_DATA_FULL)
-		return 0;
-
-	ret = erofs_mkfs_init_devices(&g_sbi, rebuild_src_count);
-	if (ret)
-		return ret;
-
-	devs = g_sbi.devs;
-	list_for_each_entry(src, &rebuild_src_list, list) {
-		u8 *tag = NULL;
-
-		DBG_BUGON(src->dev < 1);
-		idx = src->dev - 1;
-		if (extra_devices) {
-			nblocks = src->devs[0].blocks;
-			tag = src->devs[0].tag;
-		} else {
-			nblocks = src->dif0.blocks;
-			devs[idx].src_path = strdup(src->dif0.src_path);
-		}
-		devs[idx].blocks = nblocks;
-		if (tag && *tag)
-			memcpy(devs[idx].tag, tag, sizeof(devs[0].tag));
-		else
-			/* convert UUID of the source image to a hex string */
-			erofs_uuid_unparse_as_tag(src->uuid, (char *)devs[idx].tag);
 	}
 	return 0;
 }
