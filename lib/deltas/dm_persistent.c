@@ -24,17 +24,15 @@ struct erofs_dm_exception {
 	erofs_off_t offset, source_offset;
 };
 
-/* Sorted by logical file offset after opening the snapshot. */
-struct erofs_dm_exceptions {
-	struct erofs_dm_exception *entries;
-	size_t count, capacity;
-};
-
 struct erofs_dm_snap_persistent {
 	struct erofs_file_delta fdl;
-	struct erofs_dm_exceptions exceptions;
+	struct {
+		/* Sorted by logical file offset after opening the snapshot. */
+		struct erofs_dm_exception *entries;
+		size_t count, capacity;
+	} exceptions;
 	struct erofs_vfile *vf;
-	erofs_off_t target_size, chunk_bytes;
+	erofs_off_t target_size, chunk_bytes, boundary;
 };
 
 static const struct erofs_file_delta_ops erofs_file_delta_dm_persistent_ops;
@@ -46,35 +44,35 @@ static int erofs_dm_exception_cmp(const void *a, const void *b)
 	return cmpsgn(ea->offset, eb->offset);
 }
 
-static int erofs_dm_add_exception(struct erofs_dm_exceptions *exceptions,
+static int erofs_dm_add_exception(struct erofs_dm_snap_persistent *dsp,
 				 erofs_off_t offset,
 				 erofs_off_t source_offset)
 {
 	struct erofs_dm_exception *p;
 	size_t capacity;
 
-	if (exceptions->count == exceptions->capacity) {
-		capacity = exceptions->capacity ? exceptions->capacity * 2 : 64;
-		if (capacity < exceptions->capacity)
+	if (dsp->exceptions.count == dsp->exceptions.capacity) {
+		capacity = dsp->exceptions.capacity ? dsp->exceptions.capacity * 2 : 64;
+		if (capacity < dsp->exceptions.capacity)
 			return -E2BIG;
 		if (capacity > SIZE_MAX / sizeof(*p))
 			return -E2BIG;
-		p = realloc(exceptions->entries, capacity * sizeof(*p));
+		p = realloc(dsp->exceptions.entries, capacity * sizeof(*p));
 		if (!p)
 			return -ENOMEM;
-		exceptions->entries = p;
-		exceptions->capacity = capacity;
+		dsp->exceptions.entries = p;
+		dsp->exceptions.capacity = capacity;
 	}
-	exceptions->entries[exceptions->count++] = (struct erofs_dm_exception) {
+	dsp->exceptions.entries[dsp->exceptions.count++] = (struct erofs_dm_exception) {
 		.offset = offset,
 		.source_offset = source_offset,
 	};
+	dsp->boundary |= offset | (offset + dsp->chunk_bytes);
 	return 0;
 }
 
 static int erofs_dm_parse_exceptions(struct erofs_dm_snap_persistent *dsp)
 {
-	struct erofs_dm_exceptions *exceptions = &dsp->exceptions;
 	erofs_off_t chunk_bytes = dsp->chunk_bytes;
 	/* Read metadata in bounded batches, independently of the dm chunk size. */
 	struct erofs_dm_disk_exception buf[256];
@@ -121,8 +119,8 @@ static int erofs_dm_parse_exceptions(struct erofs_dm_snap_persistent *dsp)
 					goto out;
 				}
 				source_offset = new_chunk * chunk_bytes;
-				ret = erofs_dm_add_exception(exceptions,
-							     offset, source_offset);
+				ret = erofs_dm_add_exception(dsp, offset,
+							     source_offset);
 				if (ret)
 					goto out;
 			}
@@ -134,21 +132,32 @@ static int erofs_dm_parse_exceptions(struct erofs_dm_snap_persistent *dsp)
 	}
 terminated:
 	/* Exceptions are stored in commit order, not logical file order. */
-	if (exceptions->count > 1)
-		qsort(exceptions->entries, exceptions->count,
-		      sizeof(*exceptions->entries), erofs_dm_exception_cmp);
+	if (dsp->exceptions.count > 1)
+		qsort(dsp->exceptions.entries, dsp->exceptions.count,
+		      sizeof(*dsp->exceptions.entries), erofs_dm_exception_cmp);
 	/*
 	 * The kernel reuses existing exceptions on repeated writes, but its
 	 * loader does not reject duplicate origin chunks.  Reject them here
 	 * rather than choosing an ambiguous mapping.
 	 */
-	for (n = 1; n < exceptions->count; ++n) {
-		if (exceptions->entries[n - 1].offset == exceptions->entries[n].offset)
+	for (n = 1; n < dsp->exceptions.count; ++n) {
+		if (dsp->exceptions.entries[n - 1].offset == dsp->exceptions.entries[n].offset)
 			return -EINVAL;
 	}
 	ret = 0;
 out:
 	return ret;
+}
+
+static erofs_off_t erofs_dm_persistent_get_alignment(struct erofs_file_delta *fdl)
+{
+	struct erofs_dm_snap_persistent *dsp =
+		container_of(fdl, struct erofs_dm_snap_persistent, fdl);
+	erofs_off_t boundary = dsp->boundary;
+
+	if (!dsp->exceptions.count)
+		return 0;
+	return boundary ? (boundary & -boundary) : BIT_ULL(63);
 }
 
 static int erofs_dm_persistent_map(struct erofs_file_delta *fdl,
@@ -233,6 +242,7 @@ struct erofs_file_delta *erofs_dm_persistent_open(struct erofs_vfile *vf)
 }
 
 static const struct erofs_file_delta_ops erofs_file_delta_dm_persistent_ops = {
+	.get_alignment = erofs_dm_persistent_get_alignment,
 	.map = erofs_dm_persistent_map,
 	.close = erofs_dm_persistent_close,
 	.name = "dm-persistent",

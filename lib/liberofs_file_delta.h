@@ -15,7 +15,15 @@ struct erofs_delta_map {
 struct erofs_file_delta;
 
 struct erofs_file_delta_ops {
-	/* Find a replacement at or after map->offset; length 0 means none. */
+	/*
+	 * Maximum power-of-two boundary alignment in bytes; 0 means no updates.
+	 * EOF need not be aligned. BIT_ULL(63) means no boundary constraint.
+	 */
+	erofs_off_t (*get_alignment)(struct erofs_file_delta *fdl);
+	/*
+	 * Find a replacement at or after map->offset; length 0 means none.
+	 * Mappings remain stable until close; callers may scan them again.
+	 */
 	int (*map)(struct erofs_file_delta *fdl, struct erofs_delta_map *map);
 	void (*close)(struct erofs_file_delta *fdl);
 	const char *name;		/* delta format name */
